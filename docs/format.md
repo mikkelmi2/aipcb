@@ -264,11 +264,43 @@ layout:
         layers: [F.Cu]
         reason: Mounting hole and its washer.
   origin_mm: [100.0, 100.0]
-  routes: []             # topological routing hints — provisional, see M7a
+  routes: []             # topological routing sketches
 ```
 
-`routes:` is the data-model stub for topological routing. Its shape will change
-once the routing ADR settles the algorithm; nothing before M7 reads it.
+### Routing sketches
+
+`layout.routes` holds route *topology* — which obstacles a route passes and on
+which side, never where it is:
+
+```yaml
+  routes:
+    - net: CROSS
+      from: J1.1            # a pad, REFDES.PAD
+      to: J2.1
+      layer: F.Cu
+      passes:
+        - obstacle: U1.2    # a pad, a component (`U1`), or a via (`via:v1`)
+          side: left        # looking along the direction of travel
+          reason: Going over the MCU leaves the lower half of the board for SENSE.
+      reason: Routed deliberately; the side it takes decides whether SENSE has a
+        corridor.
+```
+
+| Field | Meaning |
+|---|---|
+| `net` | The net this route belongs to. |
+| `from`, `to` | The pads it connects. A net with *n* pads needs *n−1* routes. |
+| `layer` | The layer it starts on. |
+| `passes` | Obstacles passed, in order of travel. Empty means a direct run. |
+| `reason` | Why the route goes this way. |
+
+A `passes` entry is either a **pass** (`obstacle` + `side`) or a **via hop**
+(`to_layer`, optionally `name`); which one it is follows from the fields present.
+Nets with no sketch are routed automatically.
+
+`aipcb route check` verifies each sketch is realizable against the current
+placement, and `aipcb route all` builds the copper. The model, the algorithm and
+the limits are in [`topology.md`](topology.md).
 
 ## Part libraries
 
