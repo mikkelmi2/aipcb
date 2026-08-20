@@ -422,3 +422,63 @@ class TestRouteCli:
         assert payload["routing"]["segments"] > 0
         board = parse((tmp_path / "ldo-supply.kicad_pcb").read_text(encoding="utf-8"))
         assert list(board.children("segment"))
+
+
+@needs_kicad_libraries
+class TestCongestion:
+    """Auto-topology weighs corridor width, not just length."""
+
+    def _route(self, name: str, tmp_path: Path, congestion: float):
+        report = Report()
+        result = build_design(
+            REPO_ROOT / "examples" / name / "design.yaml",
+            out_dir=tmp_path / f"c{congestion}",
+            report=report,
+        )
+        board = parse(
+            next(p for p in result.written if p.suffix == ".kicad_pcb").read_text(
+                encoding="utf-8"
+            )
+        )
+        topologies = (
+            tuple(result.netlist.layout.routes) if result.netlist.layout else ()
+        )
+        return route_board(
+            board, result.netlist, report,
+            topologies=topologies, congestion=congestion,
+        )
+
+    def test_avoiding_narrow_gaps_routes_more(self, tmp_path: Path) -> None:
+        """The measurement behind the default: shortest-only strands a connection."""
+        greedy = self._route("led-blinker", tmp_path, 0.0)
+        careful = self._route("led-blinker", tmp_path, 1.0)
+        assert len(careful.routed) > len(greedy.routed)
+
+    def test_and_uses_no_more_copper(self, tmp_path: Path) -> None:
+        greedy = self._route("led-blinker", tmp_path, 0.0)
+        careful = self._route("led-blinker", tmp_path, 1.0)
+        assert careful.total_length <= greedy.total_length
+
+    def test_congestion_is_deterministic(self, tmp_path: Path) -> None:
+        first = self._route("usb-port", tmp_path / "a", 1.0)
+        second = self._route("usb-port", tmp_path / "b", 1.0)
+        assert [r.points for r in first.routed] == [r.points for r in second.routed]
+
+    def test_gate_width_measures_the_corridor(self, tmp_path: Path) -> None:
+        from aipcb.route.obstacles import extract_obstacles
+
+        result = build_design(
+            REPO_ROOT / "examples" / "usb-port" / "design.yaml", out_dir=tmp_path
+        )
+        board = parse(
+            next(p for p in result.written if p.suffix == ".kicad_pcb").read_text(
+                encoding="utf-8"
+            )
+        )
+        environment = extract_obstacles(board)
+        triangulation = build_triangulation(
+            environment, environment.blocking("USB_DP", "F.Cu")
+        )
+        widths = [triangulation.gate_width(i) for i in range(len(triangulation.diagonals))]
+        assert all(w > 0 for w in widths)
+        assert max(widths) > min(widths), "a board has both wide and narrow corridors"

@@ -237,7 +237,13 @@ class, and the funnel algorithm pulls the wire taut inside it. Because the obsta
 were inflated *first*, the shortest path through what is left is automatically a
 legal one — clearance holds by construction rather than being checked and patched.
 
-Connections without a sketch get the shortest topology the triangulation allows.
+Connections without a sketch get a topology derived automatically, weighing
+corridor width as well as length — because the shortest route happily takes the one
+gap a later net had no alternative to. Congestion needs no separate bookkeeping:
+free space is what obstacles and already-laid tracks leave behind, so a gate that
+has been used is literally narrower on the next net's triangulation. On the
+examples that is worth one more connection *and* 4 mm less copper than routing for
+length alone; `--congestion 0` turns it off.
 Every routed board in `examples/` passes `kicad-cli pcb drc` with **zero
 violations**, and `ldo-supply` routes completely — 13 of 13 connections, nothing
 left unconnected. Where a connection cannot be made on one layer, it is reported
@@ -359,7 +365,7 @@ unreadable.
 | M6 — incremental build preserving manual edits; Gerber export | **done** |
 | M7a — topology model and validation | **done** |
 | M7b — rubber-band stretcher, DRC-clean tracks | **done** |
-| M7c — congestion-aware auto-topology | next |
+| M7c — congestion-aware auto-topology | **done** |
 | M7d — differential pairs, skew and length matching | |
 
 ## Documentation

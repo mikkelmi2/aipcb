@@ -74,7 +74,16 @@ class RoutedBoard:
         }
 
 
-def rules_for(netlist: Netlist, net: str) -> RouteRules:
+#: How hard the auto-router avoids narrow gaps. Measured rather than guessed: on
+#: the bundled examples, zero routes one connection fewer *and* lays 4 mm more
+#: copper than 1.0 does, because the shortest route takes the one gap a later net
+#: had no alternative to. Higher values did not help further.
+DEFAULT_CONGESTION = 1.0
+
+
+def rules_for(
+    netlist: Netlist, net: str, congestion: float = DEFAULT_CONGESTION
+) -> RouteRules:
     """The width and clearance a net must be routed to."""
     elaborated = netlist.nets.get(net)
     default = NetClass()
@@ -88,6 +97,7 @@ def rules_for(netlist: Netlist, net: str) -> RouteRules:
         clearance=net_class.clearance_mm,
         via_diameter=net_class.via_diameter_mm,
         via_drill=net_class.via_drill_mm,
+        congestion=congestion,
     )
 
 
@@ -194,6 +204,7 @@ def route_board(
     *,
     layer: str = "F.Cu",
     topologies: tuple[RouteTopology, ...] = (),
+    congestion: float = DEFAULT_CONGESTION,
 ) -> RoutedBoard:
     """Route every net that needs it, shortest connections first.
 
@@ -235,11 +246,11 @@ def route_board(
         """The clearance the *other* net demands; KiCad enforces the larger."""
         if net is None:
             return 0.0
-        return rules_for(netlist, net).clearance
+        return rules_for(netlist, net, congestion).clearance
 
     placed: list[Obstacle] = []
     for route in planned:
-        rules = rules_for(netlist, route.net)
+        rules = rules_for(netlist, route.net, congestion)
         environment = extract_obstacles(board)
         for obstacle in placed:
             environment.obstacles[obstacle.name] = obstacle

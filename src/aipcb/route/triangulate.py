@@ -34,6 +34,10 @@ __all__ = [
 
 Point = tuple[float, float]
 
+#: A gate this many times the required corridor width counts as open space and
+#: costs nothing extra. Below it, squeezing through is charged for.
+_ROOMY_MULTIPLE = 4.0
+
 #: Coordinates are snapped to this grid before triangulating, so that two vertices
 #: that differ only by floating-point noise become the same vertex. Nanometres --
 #: KiCad's own internal resolution.
@@ -85,8 +89,26 @@ class Triangulation:
         )
         return best
 
+    def gate_width(self, edge: int) -> float:
+        """How wide the corridor is at a diagonal.
+
+        This is the routing resource. Free space is what obstacles and already-laid
+        tracks leave behind, so a gate that has been used by earlier routes is
+        literally narrower on the next net's triangulation -- congestion needs no
+        separate bookkeeping, it is visible in the geometry.
+        """
+        diagonal = self.diagonals[edge]
+        return _distance(diagonal.a, diagonal.b)
+
     def portal_path(
-        self, start: Point, start_triangle: int, goal: Point, goal_triangle: int
+        self,
+        start: Point,
+        start_triangle: int,
+        goal: Point,
+        goal_triangle: int,
+        *,
+        corridor: float = 0.0,
+        congestion: float = 0.0,
     ) -> list[int]:
         """The diagonals a shortest route crosses, found by A* over portal midpoints.
 
@@ -106,11 +128,27 @@ class Triangulation:
         on paper and a violent zigzag on the board. The node is therefore the pair
         (diagonal, triangle being entered).
 
+        ``corridor`` and ``congestion`` add a cost for squeezing through narrow
+        gates. Length alone is a poor objective for a board: the shortest route
+        happily takes the one gap a later net had no alternative to, and the later
+        net then fails. Charging for narrowness spends open space first and saves
+        tight gaps for the routes that must use them.
+
         The returned sequence is already a crossing sequence, so no separate
         conversion step is needed.
         """
         if start_triangle == goal_triangle:
             return []
+
+        roomy = corridor * _ROOMY_MULTIPLE
+
+        def penalty(edge: int) -> float:
+            if congestion <= 0 or corridor <= 0:
+                return 0.0
+            width = self.gate_width(edge)
+            if width >= roomy:
+                return 0.0
+            return congestion * (roomy - width)
 
         midpoints = [
             ((d.a[0] + d.b[0]) / 2, (d.a[1] + d.b[1]) / 2) for d in self.diagonals
@@ -123,7 +161,7 @@ class Triangulation:
 
         for edge in self.by_triangle.get(start_triangle, ()):
             node = (edge, self.diagonals[edge].other(start_triangle))
-            cost = _distance(start, midpoints[edge])
+            cost = _distance(start, midpoints[edge]) + penalty(edge)
             best[node] = cost
             heapq.heappush(
                 queue, (cost + _distance(midpoints[edge], goal), cost, node)
@@ -141,7 +179,11 @@ class Triangulation:
             for neighbour in self.by_triangle.get(triangle, ()):
                 if neighbour == edge:
                     continue
-                candidate = cost + _distance(midpoints[edge], midpoints[neighbour])
+                candidate = (
+                    cost
+                    + _distance(midpoints[edge], midpoints[neighbour])
+                    + penalty(neighbour)
+                )
                 onward = (neighbour, self.diagonals[neighbour].other(triangle))
                 if candidate < best.get(onward, float("inf")) - 1e-12:
                     best[onward] = candidate
