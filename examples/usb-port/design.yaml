@@ -172,11 +172,27 @@ layout:
         side: front
         reason: Opposite edge from the USB connector, so cables do not fight.
   routes:
+    # Topological routing sketches. These say what the routes go around, not where
+    # they are, so they survive the parts being moved. See docs/topology.md.
     - net: USB_DP
+      from: J1.3
+      to: R1.1
       layer: F.Cu
+      passes:
+        - obstacle: J1.4
+          side: left
+          reason: Leaving on the ID side keeps the pair together instead of
+            splitting them around the connector.
       reason: Kept on the top layer with the ground plane directly below, so the
         impedance target holds for the whole run.
+
     - net: USB_DM
+      from: J1.2
+      to: R2.1
       layer: F.Cu
+      passes:
+        - obstacle: J1.1
+          side: right
+          reason: Mirrors USB_DP's escape so the two halves stay the same length.
       reason: Must stay on the same layer as USB_DP; a via on one leg only would
         break both the impedance and the skew budget.

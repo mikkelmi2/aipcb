@@ -347,8 +347,10 @@ def version() -> None:
 
 
 from aipcb.cli_query import query_app  # noqa: E402
+from aipcb.cli_route import route_app  # noqa: E402
 
 app.add_typer(query_app)
+app.add_typer(route_app)
 
 
 def main() -> None:  # pragma: no cover - console-script entry point

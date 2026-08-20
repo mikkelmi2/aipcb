@@ -400,8 +400,8 @@ def _assign_nets(
 # ---------------------------------------------------------------------------
 
 
-#: KiCad escapes these characters when it builds a net name.
-_NET_ESCAPES = {"/": "{slash}", "\\": "{backslash}", "{": "{lbrace}", "}": "{rbrace}"}
+#: How KiCad escapes a pin name when it builds a net name from one.
+_PATH_ESCAPES = {"/": "{slash}", "\\": "{backslash}"}
 
 
 def unconnected_net_name(refdes: str, pin_name: str, pad: str) -> str:
@@ -410,9 +410,15 @@ def unconnected_net_name(refdes: str, pin_name: str, pad: str) -> str:
     KiCad does not leave an unconnected pad netless: it invents a unique net per
     pin so that the pad still belongs somewhere. Leaving those pads bare makes the
     board disagree with the schematic, and ``--schematic-parity`` reports every one
-    of them. Matching the convention exactly is what gets parity to zero.
+    of them. Matching the convention is what gets parity to zero.
+
+    Only path separators are escaped. Braces are left alone even though they are
+    KiCad's own escape delimiters, because a pin name uses them for overbar markup:
+    ``XTAL1/PB3`` becomes ``XTAL1{slash}PB3``, and ``~{RESET}/PB5`` becomes
+    ``~{RESET}{slash}PB5`` with its braces intact. Both were read off KiCad's own
+    parity messages for the ATtiny85, whose pin names happen to cover both cases.
     """
-    escaped = "".join(_NET_ESCAPES.get(ch, ch) for ch in pin_name)
+    escaped = "".join(_PATH_ESCAPES.get(ch, ch) for ch in pin_name)
     return f"unconnected-({refdes}-{escaped}-Pad{pad})"
 
 

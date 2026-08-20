@@ -13,11 +13,13 @@ dependencies = [
     "pydantic>=2.6",
     "typer>=0.12",
     "pyyaml>=6.0",
+    "shapely>=2.1",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.5", "mypy>=1.10", "types-PyYAML"]
-geometry = ["shapely>=2.0", "scipy>=1.11"]
+# Routing needs Shapely 2.1 for constrained Delaunay triangulation.
+routing = ["shapely>=2.1"]
 
 [project.scripts]
 aipcb = "aipcb.cli:app"
@@ -39,7 +41,10 @@ files = ["src/aipcb"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["yaml"]
+# Shapely ships no stubs, and `types-shapely` drags in numpy stubs that require
+# python_version >= 3.12 — which would drop our 3.11 support to type-check a
+# dependency. The routing code annotates its own boundaries instead.
+module = ["yaml", "shapely", "shapely.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

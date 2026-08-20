@@ -32,10 +32,11 @@ from aipcb.netlist import Netlist
 
 __all__ = ["BoardPlacement", "Placed", "plan_placement", "usable_area"]
 
-#: Space kept between neighbouring parts. Wide enough that a router has somewhere
-#: to go, which is the difference between a placement that can be routed and one
-#: that merely fits.
-PART_SPACING = 1.5
+#: Space kept between neighbouring parts, measured between courtyards. Wide enough
+#: that a router has somewhere to go -- the difference between a placement that can
+#: be routed and one that merely fits -- and wide enough that reference designators,
+#: which are drawn outside the courtyard, do not collide on the silkscreen.
+PART_SPACING = 2.5
 CLUSTER_SPACING = 3.0
 DEFAULT_GRID = 0.5
 
@@ -210,15 +211,25 @@ def plan_placement(
 
     extents = extents or {}
     sides = _sides(netlist, report)
+    placement = BoardPlacement(width=width, height=height, origin=origin)
 
+    # Components pinned to a region go first and are then out of the way: the
+    # source has said where they belong, and that is not the packer's business to
+    # second-guess. Everything else shares what is left.
+    pinned = _place_regions(netlist, extents, origin, grid, placement, sides, report)
+
+    remaining = [
+        free
+        for cluster in _clusters(netlist)
+        if (free := [m for m in cluster if m not in pinned])
+    ]
     blocks = [
         _pack_cluster(members, _with_defaults(extents, members), grid)
-        for members in _clusters(netlist)
+        for members in remaining
     ]
     # Tallest first: a shelf packer that meets a big part late has nowhere to put it.
     blocks.sort(key=lambda b: (-b.height, -b.width, b.key))
 
-    placement = BoardPlacement(width=width, height=height, origin=origin)
     cursor_x = 0.0
     cursor_y = 0.0
     shelf_height = 0.0
@@ -264,6 +275,73 @@ def plan_placement(
             "so the board is still inspectable",
         )
     return placement
+
+
+def _place_regions(
+    netlist: Netlist,
+    extents: dict[str, Extent],
+    origin: tuple[float, float],
+    grid: float,
+    placement: BoardPlacement,
+    sides: dict[str, str],
+    report: Report | None,
+) -> set[str]:
+    """Honour ``region_mm`` placement rules. Returns the components they pinned.
+
+    A region is given relative to the board origin, so a design can say "this
+    connector belongs on the left edge" without knowing where the board sits in
+    KiCad's coordinate space.
+    """
+    layout = netlist.layout
+    if layout is None:
+        return set()
+
+    by_path = {c.path_text: c.refdes for c in netlist.components.values()}
+    pinned: set[str] = set()
+
+    for index, rule in enumerate(layout.placement.rules):
+        if rule.region_mm is None:
+            continue
+        x1, y1, x2, y2 = rule.region_mm
+        left, right = min(x1, x2), max(x1, x2)
+        top, bottom = min(y1, y2), max(y1, y2)
+
+        members = [
+            refdes
+            for member in rule.members
+            if (refdes := (member if member in netlist.components else by_path.get(member)))
+            is not None
+        ]
+        if not members:
+            continue
+
+        block = _pack_cluster(sorted(members), _with_defaults(extents, members), grid)
+        if report is not None and (
+            block.width > right - left or block.height > bottom - top
+        ):
+            report.warning(
+                "region-too-small",
+                f"the region for {', '.join(sorted(members))} is "
+                f"{right - left:.1f} x {bottom - top:.1f} mm, but they need about "
+                f"{block.width:.1f} x {block.height:.1f} mm",
+                path=("layout", "placement", "rules", index, "region_mm"),
+                hint="enlarge the region, or move some components out of the rule",
+            )
+
+        for refdes, dx, dy in block.members:
+            extent = extents.get(refdes)
+            offset_x = -extent.min_x if extent else 0.0
+            offset_y = -extent.min_y if extent else 0.0
+            placement.positions[refdes] = Placed(
+                refdes,
+                _snap(origin[0] + left + dx + offset_x, grid),
+                _snap(origin[1] + top + dy + offset_y, grid),
+                rotation=rule.orientation_deg or 0.0,
+                side=sides.get(refdes, "front"),
+            )
+            pinned.add(refdes)
+
+    return pinned
 
 
 def _with_defaults(extents: dict[str, Extent], members: list[str]) -> dict[str, Extent]:

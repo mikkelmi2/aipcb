@@ -214,7 +214,7 @@
 	(footprint "Capacitor_SMD:C_0603_1608Metric"
 		(layer "F.Cu")
 		(uuid "223b983f-581f-5df6-aa46-f61a255dcdb6")
-		(at 113.5 102.5 0)
+		(at 114.5 102.5 0)
 		(descr "Capacitor SMD 0603 (1608 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf), generated with kicad-footprint-generator")
 		(tags "capacitor")
 		(property "Reference" "C2"
@@ -340,7 +340,7 @@
 	(footprint "Connector_USB:USB_Micro-B_Amphenol_10103594-0001LF_Horizontal"
 		(layer "F.Cu")
 		(uuid "e5e0dc37-2d3f-5462-94d0-b31a150c4fd2")
-		(at 125.5 105 0)
+		(at 127.5 105 0)
 		(descr "Micro USB Type B 10103594-0001LF, http://cdn.amphenol-icc.com/media/wysiwyg/files/drawing/10103594.pdf")
 		(tags "USB USB_B USB_micro USB_OTG")
 		(property "Reference" "J1"
@@ -766,7 +766,7 @@
 	(footprint "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical"
 		(layer "F.Cu")
 		(uuid "2baaa32e-49e8-5a85-a53e-6ce43a4f04c1")
-		(at 104 122.5 0)
+		(at 104 124.5 0)
 		(descr "Through hole straight pin header, 1x04, 2.54mm pitch, single row")
 		(tags "Through hole pin header THT 1x04 2.54mm single row")
 		(property "Reference" "J2"
@@ -991,7 +991,7 @@
 	(footprint "Resistor_SMD:R_0603_1608Metric"
 		(layer "F.Cu")
 		(uuid "25ffc717-23bb-5608-927f-eaddd91c1dc7")
-		(at 103.5 110.5 0)
+		(at 103.5 111.5 0)
 		(descr "Resistor SMD 0603 (1608 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf), generated with kicad-footprint-generator")
 		(tags "resistor")
 		(property "Reference" "R1"
@@ -1117,7 +1117,7 @@
 	(footprint "Resistor_SMD:R_0603_1608Metric"
 		(layer "F.Cu")
 		(uuid "277b2398-9da4-52bd-bad9-12fd5898785d")
-		(at 113.5 110.5 0)
+		(at 114.5 111.5 0)
 		(descr "Resistor SMD 0603 (1608 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf), generated with kicad-footprint-generator")
 		(tags "resistor")
 		(property "Reference" "R2"
@@ -1243,7 +1243,7 @@
 	(footprint "Resistor_SMD:R_0603_1608Metric"
 		(layer "F.Cu")
 		(uuid "992542c8-dbfc-5a1d-84a8-8c26a2df8f43")
-		(at 123 110.5 0)
+		(at 125 111.5 0)
 		(descr "Resistor SMD 0603 (1608 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf), generated with kicad-footprint-generator")
 		(tags "resistor")
 		(property "Reference" "R3"
