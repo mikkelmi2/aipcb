@@ -142,6 +142,23 @@ def build(
 
 
 @app.command()
+def summary(design: DesignArg, as_json: JsonOpt = False) -> None:
+    """A one-line-per-block overview of a design.
+
+    Written to be the first thing read about an unfamiliar design, and small
+    enough that reading it is never the expensive choice.
+    """
+    from aipcb.cli_query import load, render_summary
+    from aipcb.query import summarise_design
+
+    data = summarise_design(load(design))
+    if as_json:
+        typer.echo(json.dumps(data, indent=2))
+    else:
+        typer.echo(render_summary(data))
+
+
+@app.command()
 def check(
     design: DesignArg,
     out: Annotated[
@@ -252,6 +269,11 @@ def version() -> None:
     typer.echo(f"aipcb {__version__}")
     found = kicad_version()
     typer.echo(f"kicad-cli {found}" if found else "kicad-cli: not found on PATH")
+
+
+from aipcb.cli_query import query_app  # noqa: E402
+
+app.add_typer(query_app)
 
 
 def main() -> None:  # pragma: no cover - console-script entry point

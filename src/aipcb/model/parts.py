@@ -109,6 +109,12 @@ class Part(Strict):
     limits: Limits = Field(default_factory=Limits)
     supplier: Supplier = Field(default_factory=Supplier)
     dnp: bool = Field(default=False, description="Do not populate.")
+    refdes_prefix: str | None = Field(
+        default=None,
+        pattern=r"^[A-Z]{1,4}$",
+        description="Designator letters for parts of this kind: R, C, U, J. Used when "
+                    "a designator has to be assigned automatically.",
+    )
 
     @field_validator("symbol", "footprint")
     @classmethod

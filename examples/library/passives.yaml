@@ -8,6 +8,7 @@ parts:
   R_22R_0603:
     description: 22 ohm 1% resistor, 0603
     symbol: Device:R
+    refdes_prefix: R
     footprint: Resistor_SMD:R_0603_1608Metric
     value: 22R
     keywords: [resistor, series]
@@ -21,6 +22,7 @@ parts:
   R_330R_0603:
     description: 330 ohm resistor, 0603
     symbol: Device:R
+    refdes_prefix: R
     footprint: Resistor_SMD:R_0603_1608Metric
     value: 330R
     keywords: [resistor, current_limit]
@@ -34,6 +36,7 @@ parts:
   R_5K1_0603:
     description: 5.1 kohm 1% resistor, 0603
     symbol: Device:R
+    refdes_prefix: R
     footprint: Resistor_SMD:R_0603_1608Metric
     value: 5K1
     keywords: [resistor, usb, cc]
@@ -47,6 +50,7 @@ parts:
   R_10K_0603:
     description: 10 kohm resistor, 0603
     symbol: Device:R
+    refdes_prefix: R
     footprint: Resistor_SMD:R_0603_1608Metric
     value: 10K
     keywords: [resistor, pull_up]
@@ -60,6 +64,7 @@ parts:
   C_100N_0603:
     description: 100 nF X7R ceramic capacitor, 0603, 50 V
     symbol: Device:C
+    refdes_prefix: C
     footprint: Capacitor_SMD:C_0603_1608Metric
     value: 100n
     keywords: [capacitor, decoupling]
@@ -72,6 +77,7 @@ parts:
   C_1U_0603:
     description: 1 uF X5R ceramic capacitor, 0603, 25 V
     symbol: Device:C
+    refdes_prefix: C
     footprint: Capacitor_SMD:C_0603_1608Metric
     value: 1u
     keywords: [capacitor, bypass]
@@ -84,6 +90,7 @@ parts:
   C_10U_0805:
     description: 10 uF X5R ceramic capacitor, 0805, 16 V
     symbol: Device:C
+    refdes_prefix: C
     footprint: Capacitor_SMD:C_0805_2012Metric
     value: 10u
     keywords: [capacitor, bulk]
@@ -96,6 +103,7 @@ parts:
   C_22U_0805:
     description: 22 uF X5R ceramic capacitor, 0805, 10 V
     symbol: Device:C
+    refdes_prefix: C
     footprint: Capacitor_SMD:C_0805_2012Metric
     value: 22u
     keywords: [capacitor, bulk]
@@ -108,6 +116,7 @@ parts:
   LED_RED_0603:
     description: Red indicator LED, 0603, 2.0 V forward
     symbol: Device:LED
+    refdes_prefix: D
     footprint: LED_SMD:LED_0603_1608Metric
     value: RED
     keywords: [led, indicator]

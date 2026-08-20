@@ -162,6 +162,52 @@ A UUID that does not map is reported too, and says what it means: the board
 contains something `aipcb` did not generate, so a human added it in KiCad and that
 is where the fix belongs. That case becomes load-bearing in M6.
 
+### Reading part of a design
+
+An agent working on one corner of a board should not have to hold the whole thing
+in context. `aipcb summary` is meant to be the first thing read about an unfamiliar
+design, and small enough that reading it is never the expensive choice:
+
+```bash
+.venv/bin/aipcb summary examples/ldo-supply/design.yaml
+```
+
+```
+ldo-supply rev A
+  Unregulated DC in, 3.3 V out, using an AMS1117 LDO.
+  7 components, 3 nets, 15 connections, 2 constraints
+  net classes: ground x1, power x2
+
+blocks:
+  (top level)   2 parts  J1, J2  [connector]
+  rail_3v3      5 parts  C1, C2, C3, C4, U1  [bulk, bypass, regulator]
+
+constraints:
+  max_distance: rail_3v3.CIN, rail_3v3.U
+    Input capacitor loop inductance sets how well the LDO rejects supply transients.
+```
+
+`aipcb query module` then zooms in on one block — including the parts on the *other*
+side of its ports, since a module read in isolation says nothing about what it
+drives:
+
+```
+module rail_3v3
+  components:
+    C1    C_100N_0603  role=bypass  for=U
+    ...
+  ports (nets crossing the boundary):
+    VIN [power]  inside C3.1, U1.3  ->  J1.1
+    VOUT [power]  inside C1.1, C2.1, C4.1, U1.2  ->  J2.1
+  neighbours:
+    J1    CONN_PWR_1X02  role=connector
+    J2    CONN_PWR_1X02  role=connector
+```
+
+`query component`, `query net`, `query net-class` and `query role` narrow further.
+Every one of them takes `--json`, and text and JSON are two renderings of one
+structure, so they cannot disagree about what a design contains.
+
 ### A minimal design
 
 ```yaml
@@ -202,6 +248,8 @@ The three bundled examples build up from there:
 | `aipcb validate DESIGN` | schema and semantic checks, with source-referenced diagnostics |
 | `aipcb build DESIGN` | compile to `.kicad_sch`, `.kicad_pcb`, `.kicad_pro` and the project library tables |
 | `aipcb check DESIGN` | build, run KiCad's ERC and DRC, report violations against the source |
+| `aipcb summary DESIGN` | one-line-per-block overview |
+| `aipcb query ...` | read one module, component, net, net class or role |
 | `aipcb parts DESIGN` | list the parts the design's libraries provide |
 | `aipcb schema` | emit the JSON Schema for the source format, for editor completion |
 | `aipcb version` | report the aipcb and KiCad versions in use |
@@ -217,8 +265,8 @@ unreadable.
 | M2 — schematic compile (`.kicad_sch`, passes ERC) | **done** |
 | M3 — netlist and board skeleton | **done** |
 | M4 — check loop over `kicad-cli` ERC/DRC JSON | **done** |
-| M5 — query layer for partial reads | next |
-| M6 — incremental build preserving manual edits; Gerber export | |
+| M5 — query layer for partial reads | **done** |
+| M6 — incremental build preserving manual edits; Gerber export | next |
 | M7 — topological (rubber-band) routing | research |
 
 ## Documentation
@@ -231,7 +279,7 @@ unreadable.
 ## Development
 
 ```bash
-.venv/bin/pytest          # 271 tests
+.venv/bin/pytest          # 308 tests, about 2 minutes (it runs KiCad for real)
 .venv/bin/ruff check .
 .venv/bin/mypy
 ```
