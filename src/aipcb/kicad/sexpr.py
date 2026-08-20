@@ -338,9 +338,20 @@ def _write(node: SNode, depth: int, out: list[str], indent: str) -> None:
         out.append(f"{head} {body})")
         return
 
+    # KiCad keeps a node's leading atoms on the head line and indents only its
+    # nested children -- `(label "NAME"` then `(at …)` beneath. Matching that keeps
+    # generated files readable next to hand-edited ones.
+    leading = 0
+    while leading < len(node.items) and isinstance(node.items[leading], Atom):
+        leading += 1
+    if leading:
+        head += " " + " ".join(
+            _atom_text(item) for item in node.items[:leading] if isinstance(item, Atom)
+        )
+
     out.append(head)
     inner = indent * (depth + 1)
-    for item in node.items:
+    for item in node.items[leading:]:
         if isinstance(item, Atom):
             out.append(inner + _atom_text(item))
         else:

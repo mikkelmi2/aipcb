@@ -108,6 +108,40 @@ def validate(
 
 
 @app.command()
+def build(
+    design: DesignArg,
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", "-o", help="Output directory. Defaults to the design's."),
+    ] = None,
+    as_json: JsonOpt = False,
+) -> None:
+    """Compile a design into KiCad files."""
+    from aipcb.compile.build import build_design
+
+    report = Report()
+    try:
+        result = build_design(design, out_dir=out, report=report)
+    except SourceError as exc:
+        _err(f"error: {exc}")
+        raise typer.Exit(EXIT_UNREADABLE) from exc
+    except AipcbError as exc:
+        _emit(exc.report, as_json)
+        raise typer.Exit(EXIT_ERRORS) from exc
+
+    if as_json:
+        payload = report.to_dict()
+        payload["outputs"] = [str(p) for p in result.written]
+        payload["design"] = {"name": result.netlist.name, **result.netlist.stats()}
+        typer.echo(json.dumps(payload, indent=2))
+    else:
+        typer.echo(report.render(color=sys.stdout.isatty(), summary=bool(report)))
+        for path in result.written:
+            typer.echo(f"wrote {path}")
+    raise typer.Exit(EXIT_ERRORS if not report.ok else EXIT_OK)
+
+
+@app.command()
 def parts(
     design: DesignArg,
     as_json: JsonOpt = False,
