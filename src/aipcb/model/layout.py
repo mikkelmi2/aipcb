@@ -11,9 +11,9 @@ compiles -- it simply gets defaults.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 __all__ = [
     "BoardOutline",
@@ -23,19 +23,12 @@ __all__ = [
     "NetClass",
     "Placement",
     "PlacementRule",
-    "RouteHint",
     "Stackup",
     "StackupLayer",
 ]
 
-Ident = Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]
-
-#: Copper layer names, in KiCad's spelling. Signal layers only; planes are zones.
-Layer = Annotated[str, Field(pattern=r"^(F|B|In[0-9]{1,2})\.Cu$")]
-
-
-class Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
+from aipcb.model.common import Layer, Strict
+from aipcb.route.model import RouteTopology
 
 
 class NetClass(Strict):
@@ -132,22 +125,6 @@ class Keepout(Strict):
     reason: str | None = None
 
 
-class RouteHint(Strict):
-    """Topological routing intent for one net.
-
-    **Provisional -- milestone M7a.** This is the data-model stub the architecture
-    calls for so that layer 2 has a place for topology to live; the stretcher that
-    turns it into geometry is deliberately not built yet, and the field set will be
-    revised once the routing ADR (``docs/decisions/000x-routing-approach.md``)
-    settles the algorithm. Nothing in M1-M6 reads it beyond validating its shape.
-    """
-
-    net: str
-    layer: Layer = "F.Cu"
-    prefer_layers: tuple[Layer, ...] = ()
-    reason: str | None = None
-
-
 class Placement(Strict):
     """All placement intent for a board."""
 
@@ -165,5 +142,8 @@ class Layout(Strict):
     outline: BoardOutline | None = None
     stackup: Stackup = Field(default_factory=Stackup)
     placement: Placement = Field(default_factory=Placement)
-    routes: tuple[RouteHint, ...] = ()
+    routes: tuple[RouteTopology, ...] = Field(
+        default=(),
+        description="Topological routing sketches. See docs/topology.md.",
+    )
     origin_mm: tuple[float, float] = (100.0, 100.0)

@@ -1,0 +1,156 @@
+# A board whose point is the routing topology.
+#
+# The other examples are circuits that happen to need routing. This one exists so
+# that "which side does the wire pass on" is a real question with a visibly
+# different answer: an 8-pin DIP sits between two headers, and a signal crossing the
+# board can go above its pads or below them. Both are legal; the sketch decides.
+#
+# Try it: change `side: left` to `side: right` under `layout.routes`, run
+# `aipcb route all`, and look at the board.
+
+name: routing-demo
+revision: A
+description: A signal crossing a board past a DIP-8, to demonstrate topological
+  routing sketches.
+
+libraries:
+  - ../library/passives.yaml
+  - ../library/semiconductors.yaml
+  - ../library/connectors.yaml
+
+net_classes:
+  signal:
+    trace_width_mm: 0.25
+    clearance_mm: 0.2
+  power:
+    trace_width_mm: 0.5
+    clearance_mm: 0.25
+
+nets:
+  VCC:
+    class: power
+    voltage: 3.3
+  GND:
+    class: ground
+  CROSS:
+    class: signal
+    description: The net this board exists to demonstrate. It runs the full width
+      of the board, straight past the MCU, and can legally go either side of it.
+  SENSE:
+    class: signal
+    description: A second net sharing the same corridor, so CROSS's choice of side
+      is not free of consequences.
+
+components:
+  J1:
+    part: CONN_PWR_1X02
+    role: connector
+    reason: Left edge. Where CROSS enters the board.
+    pins:
+      VIN: CROSS
+      GND: GND
+
+  J2:
+    part: CONN_PWR_1X02
+    role: connector
+    reason: Right edge. Where CROSS leaves it.
+    pins:
+      VIN: CROSS
+      GND: GND
+
+  U1:
+    part: ATTINY85_DIP8
+    role: mcu
+    reason: A through-hole DIP pinned to the middle of the board, squarely between
+      the two headers. Its pads are the obstacle CROSS has to get past, and its
+      2.54 mm pitch leaves room to go between them -- so which side the route takes
+      is a genuine choice rather than a formality.
+    pins:
+      VCC: VCC
+      GND: GND
+      PB1: SENSE
+
+  R1:
+    part: R_10K_0603
+    role: pull_up
+    for: U1
+    reason: Holds RESET high.
+    pins:
+      "1": VCC
+      "2": RESET
+
+  R2:
+    part: R_10K_0603
+    role: series
+    for: U1
+    reason: Lower leg of the reset divider, and the other end of SENSE.
+    pins:
+      "1": RESET
+      "2": SENSE
+
+  C1:
+    part: C_100N_0603
+    role: decoupling
+    for: U1
+    reason: The MCU's local supply reservoir.
+    pins:
+      "1": VCC
+      "2": GND
+
+  J3:
+    part: CONN_PWR_1X02
+    role: connector
+    reason: Supply in.
+    pins:
+      VIN: VCC
+      GND: GND
+
+constraints:
+  - kind: max_distance
+    between: [C1, U1]
+    mm: 6.0
+    reason: Decoupling works through its loop inductance.
+
+layout:
+  outline:
+    shape: rect
+    width_mm: 70.0
+    height_mm: 45.0
+  stackup:
+    copper_layers: 2
+    thickness_mm: 1.6
+  placement:
+    margin_mm: 2.0
+    rules:
+      # Pinned so the demonstration is about topology and not about where the
+      # packer happened to put things: the MCU sits between the two headers, so
+      # a signal crossing the board genuinely has to choose a way past it.
+      - members: [J1]
+        region_mm: [2, 18, 12, 28]
+        reason: Left edge, where the crossing nets start.
+      - members: [U1]
+        region_mm: [26, 14, 44, 32]
+        reason: Middle of the board, squarely in the way.
+      - members: [J2]
+        region_mm: [56, 18, 66, 28]
+        reason: Right edge.
+      - members: [J3, C1, R1, R2]
+        region_mm: [24, 2, 62, 20]
+        reason: Supply and the reset divider, along the top edge.
+
+  routes:
+    # The whole point of this example. CROSS runs from the left header to the MCU,
+    # and the sketch says which side of the MCU's own pads it takes to get there.
+    # Flip `side` and the geometry changes; the sketch does not become invalid,
+    # because it never described geometry in the first place.
+    - net: CROSS
+      from: J1.1
+      to: J2.1
+      layer: F.Cu
+      passes:
+        - obstacle: U1.2
+          side: left
+          reason: Going over the MCU rather than under it leaves the whole lower
+            half of the board free for SENSE.
+      reason: Routed deliberately rather than left to the auto-router, because the
+        side it takes decides whether SENSE still has a corridor.

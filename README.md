@@ -205,6 +205,48 @@ map, a `.gbrjob`, a grouped BOM carrying the descriptions from your component
 database, and a placement file. That is the whole path: source → fab data, with no
 step that required opening a GUI.
 
+### Routing
+
+Routes are stored as **topology**, not geometry — which obstacles a wire passes and
+on which side:
+
+```yaml
+layout:
+  routes:
+    - net: CROSS
+      from: J1.1
+      to: J2.1
+      passes:
+        - obstacle: U1.2
+          side: left      # looking along the direction of travel
+          reason: Going over the MCU leaves the lower half of the board for SENSE.
+```
+
+Nothing there is a coordinate, which is the point: move a part and the sketch is
+still true, so only the tightening re-runs. Flip `side` to `right` and the same
+sketch produces a different board.
+
+```bash
+.venv/bin/aipcb route check examples/routing-demo/design.yaml   # is it buildable?
+.venv/bin/aipcb route all   examples/routing-demo/design.yaml   # build it
+```
+
+Geometry comes from rubber-band tightening: obstacles are inflated by the clearance
+the net needs, the remaining free space is triangulated, the sketch picks a homotopy
+class, and the funnel algorithm pulls the wire taut inside it. Because the obstacles
+were inflated *first*, the shortest path through what is left is automatically a
+legal one — clearance holds by construction rather than being checked and patched.
+
+Connections without a sketch get the shortest topology the triangulation allows.
+Every routed board in `examples/` passes `kicad-cli pcb drc` with **zero
+violations**, and `ldo-supply` routes completely — 13 of 13 connections, nothing
+left unconnected. Where a connection cannot be made on one layer, it is reported
+with a reason rather than silently skipped.
+
+The algorithm, the prior work behind it, and the several ways it can be got subtly
+wrong are in [`docs/topology.md`](docs/topology.md) and
+[ADR 0006](docs/decisions/0006-routing-approach.md).
+
 ### Reading part of a design
 
 An agent working on one corner of a board should not have to hold the whole thing
@@ -283,6 +325,8 @@ The three bundled examples build up from there:
   module instantiated like a function, with `count:` stamping out bypass caps.
 * [`examples/usb-port`](examples/usb-port/design.yaml) — a differential pair with
   an impedance target, skew budget, and routing intent.
+* [`examples/routing-demo`](examples/routing-demo/design.yaml) — exists for the
+  routing: a signal crossing the board past an MCU that is squarely in the way.
 
 ## Commands
 
@@ -292,6 +336,8 @@ The three bundled examples build up from there:
 | `aipcb build DESIGN` | compile to `.kicad_sch`, `.kicad_pcb`, `.kicad_pro` and the project library tables |
 | `aipcb check DESIGN` | build, run KiCad's ERC and DRC, report violations against the source |
 | `aipcb export DESIGN` | Gerbers, drill files, BOM and placement file into `out/` |
+| `aipcb route check DESIGN` | verify route topologies are realizable on this placement |
+| `aipcb route all DESIGN` | route the board and write tracks |
 | `aipcb summary DESIGN` | one-line-per-block overview |
 | `aipcb query ...` | read one module, component, net, net class or role |
 | `aipcb parts DESIGN` | list the parts the design's libraries provide |
@@ -311,7 +357,10 @@ unreadable.
 | M4 — check loop over `kicad-cli` ERC/DRC JSON | **done** |
 | M5 — query layer for partial reads | **done** |
 | M6 — incremental build preserving manual edits; Gerber export | **done** |
-| M7 — topological (rubber-band) routing | next (research) |
+| M7a — topology model and validation | **done** |
+| M7b — rubber-band stretcher, DRC-clean tracks | **done** |
+| M7c — congestion-aware auto-topology | next |
+| M7d — differential pairs, skew and length matching | |
 
 ## Documentation
 
@@ -323,7 +372,7 @@ unreadable.
 ## Development
 
 ```bash
-.venv/bin/pytest          # 338 tests, about 2 minutes (it runs KiCad for real)
+.venv/bin/pytest          # 435 tests, about 3 minutes (it runs KiCad for real)
 .venv/bin/ruff check .
 .venv/bin/mypy
 ```
