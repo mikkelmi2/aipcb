@@ -185,13 +185,62 @@ the triangulation allows. Unrouted connections are reported with a reason rather
 than being fatal — a partly routed board is a useful thing to open in KiCad and
 finish by hand.
 
+## Differential pairs
+
+A pair is not two nets that happen to run alongside each other — its impedance
+comes from the coupling between them. So a pair is tightened **once**, as a single
+centre-line wide enough for both traces and the gap between them, and the result is
+offset to either side:
+
+```
+   tighten one centre-line at 2w + gap            offset by ±(w + gap)/2
+   ────────────────────────────────────           ──────────────────────
+                                                   ══════════════════════  DIFF_P
+        ══════════════════════════════                                     gap
+                                                   ══════════════════════  DIFF_N
+```
+
+The gap is then correct everywhere by construction, including around corners, where
+Shapely's mitring handles the inside cutting in and the outside swinging wide. The
+two halves come out the same length except for that corner difference — which is
+the skew a real pair accumulates, and is measured against the class's `max_skew_mm`
+rather than assumed away. On the `diff-pair` example the halves come out at
+43.00 mm each, with 0.000 mm of skew.
+
+If a net class states an `impedance_ohm` but no `diff_pair_gap_mm`, the gap is
+estimated from the standard edge-coupled microstrip formula and **reported as an
+estimate**. When the target is not reachable by spacing at all — a 0.34 mm trace on
+a 0.7 mm dielectric can only span about 102–195 Ω however far apart the halves go —
+that is said plainly, because the answer is to change the trace width or the
+stackup, and clamping to the nearest gap would hide it.
+
+### When a pair cannot be coupled
+
+Coupled routing checks its own output and falls back to routing the halves
+separately rather than shipping something that only looks like a pair. It refuses
+when:
+
+* the net has other than exactly two pads per half, so its two ends are ambiguous;
+* the pads swap sides between the ends, which needs a crossover — two short opposed
+  jogs with the gap maintained through them — that is not built yet;
+* more than a quarter of each half would be fan-out, meaning the end pads are too
+  far apart for the run between them to be coupled at all;
+* the fan-out to the pads would not clear something, which is reported by name.
+
+Each refusal names the pair and what to change. The `usb-port` example is the
+instructive case: neither of its pairs can be coupled on that board, and both say
+why.
+
 ## What is not built yet
 
 * **Via hops** are modelled and validated but the stretcher rejects them, so every
   route is single-layer for now. The model is in place because it must be: adding
   it later would change the source format.
-* **Differential pairs** are declared and carry their impedance and skew budgets,
-  but coupled tightening and meander insertion are M7d.
+* **Length matching by meander insertion.** Skew is measured and reported against
+  the budget, but nothing lengthens the shorter half to close it. Meandering has to
+  happen in the slack the topology allows without disturbing the pair's coupling or
+  its clearances, and doing it badly is worse than not doing it.
+* **Pair crossovers**, as above.
 * **Arcs** at hull corners. Rubber-band tightening naturally produces any-angle
   segments, which is what SURF and TopoR emit and what every fab accepts; arcs are
   a refinement, not a correctness matter.

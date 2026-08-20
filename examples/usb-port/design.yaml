@@ -127,11 +127,13 @@ components:
   J2:
     part: CONN_BRK_1X04
     role: connector
-    reason: Whatever consumes this port plugs in here.
+    reason: Whatever consumes this port plugs in here. The pair is ordered to match
+      the series resistors so it reaches the header without crossing over -- the
+      router reports a crossover it cannot build, and this is the fix.
     pins:
       P1: VBUS
-      P2: DEV_DM
-      P3: DEV_DP
+      P2: DEV_DP
+      P3: DEV_DM
       P4: GND
 
 constraints:

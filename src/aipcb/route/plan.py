@@ -20,18 +20,26 @@ DRC-clean.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from itertools import pairwise
 
 from aipcb.diagnostics import Report
 from aipcb.kicad.sexpr import SNode
 from aipcb.model.layout import NetClass
 from aipcb.netlist import Netlist
+from aipcb.route.diffpair import DiffPair, find_pairs, skew_of, split_centre_line
 from aipcb.route.model import RouteTopology
-from aipcb.route.obstacles import Obstacle, convex_hull, extract_obstacles
+from aipcb.route.obstacles import (
+    Obstacle,
+    RoutingEnvironment,
+    convex_hull,
+    extract_obstacles,
+)
 from aipcb.route.stretch import (
     RouteRules,
     StretchError,
     StretchResult,
+    stretch_points,
     stretch_route,
 )
 from aipcb.route.triangulate import FreeSpaceError, build_triangulation
@@ -44,6 +52,12 @@ Point = tuple[float, float]
 #: a DRC error, so the routable area is eroded by it before anything is routed.
 EDGE_CLEARANCE = 0.5
 
+#: How much of a pair may be fan-out before it stops being worth calling coupled.
+#: A short uncoupled breakout at each end is normal and unavoidable -- pads are
+#: never at the pair's own pitch -- so this is a judgement call rather than a
+#: physical limit, and the actual figure is reported either way.
+MAX_UNCOUPLED = 0.25
+
 
 @dataclass(slots=True)
 class RoutedBoard:
@@ -51,6 +65,9 @@ class RoutedBoard:
 
     routed: list[StretchResult] = field(default_factory=list)
     endpoints: list[tuple[str, str]] = field(default_factory=list)
+    pairs: list[DiffPair] = field(default_factory=list)
+    """Differential pairs that were routed as pairs."""
+    skew: dict[str, float] = field(default_factory=dict)
     """The pads each routed result connects, positionally matching ``routed``."""
     failed: list[tuple[RouteTopology, str]] = field(default_factory=list)
     total_length: float = 0.0
@@ -249,7 +266,32 @@ def route_board(
         return rules_for(netlist, net, congestion).clearance
 
     placed: list[Obstacle] = []
+
+    # Pairs go first and are routed as pairs. Their impedance comes from the
+    # coupling between the two halves, so routing them independently would be
+    # routing something else that happens to have the same netlist.
+    done: set[tuple[str, str, str]] = set()
+    for pair in find_pairs(netlist, base, report):
+        results = _route_pair(board, netlist, pair, layer, congestion, placed, report)
+        if results is None:
+            continue
+        for result, start, end in results:
+            outcome.routed.append(result)
+            outcome.endpoints.append((start, end))
+            outcome.total_length += result.length
+            done.add((result.net, start, end))
+            placed.extend(
+                _track_obstacles(
+                    result, f"track:{result.net}/{start}>{end}", result.width / 2
+                )
+            )
+        outcome.pairs.append(pair)
+
     for route in planned:
+        if (route.net, route.from_, route.to) in done:
+            continue
+        if (route.net, route.to, route.from_) in done:
+            continue
         rules = rules_for(netlist, route.net, congestion)
         environment = extract_obstacles(board)
         for obstacle in placed:
@@ -291,3 +333,277 @@ def route_board(
         )
 
     return outcome
+
+
+def _route_pair(
+    board: SNode,
+    netlist: Netlist,
+    pair: DiffPair,
+    layer: str,
+    congestion: float,
+    placed: list[Obstacle],
+    report: Report,
+) -> list[tuple[StretchResult, str, str]] | None:
+    """Route both halves of a pair from one tightened centre-line."""
+    environment = extract_obstacles(board)
+    for obstacle in placed:
+        environment.obstacles[obstacle.name] = obstacle
+
+    both = frozenset({pair.positive, pair.negative})
+    base_rules = rules_for(netlist, pair.positive, congestion)
+    # The centre-line is tightened as though it were one fat track: both traces and
+    # the gap between them. Whatever clears that corridor clears the pair.
+    centre_rules = replace(base_rules, track_width=pair.corridor)
+
+    blocking = environment.blocking(
+        both,
+        layer,
+        clearance=centre_rules.clearance,
+        track_width=centre_rules.track_width,
+        clearance_of=lambda net: rules_for(netlist, net, congestion).clearance
+        if net
+        else 0.0,
+    )
+
+    start = _midpoint(environment, pair.starts)
+    end = _midpoint(environment, pair.ends)
+    if start is None or end is None:
+        return None
+
+    try:
+        triangulation = build_triangulation(
+            environment,
+            blocking,
+            edge_margin=EDGE_CLEARANCE + centre_rules.track_width / 2,
+        )
+        centre = stretch_points(
+            start, end, triangulation, centre_rules, label=f"pair {pair.key()}"
+        )
+    except (StretchError, FreeSpaceError) as exc:
+        reason = getattr(exc, "message", str(exc))
+        report.warning(
+            "diff-pair-not-coupled",
+            f"could not route {pair.key()} as a coupled pair: {reason}",
+            hint="the two halves will be routed separately, so the gap and the "
+            "skew budget are no longer guaranteed",
+            net=pair.positive,
+        )
+        return None
+
+    left, right = split_centre_line(centre, pair.pitch)
+    assignment = _assign_halves(environment, pair, left, right)
+    if assignment is None:
+        report.warning(
+            "diff-pair-not-coupled",
+            f"{pair.key()} would have to cross over between its two ends, which "
+            "coupled routing does not build yet",
+            hint="the halves will be routed separately, so the gap and the skew "
+            "budget are no longer guaranteed; swapping the two pads at one end "
+            "would remove the crossover",
+            net=pair.positive,
+        )
+        return None
+
+    results: list[tuple[StretchResult, str, str]] = []
+    for net, points, start_pad, end_pad in assignment:
+        joined = _join_to_pads(environment, points, start_pad, end_pad)
+        results.append(
+            (
+                StretchResult(
+                    net=net, layer=layer, points=joined, width=pair.width,
+                    crossings=len(centre),
+                ),
+                start_pad,
+                end_pad,
+            )
+        )
+
+    uncoupled = _uncoupled_fraction(results, centre)
+    if uncoupled > MAX_UNCOUPLED:
+        report.warning(
+            "diff-pair-not-coupled",
+            f"{pair.key()} would be {uncoupled * 100:.0f}% fan-out: its pads are too "
+            "far apart at one end for the pair to run coupled between them",
+            hint="place the two halves' end components side by side -- a `group` "
+            "constraint does that -- or accept the halves being routed separately",
+            net=pair.positive,
+        )
+        return None
+
+    if not _halves_are_clean(results[0][0].points, results[1][0].points):
+        report.warning(
+            "diff-pair-not-coupled",
+            f"{pair.key()} could not be fanned out to its pads without the two "
+            "halves touching",
+            hint="the halves will be routed separately; moving the pads further "
+            "apart, or giving the pair a wider gap, usually resolves it",
+            net=pair.positive,
+        )
+        return None
+
+    # The tightener guarantees clearance for the centre-line, but the fan-out at
+    # each end is constructed rather than tightened, so it has to be checked. A
+    # coupled pair that lands DRC violations is worse than two separately routed
+    # nets, whatever its gap is.
+    offender = _fan_out_collision(
+        results, environment, both, layer, base_rules, netlist, congestion
+    )
+    if offender is not None:
+        report.warning(
+            "diff-pair-not-coupled",
+            f"{pair.key()}'s fan-out to its pads would not clear {offender}",
+            hint="the halves will be routed separately, which keeps the board legal "
+            "at the cost of the gap; placing the end components at the pair's own "
+            "pitch removes the fan-out entirely",
+            net=pair.positive,
+        )
+        return None
+
+    report.info(
+        "diff-pair-coupled",
+        f"{pair.key()} routed as a coupled pair with a {pair.gap} mm gap; "
+        f"{uncoupled * 100:.0f}% of each half is fan-out at the ends",
+        net=pair.positive,
+    )
+
+    skew = skew_of(results[0][0], results[1][0])
+    if pair.max_skew is not None and skew > pair.max_skew:
+        report.warning(
+            "diff-pair-skew",
+            f"{pair.key()} is {skew:.3f} mm out of length, against a "
+            f"{pair.max_skew:.3f} mm budget",
+            hint="the mismatch comes from the outside of each bend being longer; "
+            "shorten the run, straighten it, or raise `max_skew_mm`",
+            net=pair.positive,
+        )
+    return results
+
+
+def _fan_out_collision(
+    results: list[tuple[StretchResult, str, str]],
+    environment: RoutingEnvironment,
+    nets: frozenset[str],
+    layer: str,
+    rules: RouteRules,
+    netlist: Netlist,
+    congestion: float,
+) -> str | None:
+    """Name the first obstacle a coupled pair's copper would not clear."""
+    from shapely.geometry import LineString
+    from shapely.geometry import Polygon as ShapelyPolygon
+
+    blocking = environment.blocking(
+        nets,
+        layer,
+        clearance=rules.clearance,
+        track_width=rules.track_width,
+        clearance_of=lambda net: rules_for(netlist, net, congestion).clearance
+        if net
+        else 0.0,
+    )
+    for result, _, _ in results:
+        if len(result.points) < 2:
+            continue
+        centre = LineString(result.points)
+        for obstacle in blocking:
+            if len(obstacle.polygon) < 3:
+                continue
+            if centre.intersects(ShapelyPolygon(obstacle.polygon)):
+                return obstacle.name
+    return None
+
+
+def _uncoupled_fraction(
+    results: list[tuple[StretchResult, str, str]], centre: list[Point]
+) -> float:
+    """How much of each half is fan-out rather than coupled run.
+
+    A pair is only a pair where the two halves are actually side by side. If the
+    pads at one end are far apart -- two separate resistors rather than two pins of
+    one connector -- most of the "pair" is really two independent breakouts, and the
+    impedance and skew guarantees do not hold across them. Measuring the excess of
+    each half over the centre-line says exactly how much.
+    """
+    centre_length = sum(math.dist(a, b) for a, b in pairwise(centre))
+    if centre_length <= 0:
+        return 1.0
+    worst = max(result.length for result, _, _ in results)
+    return max(0.0, (worst - centre_length) / worst)
+
+
+def _midpoint(
+    environment: RoutingEnvironment, pads: tuple[str, str]
+) -> Point | None:
+    first = environment.pad_centres.get(environment.resolve_pad(pads[0]) or "")
+    second = environment.pad_centres.get(environment.resolve_pad(pads[1]) or "")
+    if first is None or second is None:
+        return None
+    return ((first[0] + second[0]) / 2, (first[1] + second[1]) / 2)
+
+
+def _assign_halves(
+    environment: RoutingEnvironment,
+    pair: DiffPair,
+    left: list[Point],
+    right: list[Point],
+) -> list[tuple[str, list[Point], str, str]] | None:
+    """Decide which offset polyline belongs to which net.
+
+    The choice has to hold at *both* ends. A pair whose pads swap sides between the
+    connector and the destination has to cross over somewhere, and a crossover is a
+    deliberate construction -- two short opposed jogs with the gap maintained
+    through them -- not something that can be had by joining the offsets to
+    whichever pad is nearest. When the two ends disagree, this returns ``None`` and
+    the caller falls back to routing the halves separately, which is worse but
+    honest.
+    """
+    if not left or not right:
+        return None
+    located: dict[str, Point] = {}
+    for name in (*pair.starts, *pair.ends):
+        centre = environment.pad_centres.get(environment.resolve_pad(name) or "")
+        if centre is None:
+            return None
+        located[name] = centre
+
+    start = located[pair.starts[0]]
+    finish = located[pair.ends[0]]
+    start_left_is_positive = math.dist(left[0], start) <= math.dist(right[0], start)
+    end_left_is_positive = math.dist(left[-1], finish) <= math.dist(right[-1], finish)
+    if start_left_is_positive != end_left_is_positive:
+        return None
+
+    near, far = (left, right) if start_left_is_positive else (right, left)
+    return [
+        (pair.positive, near, pair.starts[0], pair.ends[0]),
+        (pair.negative, far, pair.starts[1], pair.ends[1]),
+    ]
+
+
+def _halves_are_clean(first: list[Point], second: list[Point]) -> bool:
+    """Whether the two halves stay apart along their whole length.
+
+    Joining an offset polyline to its pads adds a short fan-out at each end, and
+    those fan-outs are the one part of a coupled pair that is not produced by the
+    tightener. If they cross, the pair is a short, so it is checked rather than
+    assumed.
+    """
+    from shapely.geometry import LineString
+
+    if len(first) < 2 or len(second) < 2:
+        return False
+    return not LineString(first).intersects(LineString(second))
+
+
+def _join_to_pads(
+    environment: RoutingEnvironment, points: list[Point], start_pad: str, end_pad: str
+) -> list[Point]:
+    """Fan the offset polyline's ends out to the pads they actually land on."""
+    start = environment.pad_centres.get(environment.resolve_pad(start_pad) or "")
+    end = environment.pad_centres.get(environment.resolve_pad(end_pad) or "")
+    joined = list(points)
+    if start is not None:
+        joined[0] = start
+    if end is not None:
+        joined[-1] = end
+    return joined

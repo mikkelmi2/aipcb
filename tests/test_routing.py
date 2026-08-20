@@ -13,6 +13,7 @@ import json
 import math
 import subprocess
 import sys
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,7 @@ from aipcb.route.triangulate import build_triangulation, reduce_crossings
 
 from .conftest import REPO_ROOT, needs_kicad_cli, needs_kicad_libraries
 
-EXAMPLES = ("led-blinker", "ldo-supply", "usb-port")
+EXAMPLES = ("led-blinker", "ldo-supply", "usb-port", "routing-demo", "diff-pair")
 
 
 # ---------------------------------------------------------------------------
@@ -482,3 +483,136 @@ class TestCongestion:
         widths = [triangulation.gate_width(i) for i in range(len(triangulation.diagonals))]
         assert all(w > 0 for w in widths)
         assert max(widths) > min(widths), "a board has both wide and narrow corridors"
+
+
+class TestImpedanceEstimate:
+    """Deriving a pair's gap from its impedance target."""
+
+    def test_a_reachable_target_gives_a_gap(self) -> None:
+        from aipcb.route.diffpair import estimate_gap
+
+        gap = estimate_gap(100.0, width=0.2, height=0.2)
+        assert 0.0 < gap < 1.0
+
+    def test_a_wider_gap_means_higher_impedance(self) -> None:
+        from aipcb.route.diffpair import estimate_gap
+
+        assert estimate_gap(110.0, 0.2, 0.2) > estimate_gap(90.0, 0.2, 0.2)
+
+    def test_an_unreachable_target_is_refused_not_clamped(self) -> None:
+        """Clamping would hide that the trace width, not the gap, is wrong."""
+        from aipcb.route.diffpair import ImpedanceUnreachable, achievable_range, estimate_gap
+
+        low, _high = achievable_range(0.34, 0.7)
+        assert low > 90.0, "this width/stackup genuinely cannot reach 90 ohm"
+        with pytest.raises(ImpedanceUnreachable) as excinfo:
+            estimate_gap(90.0, 0.34, 0.7)
+        assert "outside" in str(excinfo.value)
+
+    def test_the_range_widens_as_the_trace_narrows(self) -> None:
+        _, narrow_high = achievable_range_for(0.15, 0.2)
+        _, wide_high = achievable_range_for(0.5, 0.2)
+        assert narrow_high > wide_high
+
+
+def achievable_range_for(width: float, height: float) -> tuple[float, float]:
+    from aipcb.route.diffpair import achievable_range
+
+    return achievable_range(width, height)
+
+
+class TestCentreLineSplit:
+    def test_offsets_run_the_same_way(self) -> None:
+        """Shapely's offset_curve keeps direction; reversing it swaps the halves."""
+        from aipcb.route.diffpair import split_centre_line
+
+        centre = [(0.0, 0.0), (10.0, 0.0)]
+        left, right = split_centre_line(centre, 0.5)
+        assert left[0][0] < left[-1][0]
+        assert right[0][0] < right[-1][0]
+
+    def test_the_gap_is_the_pitch(self) -> None:
+        from aipcb.route.diffpair import split_centre_line
+
+        left, right = split_centre_line([(0.0, 0.0), (10.0, 0.0)], 0.6)
+        assert abs(abs(left[0][1] - right[0][1]) - 0.6) < 1e-6
+
+    def test_a_corner_is_mitred(self) -> None:
+        """The inside of a bend cuts in and the outside swings wide."""
+        from aipcb.route.diffpair import split_centre_line
+
+        left, right = split_centre_line([(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)], 0.6)
+        inner = min(len_of(left), len_of(right))
+        outer = max(len_of(left), len_of(right))
+        assert inner < outer
+
+
+def len_of(points: list[tuple[float, float]]) -> float:
+    return sum(math.dist(a, b) for a, b in pairwise(points))
+
+
+@needs_kicad_libraries
+class TestDifferentialPairs:
+    def _route(self, name: str, tmp_path: Path):
+        report = Report()
+        result = build_design(
+            REPO_ROOT / "examples" / name / "design.yaml", out_dir=tmp_path, report=report
+        )
+        board = parse(
+            next(p for p in result.written if p.suffix == ".kicad_pcb").read_text(
+                encoding="utf-8"
+            )
+        )
+        topologies = tuple(result.netlist.layout.routes) if result.netlist.layout else ()
+        return route_board(board, result.netlist, report, topologies=topologies), report
+
+    def test_a_clean_pair_is_routed_coupled(self, tmp_path: Path) -> None:
+        routed, _ = self._route("diff-pair", tmp_path)
+        assert len(routed.pairs) == 1
+        pair = routed.pairs[0]
+        assert {pair.positive, pair.negative} == {"DIFF_P", "DIFF_N"}
+
+    def test_a_coupled_pair_has_matched_halves(self, tmp_path: Path) -> None:
+        """The point of routing one centre-line: the halves come out the same length."""
+        from aipcb.route.diffpair import skew_of
+
+        routed, _ = self._route("diff-pair", tmp_path)
+        pair = routed.pairs[0]
+        halves = [
+            result
+            for result, _, _ in routed.with_endpoints()
+            if result.net in (pair.positive, pair.negative)
+        ]
+        assert len(halves) == 2
+        assert pair.max_skew is not None
+        assert skew_of(halves[0], halves[1]) <= pair.max_skew
+
+    def test_the_gap_comes_from_the_net_class(self, tmp_path: Path) -> None:
+        routed, _ = self._route("diff-pair", tmp_path)
+        assert routed.pairs[0].gap == 0.2
+
+    def test_a_pair_it_cannot_couple_falls_back_and_says_why(self, tmp_path: Path) -> None:
+        """Silently routing something that only looks like a pair would be worse."""
+        routed, report = self._route("usb-port", tmp_path)
+        excuses = [d for d in report if d.code == "diff-pair-not-coupled"]
+        assert excuses, "usb-port's pairs cannot be coupled on that board"
+        assert all(d.message and d.hint for d in excuses)
+        assert not routed.pairs
+
+    def test_an_ambiguous_pair_is_left_alone(self, tmp_path: Path) -> None:
+        from aipcb.route.diffpair import find_pairs
+        from aipcb.route.obstacles import extract_obstacles
+
+        report = Report()
+        result = build_design(
+            REPO_ROOT / "examples" / "diff-pair" / "design.yaml",
+            out_dir=tmp_path, report=report,
+        )
+        board = parse(
+            next(p for p in result.written if p.suffix == ".kicad_pcb").read_text(
+                encoding="utf-8"
+            )
+        )
+        environment = extract_obstacles(board)
+        pairs = find_pairs(result.netlist, environment, report)
+        assert [p.key() for p in pairs] == ["DIFF_N+DIFF_P"]

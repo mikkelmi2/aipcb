@@ -249,6 +249,22 @@ violations**, and `ldo-supply` routes completely — 13 of 13 connections, nothi
 left unconnected. Where a connection cannot be made on one layer, it is reported
 with a reason rather than silently skipped.
 
+A differential pair is tightened *once*, as a single centre-line wide enough for
+both traces and the gap, then offset to either side — so the gap is right
+everywhere by construction and the halves come out the same length. Where a pair
+cannot honestly be coupled, it says so and routes the halves separately rather than
+shipping something that only looks like a pair:
+
+```
+info[diff-pair-coupled]: DIFF_N+DIFF_P routed as a coupled pair with a 0.2 mm gap;
+0% of each half is fan-out at the ends
+```
+
+```
+warning[diff-pair-not-coupled]: DEV_DM+DEV_DP would have to cross over between its
+two ends, which coupled routing does not build yet
+```
+
 The algorithm, the prior work behind it, and the several ways it can be got subtly
 wrong are in [`docs/topology.md`](docs/topology.md) and
 [ADR 0006](docs/decisions/0006-routing-approach.md).
@@ -333,6 +349,8 @@ The three bundled examples build up from there:
   an impedance target, skew budget, and routing intent.
 * [`examples/routing-demo`](examples/routing-demo/design.yaml) — exists for the
   routing: a signal crossing the board past an MCU that is squarely in the way.
+* [`examples/diff-pair`](examples/diff-pair/design.yaml) — a 100 Ω pair carried
+  across a board, routed as a coupled pair with zero skew.
 
 ## Commands
 
@@ -366,7 +384,7 @@ unreadable.
 | M7a — topology model and validation | **done** |
 | M7b — rubber-band stretcher, DRC-clean tracks | **done** |
 | M7c — congestion-aware auto-topology | **done** |
-| M7d — differential pairs, skew and length matching | |
+| M7d — differential pairs, impedance and skew | **partly**: coupled routing and skew reporting done; meander length-matching not built |
 
 ## Documentation
 
@@ -378,7 +396,7 @@ unreadable.
 ## Development
 
 ```bash
-.venv/bin/pytest          # 435 tests, about 3 minutes (it runs KiCad for real)
+.venv/bin/pytest          # 504 tests, about 3½ minutes (it runs KiCad for real)
 .venv/bin/ruff check .
 .venv/bin/mypy
 ```

@@ -1,0 +1,142 @@
+# A board that exists for the differential pair.
+#
+# A pair is only a pair where its two halves actually run side by side, and that
+# needs the pads at both ends to sit at roughly the pair's own pitch. Here they do:
+# the signal enters on two adjacent pins of one header and leaves on two adjacent
+# pins of another, so the whole run between them is coupled and the router says so.
+#
+# The usb-port example is the instructive counter-case. Its pairs cannot be coupled
+# on that board -- the series resistors are too far apart at one end, and the header
+# ordering forces a crossover -- and `aipcb route all` reports both, by name, rather
+# than routing something that only looks like a pair.
+
+name: diff-pair
+revision: A
+description: A 100 ohm differential pair carried across a board between two headers.
+
+libraries:
+  - ../library/passives.yaml
+  - ../library/connectors.yaml
+
+net_classes:
+  lvds:
+    trace_width_mm: 0.25
+    clearance_mm: 0.2
+    diff_pair_width_mm: 0.25
+    diff_pair_gap_mm: 0.2
+    impedance_ohm: 100.0
+    max_skew_mm: 0.5
+    prefer_layers: [F.Cu]
+    description: 100 ohm differential. The gap is stated rather than left to be
+      estimated, because the fabricator's stackup is the thing that decides it.
+  power:
+    trace_width_mm: 0.5
+    clearance_mm: 0.25
+
+nets:
+  DIFF_P:
+    class: lvds
+    impedance_ohm: 100.0
+    diff_pair: DIFF_N
+    description: Positive half. Declared from both sides, as a pair must be.
+  DIFF_N:
+    class: lvds
+    impedance_ohm: 100.0
+    diff_pair: DIFF_P
+    description: Negative half.
+  VCC:
+    class: power
+    voltage: 3.3
+  GND:
+    class: ground
+  VREF:
+    class: analog
+    voltage: 1.65
+    description: Half the rail, from the divider.
+
+components:
+  J1:
+    part: CONN_BRK_1X04
+    role: connector
+    reason: Where the pair enters. Pins 2 and 3 carry it, adjacent, so the fan-out
+      to the pair's own pitch is a millimetre rather than a detour.
+    pins:
+      P1: GND
+      P2: DIFF_P
+      P3: DIFF_N
+      P4: VREF
+
+  J2:
+    part: CONN_BRK_1X04
+    role: connector
+    reason: Where it leaves. The pair keeps the same order as at J1, so it reaches
+      this header without a crossover.
+    pins:
+      P1: GND
+      P2: DIFF_P
+      P3: DIFF_N
+      P4: VCC
+
+  J3:
+    part: CONN_PWR_1X02
+    role: connector
+    reason: Supply in. Nothing on this board generates power.
+    pins:
+      VIN: VCC
+      GND: GND
+
+  R1:
+    part: R_10K_0603
+    role: divider
+    reason: Upper leg of a reference divider. Deliberately *not* on the pair --
+      a third pad on either half would make its two ends ambiguous, and the router
+      says so rather than guessing which pads face each other.
+    pins:
+      "1": VCC
+      "2": VREF
+
+  R2:
+    part: R_10K_0603
+    role: divider
+    for: R1
+    reason: Lower leg. Same value, so the reference sits at half the rail.
+    pins:
+      "1": VREF
+      "2": GND
+
+  C1:
+    part: C_100N_0603
+    role: decoupling
+    for: J1
+    pins:
+      "1": VCC
+      "2": GND
+
+constraints:
+  - kind: group
+    name: divider
+    members: [R1, R2]
+    reason: The two legs of a divider belong together, or the reference picks up
+      whatever noise lies between them.
+
+layout:
+  outline:
+    shape: rect
+    width_mm: 60.0
+    height_mm: 30.0
+  stackup:
+    copper_layers: 2
+    thickness_mm: 1.6
+  placement:
+    margin_mm: 2.0
+    rules:
+      - members: [J1]
+        region_mm: [3, 8, 13, 22]
+        reason: Left edge.
+      - members: [J2]
+        region_mm: [46, 8, 56, 22]
+        reason: Right edge, with the whole board between them for the pair to run.
+      - members: [J3, R1, R2, C1]
+        region_mm: [18, 2, 44, 20]
+        reason: Supply, divider and decoupling along the top edge, clear of the
+          corridor the pair runs through.
