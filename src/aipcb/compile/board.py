@@ -1,0 +1,500 @@
+"""Compiling an elaborated netlist into a ``.kicad_pcb``.
+
+The board carries the same information as the schematic plus everything layer 2
+says about physical construction: the outline, the stackup, the net classes as real
+KiCad design rules, and footprints placed according to the design's intent.
+
+Footprint definitions are copied verbatim from KiCad's libraries and then adapted:
+the copy is renamed to its full library id, given a position and a UUID, its pads
+are attached to nets, and every item inside it gets a deterministic UUID of its
+own. Copying rather than modelling means a footprint's graphics, 3D models and
+manufacturer metadata all survive intact, including constructs this code knows
+nothing about.
+"""
+
+from __future__ import annotations
+
+import copy
+
+from aipcb.compile.place import BoardPlacement, plan_placement
+from aipcb.diagnostics import Report
+from aipcb.ids import element_uuid, net_codes
+from aipcb.kicad.footprints import Extent, footprint_extent, resolve_footprint
+from aipcb.kicad.sexpr import Atom, SNode, num, quoted, sym
+from aipcb.kicad.symbols import SymbolNotFound, resolve_symbol
+from aipcb.model.layout import BoardOutline, Layout, StackupLayer
+from aipcb.netlist import Netlist
+
+__all__ = ["BOARD_VERSION", "build_board", "standard_layers", "unconnected_net_name"]
+
+#: The ``.kicad_pcb`` format version this writer emits, as KiCad 9.0 writes it.
+BOARD_VERSION = "20241229"
+GENERATOR = "aipcb"
+GENERATOR_VERSION = "9.0"
+
+EDGE_WIDTH = 0.1
+#: KiCad's copper layer numbering: front is 0, back is 2, inner layers are 4, 6, …
+FRONT_CU = 0
+BACK_CU = 2
+
+_TECHNICAL_LAYERS: tuple[tuple[int, str, str, str], ...] = (
+    (9, "F.Adhes", "user", "F.Adhesive"),
+    (11, "B.Adhes", "user", "B.Adhesive"),
+    (13, "F.Paste", "user", ""),
+    (15, "B.Paste", "user", ""),
+    (5, "F.SilkS", "user", "F.Silkscreen"),
+    (7, "B.SilkS", "user", "B.Silkscreen"),
+    (1, "F.Mask", "user", ""),
+    (3, "B.Mask", "user", ""),
+    (17, "Dwgs.User", "user", "User.Drawings"),
+    (19, "Cmts.User", "user", "User.Comments"),
+    (21, "Eco1.User", "user", "User.Eco1"),
+    (23, "Eco2.User", "user", "User.Eco2"),
+    (25, "Edge.Cuts", "user", ""),
+    (27, "Margin", "user", ""),
+    (31, "F.CrtYd", "user", "F.Courtyard"),
+    (29, "B.CrtYd", "user", "B.Courtyard"),
+    (35, "F.Fab", "user", ""),
+    (33, "B.Fab", "user", ""),
+)
+
+
+def standard_layers(copper_count: int = 2) -> SNode:
+    """The layer table for a board with ``copper_count`` copper layers."""
+    node = SNode("layers")
+    node.add(SNode(str(FRONT_CU)).add(quoted("F.Cu"), sym("signal")))
+    for index in range(1, copper_count - 1):
+        number = 2 + index * 2
+        node.add(SNode(str(number)).add(quoted(f"In{index}.Cu"), sym("signal")))
+    node.add(SNode(str(BACK_CU)).add(quoted("B.Cu"), sym("signal")))
+    for number, name, kind, alias in _TECHNICAL_LAYERS:
+        entry = SNode(str(number)).add(quoted(name), sym(kind))
+        if alias:
+            entry.add(quoted(alias))
+        node.add(entry)
+    return node
+
+
+# ---------------------------------------------------------------------------
+# setup and stackup
+# ---------------------------------------------------------------------------
+
+
+def _stackup(layout: Layout | None) -> SNode:
+    """The physical stack, which is what impedance and DRC depend on."""
+    stack = layout.stackup if layout else None
+    copper_count = stack.copper_layers if stack else 2
+    total = stack.thickness_mm if stack else 1.6
+    finish = (stack.finish if stack else None) or "None"
+
+    node = SNode("stackup")
+    node.add(SNode("layer").add(quoted("F.SilkS"), SNode("type").add(quoted("Top Silk Screen"))))
+    node.add(SNode("layer").add(quoted("F.Paste"), SNode("type").add(quoted("Top Solder Paste"))))
+    node.add(
+        SNode("layer").add(
+            quoted("F.Mask"),
+            SNode("type").add(quoted("Top Solder Mask")),
+            SNode("thickness").add(num(0.01)),
+        )
+    )
+
+    declared = list(stack.layers) if stack and stack.layers else []
+    copper_thickness = 0.035
+    # The dielectric takes whatever the copper does not, so the total board
+    # thickness matches what the source asked for rather than drifting.
+    dielectric = max(total - copper_count * copper_thickness - 0.02, 0.05)
+    inner_dielectrics = max(copper_count - 1, 1)
+    per_dielectric = round(dielectric / inner_dielectrics, 4)
+
+    copper_names = ["F.Cu", *[f"In{i}.Cu" for i in range(1, copper_count - 1)], "B.Cu"]
+    for index, name in enumerate(copper_names):
+        node.add(
+            SNode("layer").add(
+                quoted(name),
+                SNode("type").add(quoted("copper")),
+                SNode("thickness").add(num(copper_thickness)),
+            )
+        )
+        if index < len(copper_names) - 1:
+            node.add(_dielectric(index + 1, per_dielectric, declared))
+
+    node.add(
+        SNode("layer").add(
+            quoted("B.Mask"),
+            SNode("type").add(quoted("Bottom Solder Mask")),
+            SNode("thickness").add(num(0.01)),
+        )
+    )
+    node.add(
+        SNode("layer").add(
+            quoted("B.Paste"), SNode("type").add(quoted("Bottom Solder Paste"))
+        )
+    )
+    node.add(
+        SNode("layer").add(quoted("B.SilkS"), SNode("type").add(quoted("Bottom Silk Screen")))
+    )
+    node.add(SNode("copper_finish").add(quoted(finish)))
+    node.add(SNode("dielectric_constraints").add(sym("no")))
+    return node
+
+
+def _dielectric(index: int, thickness: float, declared: list[StackupLayer]) -> SNode:
+    material = "FR4"
+    epsilon = 4.5
+    for layer in declared:
+        if layer.type in ("core", "prepreg"):
+            material = layer.material or material
+            epsilon = layer.epsilon_r or epsilon
+            break
+    return SNode("layer").add(
+        quoted(f"dielectric {index}"),
+        SNode("type").add(quoted("core")),
+        SNode("thickness").add(num(thickness)),
+        SNode("material").add(quoted(material)),
+        SNode("epsilon_r").add(num(epsilon)),
+        SNode("loss_tangent").add(num(0.02)),
+    )
+
+
+def _setup(layout: Layout | None) -> SNode:
+    node = SNode("setup")
+    node.add(_stackup(layout))
+    node.add(SNode("pad_to_mask_clearance").add(num(0)))
+    node.add(SNode("allow_soldermask_bridges_in_footprints").add(sym("no")))
+    node.add(SNode("tenting").add(sym("front"), sym("back")))
+    return node
+
+
+# ---------------------------------------------------------------------------
+# outline
+# ---------------------------------------------------------------------------
+
+
+def _outline(outline: BoardOutline | None, origin: tuple[float, float]) -> list[SNode]:
+    """Draw the board edge on ``Edge.Cuts``.
+
+    Without an edge KiCad has no board: DRC cannot tell inside from outside and
+    fabrication output is meaningless. A design that declares no outline gets a
+    rectangle big enough for what was placed, which is more useful than nothing.
+    """
+    if outline is None:
+        return []
+    ox, oy = origin
+    if outline.shape == "rect":
+        width = outline.width_mm or 100.0
+        height = outline.height_mm or 80.0
+        corners = [
+            (ox, oy), (ox + width, oy), (ox + width, oy + height), (ox, oy + height),
+        ]
+    else:
+        corners = [(ox + x, oy + y) for x, y in outline.points_mm]
+
+    segments: list[SNode] = []
+    for index, start in enumerate(corners):
+        end = corners[(index + 1) % len(corners)]
+        segments.append(
+            SNode("gr_line").add(
+                SNode("start").add(num(start[0]), num(start[1])),
+                SNode("end").add(num(end[0]), num(end[1])),
+                SNode("stroke").add(
+                    SNode("width").add(num(EDGE_WIDTH)), SNode("type").add(sym("default"))
+                ),
+                SNode("layer").add(quoted("Edge.Cuts")),
+                SNode("uuid").add(quoted(element_uuid("edge", index))),
+            )
+        )
+    return segments
+
+
+def _auto_outline(placement: BoardPlacement, extents: dict[str, Extent]) -> BoardOutline:
+    """A rectangle that contains everything placed, for designs with no outline."""
+    if not placement.positions:
+        return BoardOutline(shape="rect", width_mm=50.0, height_mm=50.0)
+    ox, oy = placement.origin
+    max_x = max_y = 0.0
+    for placed in placement.positions.values():
+        extent = extents.get(placed.refdes)
+        span_x = extent.max_x if extent else 1.0
+        span_y = extent.max_y if extent else 1.0
+        max_x = max(max_x, placed.x - ox + span_x)
+        max_y = max(max_y, placed.y - oy + span_y)
+    return BoardOutline(
+        shape="rect", width_mm=round(max_x + 5.0, 2), height_mm=round(max_y + 5.0, 2)
+    )
+
+
+# ---------------------------------------------------------------------------
+# footprints
+# ---------------------------------------------------------------------------
+
+#: Tokens a ``.kicad_mod`` file carries that a board's copy must not.
+_FILE_ONLY = ("version", "generator", "generator_version")
+
+
+def _adapt_footprint(
+    component_uuid: str,
+    lib_id: str,
+    source: SNode,
+    *,
+    refdes: str,
+    value: str,
+    x: float,
+    y: float,
+    rotation: float,
+    layer: str,
+    nets: dict[str, tuple[int, str]],
+    hier: tuple[str, ...],
+    sheet_file: str,
+    dnp: bool,
+) -> SNode:
+    """Turn a library footprint into a placed instance on the board."""
+    node = copy.deepcopy(source)
+    for token in _FILE_ONLY:
+        node.remove(token)
+    _set_head(node, lib_id)
+
+    node.remove("layer")
+    node.remove("uuid")
+    node.remove("at")
+    node.remove("path")
+    node.remove("sheetname")
+    node.remove("sheetfile")
+
+    # The name atom has to stay first; the header goes immediately after it, which
+    # is where KiCad writes layer/uuid/at in its own boards.
+    insert_at = 0
+    while insert_at < len(node.items) and isinstance(node.items[insert_at], Atom):
+        insert_at += 1
+    node.items[insert_at:insert_at] = [
+        SNode("layer").add(quoted(layer)),
+        SNode("uuid").add(quoted(component_uuid)),
+        SNode("at").add(num(x), num(y), num(rotation)),
+    ]
+
+    _set_property(node, "Reference", refdes, "F.SilkS", hier)
+    _set_property(node, "Value", value, "F.Fab", hier)
+
+    # The path is what ties this footprint to its schematic symbol; without it
+    # KiCad's schematic-parity check reports every part as missing.
+    node.add(SNode("path").add(quoted(f"/{component_uuid}")))
+    node.add(SNode("sheetname").add(quoted("/")))
+    node.add(SNode("sheetfile").add(quoted(sheet_file)))
+    if dnp:
+        node.add(SNode("attr").add(sym("dnp")))
+
+    _assign_uuids(node, hier)
+    _assign_nets(node, nets, hier)
+    return node
+
+
+def _set_head(node: SNode, name: str) -> None:
+    for index, item in enumerate(node.items):
+        if isinstance(item, Atom):
+            node.items[index] = quoted(name)
+            return
+    node.items.insert(0, quoted(name))
+
+
+def _set_property(
+    node: SNode, key: str, value: str, layer: str, hier: tuple[str, ...]
+) -> None:
+    """Set a footprint property, keeping the library's text placement."""
+    for prop in node.children("property"):
+        if prop.value(0) != key:
+            continue
+        atoms = [i for i, item in enumerate(prop.items) if isinstance(item, Atom)]
+        if len(atoms) >= 2:
+            prop.items[atoms[1]] = quoted(value)
+        prop.remove("uuid")
+        prop.add(SNode("uuid").add(quoted(element_uuid("fp-prop", *hier, key))))
+        return
+
+    node.add(
+        SNode("property").add(
+            quoted(key),
+            quoted(value),
+            SNode("at").add(num(0), num(0), num(0)),
+            SNode("layer").add(quoted(layer)),
+            SNode("uuid").add(quoted(element_uuid("fp-prop", *hier, key))),
+            SNode("effects").add(
+                SNode("font").add(
+                    SNode("size").add(num(1), num(1)), SNode("thickness").add(num(0.15))
+                )
+            ),
+        )
+    )
+
+
+def _assign_uuids(node: SNode, hier: tuple[str, ...]) -> None:
+    """Give each graphic and pad inside a footprint a deterministic UUID.
+
+    Only drawable items carry one. Stamping a uuid onto structural tokens such as
+    ``layer`` or ``descr`` produces a file KiCad refuses to open outright, with no
+    indication of which token is at fault.
+
+    Deriving the UUIDs from the component's source path and the item's position
+    within the footprint keeps them stable across rebuilds, which is what M6's
+    edit-preservation matches on.
+    """
+    counters: dict[str, int] = {}
+    for item in node.items:
+        if not isinstance(item, SNode) or not _takes_uuid(item.name):
+            continue
+        index = counters.get(item.name, 0)
+        counters[item.name] = index + 1
+        key = item.value(0) if item.name == "pad" else str(index)
+        item.remove("uuid")
+        item.add(
+            SNode("uuid").add(
+                quoted(element_uuid("fp", *hier, item.name, key or str(index)))
+            )
+        )
+
+
+def _takes_uuid(name: str) -> bool:
+    """Whether a footprint child is a drawable item, and so carries a UUID."""
+    return name.startswith("fp_") or name in ("pad", "zone", "dimension", "group")
+
+
+def _assign_nets(
+    node: SNode, nets: dict[str, tuple[int, str]], hier: tuple[str, ...]
+) -> None:
+    """Attach each pad to its net. Pads with no net simply carry none."""
+    for pad in node.children("pad"):
+        number = pad.value(0)
+        pad.remove("net")
+        if number is None:
+            continue
+        assignment = nets.get(number)
+        if assignment is None:
+            continue
+        code, name = assignment
+        pad.add(SNode("net").add(num(code), quoted(name)))
+
+
+# ---------------------------------------------------------------------------
+# the board
+# ---------------------------------------------------------------------------
+
+
+#: KiCad escapes these characters when it builds a net name.
+_NET_ESCAPES = {"/": "{slash}", "\\": "{backslash}", "{": "{lbrace}", "}": "{rbrace}"}
+
+
+def unconnected_net_name(refdes: str, pin_name: str, pad: str) -> str:
+    """Reproduce the name KiCad gives a pin that connects to nothing.
+
+    KiCad does not leave an unconnected pad netless: it invents a unique net per
+    pin so that the pad still belongs somewhere. Leaving those pads bare makes the
+    board disagree with the schematic, and ``--schematic-parity`` reports every one
+    of them. Matching the convention exactly is what gets parity to zero.
+    """
+    escaped = "".join(_NET_ESCAPES.get(ch, ch) for ch in pin_name)
+    return f"unconnected-({refdes}-{escaped}-Pad{pad})"
+
+
+def _unconnected_nets(netlist: Netlist) -> dict[str, dict[str, str]]:
+    """Per component, the synthetic net name for each of its unconnected pads."""
+    out: dict[str, dict[str, str]] = {}
+    for component in netlist.sorted_components():
+        if component.part is None:
+            continue
+        try:
+            symbol = resolve_symbol(component.part.symbol)
+        except SymbolNotFound:  # pragma: no cover - validation catches this earlier
+            continue
+        missing: dict[str, str] = {}
+        for pin in symbol.pins:
+            if pin.number in component.connections:
+                continue
+            missing[pin.number] = unconnected_net_name(
+                component.refdes, pin.name, pin.number
+            )
+        if missing:
+            out[component.refdes] = missing
+    return out
+
+
+def build_board(
+    netlist: Netlist, *, project: str | None = None, report: Report | None = None
+) -> SNode:
+    """Compile a netlist into a ``.kicad_pcb`` tree."""
+    project = project or netlist.name
+    layout: Layout | None = netlist.layout
+
+    footprints = {
+        component.refdes: resolve_footprint(component.part.footprint)
+        for component in netlist.sorted_components()
+        if component.part is not None
+    }
+    extents = {refdes: footprint_extent(fp) for refdes, fp in footprints.items()}
+    placement = plan_placement(netlist, report=report, extents=extents)
+
+    unconnected = _unconnected_nets(netlist)
+    synthetic = {name for pins in unconnected.values() for name in pins.values()}
+    codes = net_codes(set(netlist.nets) | synthetic)
+    copper_count = layout.stackup.copper_layers if layout else 2
+
+    root = SNode("kicad_pcb")
+    root.add(SNode("version").add(sym(BOARD_VERSION)))
+    root.add(SNode("generator").add(quoted(GENERATOR)))
+    root.add(SNode("generator_version").add(quoted(GENERATOR_VERSION)))
+    root.add(
+        SNode("general").add(
+            SNode("thickness").add(num(layout.stackup.thickness_mm if layout else 1.6)),
+            SNode("legacy_teardrops").add(sym("no")),
+        )
+    )
+    root.add(SNode("paper").add(quoted("A4")))
+    root.add(
+        SNode("title_block").add(
+            SNode("title").add(quoted(netlist.name)),
+            SNode("rev").add(quoted(netlist.revision)),
+        )
+    )
+    root.add(standard_layers(copper_count))
+    root.add(_setup(layout))
+
+    # Net 0 is KiCad's unconnected net and must come first.
+    root.add(SNode("net").add(num(0), quoted("")))
+    for name in sorted(set(netlist.nets) | synthetic):
+        root.add(SNode("net").add(num(codes[name]), quoted(name)))
+
+    sheet_file = f"{project}.kicad_sch"
+    for component in netlist.sorted_components():
+        if component.part is None:
+            continue
+        placed = placement.positions.get(component.refdes)
+        if placed is None:
+            continue
+        pad_nets = {
+            pin: (codes[net], net)
+            for pin, net in component.connections.items()
+            if net in codes
+        }
+        for pin, net in unconnected.get(component.refdes, {}).items():
+            pad_nets.setdefault(pin, (codes[net], net))
+        root.add(
+            _adapt_footprint(
+                component.uuid,
+                component.part.footprint,
+                footprints[component.refdes].node,
+                refdes=component.refdes,
+                value=component.display_value,
+                x=placed.x,
+                y=placed.y,
+                rotation=placed.rotation,
+                layer=placed.layer,
+                nets=pad_nets,
+                hier=component.hier,
+                sheet_file=sheet_file,
+                dnp=component.dnp,
+            )
+        )
+
+    outline = (layout.outline if layout else None) or _auto_outline(placement, extents)
+    for segment in _outline(outline, placement.origin):
+        root.add(segment)
+
+    root.add(SNode("embedded_fonts").add(sym("no")))
+    return root

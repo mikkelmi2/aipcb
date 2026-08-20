@@ -156,8 +156,8 @@ constraints:
 layout:
   outline:
     shape: rect
-    width_mm: 22.0
-    height_mm: 16.0
+    width_mm: 38.0
+    height_mm: 40.0
   stackup:
     copper_layers: 2
     thickness_mm: 1.6

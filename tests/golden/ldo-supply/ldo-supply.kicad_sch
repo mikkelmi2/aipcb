@@ -1340,13 +1340,14 @@
 		)
 		(uuid "025e4f4e-8ca3-5bcd-8c47-22910805b0a6")
 	)
-	(label "VOUT"
+	(global_label "VOUT"
+		(shape input)
 		(at 152.4 40.64 90)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "36898575-c90e-501b-9fd7-939e43805bb3")
 	)
@@ -1361,13 +1362,14 @@
 		)
 		(uuid "1be10538-b137-5665-83e4-78bbcd768693")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 152.4 55.88 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "4871b99f-7ed4-5d48-8934-c865ee660209")
 	)
@@ -1382,13 +1384,14 @@
 		)
 		(uuid "82e32cf5-26c1-5f38-b737-f4533946006c")
 	)
-	(label "VOUT"
+	(global_label "VOUT"
+		(shape input)
 		(at 50.8 86.36 90)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "db95ee88-708c-5a86-bc1f-3bf023ee13be")
 	)
@@ -1403,13 +1406,14 @@
 		)
 		(uuid "8da7fad3-1e05-55a2-b321-e7432fe89c16")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 50.8 101.6 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "eacb41f5-47cb-5a04-9ebc-7e80762db7fc")
 	)
@@ -1424,13 +1428,14 @@
 		)
 		(uuid "7d369029-67f4-5f1c-8aed-bcba9376d969")
 	)
-	(label "VIN"
+	(global_label "VIN"
+		(shape input)
 		(at 101.6 86.36 90)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "2f2d98ae-57b4-5623-965b-b5f271f97f6b")
 	)
@@ -1445,13 +1450,14 @@
 		)
 		(uuid "89e3f5a6-cb67-56c7-b049-2b89137d1f53")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 101.6 101.6 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "811181e9-0270-5eba-9445-849d218f5ff3")
 	)
@@ -1466,13 +1472,14 @@
 		)
 		(uuid "d75b3ec3-8883-582c-9ac4-3941f1c54638")
 	)
-	(label "VOUT"
+	(global_label "VOUT"
+		(shape input)
 		(at 152.4 86.36 90)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "55c207ed-75b7-59c7-a85c-ab7c94a972ac")
 	)
@@ -1487,13 +1494,14 @@
 		)
 		(uuid "b926d949-1c4c-596f-8ae8-588c68fa3166")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 152.4 101.6 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "a31acdd6-6f05-5c5a-b99d-8e8bbacc6853")
 	)
@@ -1508,13 +1516,14 @@
 		)
 		(uuid "ed52594f-17b5-5ac9-a4ed-d91dc10985c4")
 	)
-	(label "VIN"
+	(global_label "VIN"
+		(shape input)
 		(at 41.91 48.26 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "5f1b3fea-0502-5b37-be5d-7763b4a71dfe")
 	)
@@ -1529,13 +1538,14 @@
 		)
 		(uuid "29aec4e8-195d-5d0b-989a-7a27a0de84b5")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 41.91 50.8 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "16dc7b97-e7f5-5499-89df-6161fb18a030")
 	)
@@ -1550,13 +1560,14 @@
 		)
 		(uuid "597433dc-d4d7-5451-a376-31915ac84f1f")
 	)
-	(label "VOUT"
+	(global_label "VOUT"
+		(shape input)
 		(at 92.71 48.26 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "64063250-6c4f-5a06-9c5f-6d4586666fed")
 	)
@@ -1571,13 +1582,14 @@
 		)
 		(uuid "929aa441-92de-551a-82e3-9c13d5661719")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 92.71 50.8 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "c190d181-6c9f-5dbb-96ff-29e82cb93e64")
 	)
@@ -1592,13 +1604,14 @@
 		)
 		(uuid "7ccc0787-bbb1-5583-8df9-9bb9c09bc6a4")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 50.8 151.13 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "f5bfbc6c-e03a-50e3-a17f-d6e3f49750e8")
 	)
@@ -1613,13 +1626,14 @@
 		)
 		(uuid "d7c0f536-6321-59ae-868a-da981fa67aaa")
 	)
-	(label "VOUT"
+	(global_label "VOUT"
+		(shape input)
 		(at 62.23 139.7 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "24bb3073-6683-5e7b-8c52-a7d69edb83f6")
 	)
@@ -1634,13 +1648,14 @@
 		)
 		(uuid "3d4b6814-1e03-506d-a2b2-2431f9b8eacd")
 	)
-	(label "VIN"
+	(global_label "VIN"
+		(shape input)
 		(at 39.37 139.7 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "ee13549e-afcc-536a-9c0c-bec551002127")
 	)
@@ -1655,13 +1670,14 @@
 		)
 		(uuid "4fa05bd6-b1a3-5f92-9715-e4e10cf1cc14")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 101.6 143.51 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "6fbe9e00-da18-523c-91cf-9a5c129b80db")
 	)
@@ -1676,13 +1692,14 @@
 		)
 		(uuid "1f68958f-d5e7-5b1d-8fda-d920fbc77679")
 	)
-	(label "VIN"
+	(global_label "VIN"
+		(shape input)
 		(at 152.4 143.51 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "b09435b2-8c1f-5a2c-a6e2-fcd5869eb20d")
 	)
