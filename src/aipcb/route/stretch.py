@@ -73,6 +73,13 @@ class RouteRules:
     clearance: float = 0.2
     via_diameter: float = 0.6
     via_drill: float = 0.3
+    congestion: float = 0.0
+    """How hard to avoid narrow gaps. Zero routes purely for length."""
+
+    @property
+    def corridor(self) -> float:
+        """The width of free space one track needs, clearance on both sides."""
+        return self.track_width + 2 * self.clearance
 
 
 @dataclass(slots=True)
@@ -197,7 +204,7 @@ def stretch_route(
         )
 
     guides = _guide_points(route, environment, start, end, rules)
-    crossings, first_triangle = _crossings(guides, triangulation, route)
+    crossings, first_triangle = _crossings(guides, triangulation, route, rules)
     reduced = reduce_crossings(crossings)
     sleeve = triangulation.sleeve(reduced, first_triangle)
 
@@ -277,7 +284,10 @@ def _find_obstacle(environment: RoutingEnvironment, reference: str) -> Obstacle 
 
 
 def _crossings(
-    guides: list[Point], triangulation: Triangulation, route: RouteTopology
+    guides: list[Point],
+    triangulation: Triangulation,
+    route: RouteTopology,
+    rules: RouteRules,
 ) -> tuple[list[int], int]:
     """Join the guide points into one crossing sequence.
 
@@ -310,7 +320,12 @@ def _crossings(
     sequence: list[int] = []
     for index in range(len(guides) - 1):
         leg = triangulation.portal_path(
-            guides[index], located[index], guides[index + 1], located[index + 1]
+            guides[index],
+            located[index],
+            guides[index + 1],
+            located[index + 1],
+            corridor=rules.corridor,
+            congestion=rules.congestion,
         )
         if not leg and located[index] != located[index + 1]:
             raise StretchError(

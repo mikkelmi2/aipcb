@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Annotated
 import typer
 
 from aipcb.diagnostics import AipcbError, Report
+from aipcb.route.plan import DEFAULT_CONGESTION
 from aipcb.source import SourceError
 
 if TYPE_CHECKING:  # pragma: no cover - imported only for annotations
@@ -81,6 +82,14 @@ def route_all(
         typer.Option("--out", "-o", help="Output directory. Defaults to the design's."),
     ] = None,
     layer: Annotated[str, typer.Option("--layer", help="Layer to route on.")] = "F.Cu",
+    congestion: Annotated[
+        float,
+        typer.Option(
+            "--congestion",
+            help="How hard to avoid narrow gaps. 0 routes purely for length.",
+            min=0.0,
+        ),
+    ] = DEFAULT_CONGESTION,
     as_json: JsonOpt = False,
 ) -> None:
     """Build a design and route it, writing tracks into the board."""
@@ -94,7 +103,12 @@ def route_all(
         result, board_path, board = _build(design, target, report)
         topologies = tuple(result.netlist.layout.routes) if result.netlist.layout else ()
         routed = route_board(
-            board, result.netlist, report, layer=layer, topologies=topologies
+            board,
+            result.netlist,
+            report,
+            layer=layer,
+            topologies=topologies,
+            congestion=congestion,
         )
         count = attach_tracks(
             board, routed.with_endpoints(), sorted(result.netlist.nets)
