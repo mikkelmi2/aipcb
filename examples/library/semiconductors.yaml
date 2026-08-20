@@ -4,6 +4,7 @@ parts:
   ATTINY85_DIP8:
     description: Microchip ATtiny85, 8-bit AVR MCU, 8-pin DIP
     symbol: MCU_Microchip_ATtiny:ATtiny85-20P
+    refdes_prefix: U
     footprint: Package_DIP:DIP-8_W7.62mm
     value: ATtiny85-20PU
     keywords: [mcu, avr, microcontroller]
@@ -27,6 +28,7 @@ parts:
   AMS1117_3V3:
     description: AMS1117-3.3, 1 A fixed 3.3 V LDO regulator, SOT-223
     symbol: Regulator_Linear:AMS1117-3.3
+    refdes_prefix: U
     footprint: Package_TO_SOT_SMD:SOT-223-3_TabPin2
     value: AMS1117-3.3
     keywords: [ldo, regulator, linear]

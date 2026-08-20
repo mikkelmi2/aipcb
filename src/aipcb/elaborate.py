@@ -485,11 +485,22 @@ def _with_refdes(component: ElabComponent, refdes: str) -> ElabComponent:
 
 
 def _refdes_prefix(component: ElabComponent) -> str:
-    """Pick a designator prefix: the component's own name, else its role, else ``U``."""
+    """Pick the designator letters for an auto-numbered component.
+
+    The part's own ``refdes_prefix`` wins, because BOM tools, pick-and-place files
+    and assembly houses all read the prefix as the component class -- a capacitor
+    called ``CIN1`` sorts and filters as its own kind of thing. Falling back to the
+    source name's leading letters keeps designators meaningful for parts that do
+    not declare one.
+
+    Deliberately not read from the KiCad symbol: that would make designators depend
+    on whether KiCad is installed, and the same source must always produce the same
+    board.
+    """
+    if component.part is not None and component.part.refdes_prefix:
+        return component.part.refdes_prefix
     leading = re.match(r"^([A-Za-z]+)", component.hier[-1])
-    if leading:
-        return leading.group(1).upper()
-    return "U"
+    return leading.group(1).upper() if leading else "U"
 
 
 def _numbered(items: tuple[Any, ...]) -> list[tuple[Any, int]]:

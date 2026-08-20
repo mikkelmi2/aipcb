@@ -547,7 +547,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "1e163d93-9109-5e70-a2d7-66b32c6d38fe")
-		(property "Reference" "CBYP1"
+		(property "Reference" "C1"
 			(at 152.4 30.48 0)
 			(effects
 				(font
@@ -626,7 +626,7 @@
 		(instances
 			(project "ldo-supply"
 				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
-					(reference "CBYP1")
+					(reference "C1")
 					(unit 1)
 				)
 			)
@@ -641,7 +641,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "d642be6d-172b-5948-a771-d0a34dca2cff")
-		(property "Reference" "CBYP2"
+		(property "Reference" "C2"
 			(at 50.8 76.2 0)
 			(effects
 				(font
@@ -720,7 +720,7 @@
 		(instances
 			(project "ldo-supply"
 				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
-					(reference "CBYP2")
+					(reference "C2")
 					(unit 1)
 				)
 			)
@@ -735,7 +735,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "b5972a8f-fb37-54f6-9f37-680ae773b0f1")
-		(property "Reference" "CIN1"
+		(property "Reference" "C3"
 			(at 101.6 76.2 0)
 			(effects
 				(font
@@ -814,7 +814,7 @@
 		(instances
 			(project "ldo-supply"
 				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
-					(reference "CIN1")
+					(reference "C3")
 					(unit 1)
 				)
 			)
@@ -829,7 +829,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "22d7d880-a1df-5931-a7b8-de9f29c4923b")
-		(property "Reference" "COUT1"
+		(property "Reference" "C4"
 			(at 152.4 76.2 0)
 			(effects
 				(font
@@ -908,7 +908,7 @@
 		(instances
 			(project "ldo-supply"
 				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
-					(reference "COUT1")
+					(reference "C4")
 					(unit 1)
 				)
 			)
