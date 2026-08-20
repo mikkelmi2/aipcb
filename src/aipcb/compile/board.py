@@ -273,6 +273,15 @@ def _adapt_footprint(
 
     _set_property(node, "Reference", refdes, "F.SilkS", hier)
     _set_property(node, "Value", value, "F.Fab", hier)
+    # Every other property keeps the library's text but must not keep the library's
+    # UUID: that id is fixed in the .kicad_mod, so all seven 0603 resistors on a
+    # board would otherwise share one.
+    for prop in node.children("property"):
+        key = prop.value(0)
+        if key in (None, "Reference", "Value"):
+            continue
+        prop.remove("uuid")
+        prop.add(SNode("uuid").add(quoted(element_uuid("fp-prop", *hier, key))))
 
     # The path is what ties this footprint to its schematic symbol; without it
     # KiCad's schematic-parity check reports every part as missing.

@@ -142,6 +142,56 @@ def build(
 
 
 @app.command()
+def check(
+    design: DesignArg,
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", "-o", help="Keep the generated KiCad files here."),
+    ] = None,
+    as_json: JsonOpt = False,
+    skip_erc: Annotated[bool, typer.Option("--no-erc", help="Skip the ERC run.")] = False,
+    skip_drc: Annotated[bool, typer.Option("--no-drc", help="Skip the DRC run.")] = False,
+) -> None:
+    """Build a design and run KiCad's ERC and DRC against it.
+
+    Violations are reported against the source that produced them, not against
+    coordinates on a sheet.
+    """
+    from aipcb.checks.loop import check_design
+
+    report = Report()
+    try:
+        result = check_design(
+            design,
+            out_dir=out,
+            report=report,
+            schematic=not skip_erc,
+            board=not skip_drc,
+        )
+    except SourceError as exc:
+        _err(f"error: {exc}")
+        raise typer.Exit(EXIT_UNREADABLE) from exc
+    except AipcbError as exc:
+        _emit(exc.report, as_json)
+        raise typer.Exit(EXIT_ERRORS) from exc
+
+    if as_json:
+        payload = report.to_dict()
+        payload["summary"] = result.summary()
+        typer.echo(json.dumps(payload, indent=2))
+    else:
+        typer.echo(report.render(color=sys.stdout.isatty()))
+        summary = result.summary()
+        typer.echo(
+            f"{summary['design']} rev {summary['revision']}: "
+            f"{summary['components']} components, {summary['nets']} nets  "
+            f"[erc {'ran' if result.erc.ran else 'skipped'}, "
+            f"drc {'ran' if result.drc.ran else 'skipped'}]"
+        )
+    raise typer.Exit(EXIT_ERRORS if not report.ok else EXIT_OK)
+
+
+@app.command()
 def parts(
     design: DesignArg,
     as_json: JsonOpt = False,
