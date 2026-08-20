@@ -162,6 +162,49 @@ A UUID that does not map is reported too, and says what it means: the board
 contains something `aipcb` did not generate, so a human added it in KiCad and that
 is where the fix belongs. That case becomes load-bearing in M6.
 
+### Your edits survive a rebuild
+
+`aipcb build` is incremental. Open the generated board in KiCad, move a connector,
+route a pair by hand, pour a zone — then rebuild:
+
+```
+info[preserved-edits]: kept manual work from the existing board: 7 hand-placed
+footprints; 1 segment, 1 zone
+  hint: run `aipcb build --fresh` to regenerate from source instead
+```
+
+The rule is one sentence: **the source owns what it declares; everything else
+belongs to the person who drew it.** Every generated footprint records a
+fingerprint of the source facts that determine it — its part, its connections, its
+side, the constraints naming it. If that fingerprint still matches, your position
+stands. If the source changed its mind, the source wins and says so:
+
+```
+info[placement-regenerated]: 1 footprint moved because the source changed: R1
+```
+
+Editing a `reason:` does not count as changing your mind, so improving a comment
+never shoves a hand-placed part back onto the grid.
+
+Copper belonging to a net the design no longer has *is* removed, with a warning —
+an orphaned track is a short waiting to happen. And a board file that cannot be
+parsed is never silently overwritten; it might be hours of somebody's routing.
+
+### Fabrication output
+
+```bash
+.venv/bin/aipcb export examples/usb-port/design.yaml --out fab/
+```
+
+```
+exported 14 files to fab/ (gerbers, drill, position, bom)
+```
+
+Gerbers for every copper and technical layer, Excellon drill files with a drill
+map, a `.gbrjob`, a grouped BOM carrying the descriptions from your component
+database, and a placement file. That is the whole path: source → fab data, with no
+step that required opening a GUI.
+
 ### Reading part of a design
 
 An agent working on one corner of a board should not have to hold the whole thing
@@ -248,6 +291,7 @@ The three bundled examples build up from there:
 | `aipcb validate DESIGN` | schema and semantic checks, with source-referenced diagnostics |
 | `aipcb build DESIGN` | compile to `.kicad_sch`, `.kicad_pcb`, `.kicad_pro` and the project library tables |
 | `aipcb check DESIGN` | build, run KiCad's ERC and DRC, report violations against the source |
+| `aipcb export DESIGN` | Gerbers, drill files, BOM and placement file into `out/` |
 | `aipcb summary DESIGN` | one-line-per-block overview |
 | `aipcb query ...` | read one module, component, net, net class or role |
 | `aipcb parts DESIGN` | list the parts the design's libraries provide |
@@ -266,8 +310,8 @@ unreadable.
 | M3 — netlist and board skeleton | **done** |
 | M4 — check loop over `kicad-cli` ERC/DRC JSON | **done** |
 | M5 — query layer for partial reads | **done** |
-| M6 — incremental build preserving manual edits; Gerber export | next |
-| M7 — topological (rubber-band) routing | research |
+| M6 — incremental build preserving manual edits; Gerber export | **done** |
+| M7 — topological (rubber-band) routing | next (research) |
 
 ## Documentation
 
@@ -279,7 +323,7 @@ unreadable.
 ## Development
 
 ```bash
-.venv/bin/pytest          # 308 tests, about 2 minutes (it runs KiCad for real)
+.venv/bin/pytest          # 338 tests, about 2 minutes (it runs KiCad for real)
 .venv/bin/ruff check .
 .venv/bin/mypy
 ```

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from aipcb.compile.preserve import FINGERPRINT_PROPERTY
 from aipcb.ids import element_uuid
 from aipcb.kicad.footprints import FootprintNotFound, resolve_footprint
 from aipcb.kicad.sexpr import SNode
@@ -196,7 +197,9 @@ def _index_footprint_items(index: UuidIndex, component: ElabComponent) -> None:
         counters[item.name] = position + 1
         index.add(element_uuid("fp", *component.hier, item.name, str(position)), body)
 
-    for key in ("Reference", "Value"):
+    # Reference and Value are always rewritten, and the fingerprint is added by the
+    # board writer, so none of the three need exist in the library footprint.
+    for key in ("Reference", "Value", FINGERPRINT_PROPERTY):
         index.add(
             element_uuid("fp-prop", *component.hier, key),
             SourceRef(

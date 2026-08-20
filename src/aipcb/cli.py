@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -115,13 +115,24 @@ def build(
         typer.Option("--out", "-o", help="Output directory. Defaults to the design's."),
     ] = None,
     as_json: JsonOpt = False,
+    fresh: Annotated[
+        bool,
+        typer.Option(
+            "--fresh",
+            help="Regenerate from source, discarding manual edits to an existing board.",
+        ),
+    ] = False,
 ) -> None:
-    """Compile a design into KiCad files."""
+    """Compile a design into KiCad files.
+
+    Incremental by default: an existing board is read first, and hand-placed
+    footprints, hand-routed copper and hand-drawn zones are carried over.
+    """
     from aipcb.compile.build import build_design
 
     report = Report()
     try:
-        result = build_design(design, out_dir=out, report=report)
+        result = build_design(design, out_dir=out, report=report, fresh=fresh)
     except SourceError as exc:
         _err(f"error: {exc}")
         raise typer.Exit(EXIT_UNREADABLE) from exc
@@ -133,12 +144,76 @@ def build(
         payload = report.to_dict()
         payload["outputs"] = [str(p) for p in result.written]
         payload["design"] = {"name": result.netlist.name, **result.netlist.stats()}
+        if result.merge is not None:
+            payload["preserved"] = result.merge.to_dict()
         typer.echo(json.dumps(payload, indent=2))
     else:
         typer.echo(report.render(color=sys.stdout.isatty(), summary=bool(report)))
         for path in result.written:
             typer.echo(f"wrote {path}")
     raise typer.Exit(EXIT_ERRORS if not report.ok else EXIT_OK)
+
+
+@app.command()
+def export(
+    design: DesignArg,
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", "-o", help="Where the fabrication files go."),
+    ] = None,
+    as_json: JsonOpt = False,
+    keep_build: Annotated[
+        Path | None,
+        typer.Option("--build-dir", help="Keep the intermediate KiCad files here."),
+    ] = None,
+) -> None:
+    """Build a design and export Gerbers, drill files, a BOM and a placement file."""
+    import tempfile
+
+    from aipcb.compile.build import build_design
+    from aipcb.compile.export import export_board
+
+    report = Report()
+    target = out or (design.parent / "out")
+
+    def run(build_dir: Path) -> Any:
+        result = build_design(design, out_dir=build_dir, report=report)
+        board = next((p for p in result.written if p.suffix == ".kicad_pcb"), None)
+        sch = next((p for p in result.written if p.suffix == ".kicad_sch"), None)
+        if board is None:
+            raise AipcbError("no board was produced", report)
+        return export_board(board, target, result.netlist, report, schematic=sch)
+
+    try:
+        if keep_build is not None:
+            keep_build.mkdir(parents=True, exist_ok=True)
+            exported = run(keep_build)
+        else:
+            with tempfile.TemporaryDirectory(prefix="aipcb-export-") as tmp:
+                exported = run(Path(tmp))
+    except SourceError as exc:
+        _err(f"error: {exc}")
+        raise typer.Exit(EXIT_UNREADABLE) from exc
+    except AipcbError as exc:
+        _emit(exc.report, as_json)
+        raise typer.Exit(EXIT_ERRORS) from exc
+
+    if as_json:
+        payload = report.to_dict()
+        payload["export"] = {
+            "directory": str(exported.directory),
+            "steps": exported.steps,
+            "files": [str(p) for p in exported.files],
+            "by_suffix": exported.by_suffix(),
+        }
+        typer.echo(json.dumps(payload, indent=2))
+    else:
+        typer.echo(report.render(color=sys.stdout.isatty(), summary=bool(report)))
+        typer.echo(
+            f"exported {len(exported.files)} files to {exported.directory} "
+            f"({', '.join(exported.steps) or 'nothing'})"
+        )
+    raise typer.Exit(EXIT_ERRORS if not (report.ok and exported.ok) else EXIT_OK)
 
 
 @app.command()
