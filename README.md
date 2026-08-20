@@ -90,6 +90,30 @@ which is what the agent loop consumes:
 .venv/bin/aipcb validate examples/usb-port/design.yaml --json
 ```
 
+### Compiling
+
+```bash
+.venv/bin/aipcb build examples/usb-port/design.yaml --out build/
+kicad-cli sch erc --severity-all build/usb-port.kicad_sch
+```
+
+```
+Found 0 violations
+```
+
+The build writes a `.kicad_sch`, a `.kicad_pro` carrying the net classes as KiCad
+design rules, and project-local `sym-lib-table` / `fp-lib-table` files. Open the
+schematic in KiCad and it renders, checks, and plots like any other.
+
+Connectivity is expressed with net labels on pin stubs rather than routed wires,
+and symbols are laid out on a grid grouped by module instance. That is deliberate:
+placement is naive, connectivity is exact. The test suite does not take ERC's word
+for it either — it exports KiCad's own netlist and asserts it matches the source
+net for net, pin for pin.
+
+Rebuild without changing anything and the output is byte-identical, so the file is
+not even rewritten.
+
 ### A minimal design
 
 ```yaml
@@ -128,6 +152,7 @@ The three bundled examples build up from there:
 | Command | What it does |
 |---|---|
 | `aipcb validate DESIGN` | schema and semantic checks, with source-referenced diagnostics |
+| `aipcb build DESIGN` | compile to `.kicad_sch`, `.kicad_pro` and the project library tables |
 | `aipcb parts DESIGN` | list the parts the design's libraries provide |
 | `aipcb schema` | emit the JSON Schema for the source format, for editor completion |
 | `aipcb version` | report the aipcb and KiCad versions in use |
@@ -140,8 +165,8 @@ unreadable.
 | Milestone | State |
 |---|---|
 | M1 — format, validation, examples | **done** |
-| M2 — schematic compile (`.kicad_sch`, passes ERC) | next |
-| M3 — netlist and board skeleton | |
+| M2 — schematic compile (`.kicad_sch`, passes ERC) | **done** |
+| M3 — netlist and board skeleton | next |
 | M4 — check loop over `kicad-cli` ERC/DRC JSON | |
 | M5 — query layer for partial reads | |
 | M6 — incremental build preserving manual edits; Gerber export | |
@@ -157,7 +182,7 @@ unreadable.
 ## Development
 
 ```bash
-.venv/bin/pytest          # 141 tests
+.venv/bin/pytest          # 181 tests
 .venv/bin/ruff check .
 .venv/bin/mypy
 ```
