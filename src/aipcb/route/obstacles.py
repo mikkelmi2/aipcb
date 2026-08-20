@@ -51,7 +51,7 @@ class Obstacle:
     layers: frozenset[str] = frozenset()
     kind: str = "pad"
 
-    def blocks(self, net: str, layer: str) -> bool:
+    def blocks(self, net: str | frozenset[str], layer: str) -> bool:
         """Whether this obstacle is in the way of a route on ``net`` and ``layer``.
 
         A component body does not block copper. A courtyard states how much room a
@@ -62,7 +62,8 @@ class Obstacle:
         """
         if self.kind == "body":
             return False
-        if self.net is not None and self.net == net:
+        own = {net} if isinstance(net, str) else net
+        if self.net is not None and self.net in own:
             return False
         return not self.layers or layer in self.layers or "*.Cu" in self.layers
 
@@ -98,7 +99,7 @@ class RoutingEnvironment:
 
     def blocking(
         self,
-        net: str,
+        net: str | frozenset[str],
         layer: str,
         *,
         clearance: float = 0.2,

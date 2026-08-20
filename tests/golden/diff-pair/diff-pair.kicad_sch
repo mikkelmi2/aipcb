@@ -5,39 +5,38 @@
 	(uuid "fac7359a-0697-5d85-9732-947d62b06bc7")
 	(paper "A4")
 	(title_block
-		(title "usb-port")
+		(title "diff-pair")
 		(rev "A")
 		(company "")
-		(comment 1 "USB Micro-B receptacle broken out to a 4-pin header, with series resistors and ESD-friendly grounding.")
+		(comment 1 "A 100 ohm differential pair carried across a board between two headers.")
 	)
 	(lib_symbols
-		(symbol "Connector:USB_B_Micro"
+		(symbol "Connector_Generic:Conn_01x02"
 			(pin_names
 				(offset 1.016)
+				(hide yes)
 			)
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
 			(property "Reference" "J"
-				(at -5.08 11.43 0)
+				(at 0 2.54 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify left)
 				)
 			)
-			(property "Value" "USB_B_Micro"
-				(at -5.08 8.89 0)
+			(property "Value" "Conn_01x02"
+				(at 0 -5.08 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify left)
 				)
 			)
 			(property "Footprint" ""
-				(at 3.81 -1.27 0)
+				(at 0 0 0)
 				(effects
 					(font
 						(size 1.27 1.27)
@@ -46,15 +45,6 @@
 				)
 			)
 			(property "Datasheet" "~"
-				(at 3.81 -1.27 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Description" "USB Micro Type B connector"
 				(at 0 0 0)
 				(effects
 					(font
@@ -63,7 +53,7 @@
 					(hide yes)
 				)
 			)
-			(property "ki_keywords" "connector USB micro"
+			(property "Description" "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)"
 				(at 0 0 0)
 				(effects
 					(font
@@ -72,7 +62,7 @@
 					(hide yes)
 				)
 			)
-			(property "ki_fp_filters" "USB*Micro*B*"
+			(property "ki_keywords" "connector"
 				(at 0 0 0)
 				(effects
 					(font
@@ -81,10 +71,19 @@
 					(hide yes)
 				)
 			)
-			(symbol "USB_B_Micro_0_1"
+			(property "ki_fp_filters" "Connector*:*_1x??_*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "Conn_01x02_1_1"
 				(rectangle
-					(start -5.08 -7.62)
-					(end 5.08 7.62)
+					(start -1.27 1.27)
+					(end 1.27 -3.81)
 					(stroke
 						(width 0.254)
 						(type default)
@@ -93,112 +92,11 @@
 						(type background)
 					)
 				)
-				(polyline
-					(pts
-						(xy -4.699 5.842)
-						(xy -4.699 5.588)
-						(xy -4.445 4.826)
-						(xy -4.445 4.572)
-						(xy -1.651 4.572)
-						(xy -1.651 4.826)
-						(xy -1.397 5.588)
-						(xy -1.397 5.842)
-						(xy -4.699 5.842)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -4.318 5.588)
-						(xy -1.778 5.588)
-						(xy -2.032 4.826)
-						(xy -4.064 4.826)
-						(xy -4.318 5.588)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(circle
-					(center -3.81 2.159)
-					(radius 0.635)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(polyline
-					(pts
-						(xy -3.175 2.159)
-						(xy -2.54 2.159)
-						(xy -1.27 3.429)
-						(xy -0.635 3.429)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -2.54 2.159)
-						(xy -1.905 2.159)
-						(xy -1.27 0.889)
-						(xy 0 0.889)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -1.905 2.159)
-						(xy 0.635 2.159)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(circle
-					(center -0.635 3.429)
-					(radius 0.381)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
 				(rectangle
-					(start -0.127 -7.62)
-					(end 0.127 -6.858)
+					(start -1.27 0.127)
+					(end 0 -0.127)
 					(stroke
-						(width 0)
+						(width 0.1524)
 						(type default)
 					)
 					(fill
@@ -206,117 +104,20 @@
 					)
 				)
 				(rectangle
-					(start 0.254 1.27)
-					(end -0.508 0.508)
+					(start -1.27 -2.413)
+					(end 0 -2.667)
 					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.635 2.794)
-						(xy 0.635 1.524)
-						(xy 1.905 2.159)
-						(xy 0.635 2.794)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(rectangle
-					(start 5.08 4.953)
-					(end 4.318 5.207)
-					(stroke
-						(width 0)
+						(width 0.1524)
 						(type default)
 					)
 					(fill
 						(type none)
 					)
 				)
-				(rectangle
-					(start 5.08 -0.127)
-					(end 4.318 0.127)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 5.08 -2.667)
-					(end 4.318 -2.413)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 5.08 -5.207)
-					(end 4.318 -4.953)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-			)
-			(symbol "USB_B_Micro_1_1"
 				(pin passive line
-					(at -2.54 -10.16 90)
-					(length 2.54)
-					(name "Shield"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "6"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin power_out line
-					(at 0 -10.16 90)
-					(length 2.54)
-					(name "GND"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "5"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin power_out line
-					(at 7.62 5.08 180)
-					(length 2.54)
-					(name "VBUS"
+					(at -5.08 0 0)
+					(length 3.81)
+					(name "Pin_1"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -331,28 +132,10 @@
 						)
 					)
 				)
-				(pin bidirectional line
-					(at 7.62 0 180)
-					(length 2.54)
-					(name "D+"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "3"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 7.62 -2.54 180)
-					(length 2.54)
-					(name "D-"
+				(pin passive line
+					(at -5.08 -2.54 0)
+					(length 3.81)
+					(name "Pin_2"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -360,24 +143,6 @@
 						)
 					)
 					(number "2"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 7.62 -5.08 180)
-					(length 2.54)
-					(name "ID"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "4"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -853,6 +618,112 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "power:PWR_FLAG"
+			(power)
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "#FLG"
+				(at 0 1.905 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Value" "PWR_FLAG"
+				(at 0 3.81 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Special symbol for telling ERC where power comes from"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "flag power"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "PWR_FLAG_0_0"
+				(pin power_out line
+					(at 0 0 90)
+					(length 0)
+					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(symbol "PWR_FLAG_0_1"
+				(polyline
+					(pts
+						(xy 0 0)
+						(xy 0 1.27)
+						(xy -1.016 1.905)
+						(xy 0 2.54)
+						(xy 1.016 1.905)
+						(xy 0 1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 	)
 	(symbol
 		(lib_id "Device:C")
@@ -871,7 +742,7 @@
 				)
 			)
 		)
-		(property "Value" "C_10U_0805"
+		(property "Value" "C_100N_0603"
 			(at 50.8 66.04 0)
 			(effects
 				(font
@@ -879,7 +750,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
 			(at 50.8 48.26 0)
 			(effects
 				(font
@@ -897,7 +768,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "10 uF X5R ceramic capacitor, 0805, 16 V"
+		(property "Description" "100 nF X7R ceramic capacitor, 0603, 50 V"
 			(at 50.8 48.26 0)
 			(effects
 				(font
@@ -906,16 +777,7 @@
 				(hide yes)
 			)
 		)
-		(property "aipcb.reason" "Rides out the inrush when the cable is plugged in."
-			(at 50.8 48.26 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "aipcb.role" "bulk"
+		(property "aipcb.role" "decoupling"
 			(at 50.8 48.26 0)
 			(effects
 				(font
@@ -940,7 +802,7 @@
 			(uuid "dff2cfc9-9630-5f28-8196-4226d485b9bc")
 		)
 		(instances
-			(project "usb-port"
+			(project "diff-pair"
 				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
 					(reference "C1")
 					(unit 1)
@@ -949,102 +811,8 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:C")
+		(lib_id "Connector_Generic:Conn_01x04")
 		(at 101.6 48.26 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "223b983f-581f-5df6-aa46-f61a255dcdb6")
-		(property "Reference" "C2"
-			(at 101.6 30.48 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "C_100N_0603"
-			(at 101.6 66.04 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
-			(at 101.6 48.26 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 101.6 48.26 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "100 nF X7R ceramic capacitor, 0603, 50 V"
-			(at 101.6 48.26 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "aipcb.reason" "The ceramic the bulk capacitor is too slow to be."
-			(at 101.6 48.26 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "aipcb.role" "decoupling"
-			(at 101.6 48.26 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "aipcb.path" "C2"
-			(at 101.6 48.26 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "66e5304f-3f27-5c1b-9bb8-dd5f8d0b472d")
-		)
-		(pin "2"
-			(uuid "21ecb254-f5ba-58de-860e-7121305ebbcf")
-		)
-		(instances
-			(project "usb-port"
-				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
-					(reference "C2")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Connector:USB_B_Micro")
-		(at 152.4 48.26 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1052,23 +820,23 @@
 		(dnp no)
 		(uuid "e5e0dc37-2d3f-5462-94d0-b31a150c4fd2")
 		(property "Reference" "J1"
-			(at 152.4 27.94 0)
+			(at 101.6 29.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Value" "USB_MICRO_B"
-			(at 152.4 68.58 0)
+		(property "Value" "CONN_BRK_1X04"
+			(at 101.6 67.31 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Footprint" "Connector_USB:USB_Micro-B_Amphenol_10103594-0001LF_Horizontal"
-			(at 152.4 48.26 0)
+		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical"
+			(at 101.6 48.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1077,7 +845,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 152.4 48.26 0)
+			(at 101.6 48.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1085,8 +853,8 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "USB 2.0 Micro-B receptacle, horizontal"
-			(at 152.4 48.26 0)
+		(property "Description" "4-pin 2.54 mm breakout header"
+			(at 101.6 48.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1094,8 +862,8 @@
 				(hide yes)
 			)
 		)
-		(property "aipcb.reason" "Micro-B rather than Type-C, because this board is only ever a device."
-			(at 152.4 48.26 0)
+		(property "aipcb.reason" "Where the pair enters. Pins 2 and 3 carry it, adjacent, so the fan-out to the pair's own pitch is a millimetre rather than a detour."
+			(at 101.6 48.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1104,7 +872,7 @@
 			)
 		)
 		(property "aipcb.role" "connector"
-			(at 152.4 48.26 0)
+			(at 101.6 48.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1113,7 +881,7 @@
 			)
 		)
 		(property "aipcb.path" "J1"
-			(at 152.4 48.26 0)
+			(at 101.6 48.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1133,14 +901,8 @@
 		(pin "4"
 			(uuid "2b958dd7-259e-5793-980e-988c582f1626")
 		)
-		(pin "5"
-			(uuid "b9f6f8cd-d01e-5eb0-871b-d4da98b66a05")
-		)
-		(pin "6"
-			(uuid "3792cbd5-c5b5-59f2-9009-e357a5885798")
-		)
 		(instances
-			(project "usb-port"
+			(project "diff-pair"
 				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
 					(reference "J1")
 					(unit 1)
@@ -1150,7 +912,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic:Conn_01x04")
-		(at 50.8 93.98 0)
+		(at 152.4 48.26 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1158,7 +920,7 @@
 		(dnp no)
 		(uuid "2baaa32e-49e8-5a85-a53e-6ce43a4f04c1")
 		(property "Reference" "J2"
-			(at 50.8 74.93 0)
+			(at 152.4 29.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1166,7 +928,7 @@
 			)
 		)
 		(property "Value" "CONN_BRK_1X04"
-			(at 50.8 113.03 0)
+			(at 152.4 67.31 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1174,7 +936,7 @@
 			)
 		)
 		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical"
-			(at 50.8 93.98 0)
+			(at 152.4 48.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1183,7 +945,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 50.8 93.98 0)
+			(at 152.4 48.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1192,7 +954,7 @@
 			)
 		)
 		(property "Description" "4-pin 2.54 mm breakout header"
-			(at 50.8 93.98 0)
+			(at 152.4 48.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1200,8 +962,8 @@
 				(hide yes)
 			)
 		)
-		(property "aipcb.reason" "Whatever consumes this port plugs in here. The pair is ordered to match the series resistors so it reaches the header without crossing over -- the router reports a crossover it cannot build, and this is the fix."
-			(at 50.8 93.98 0)
+		(property "aipcb.reason" "Where it leaves. The pair keeps the same order as at J1, so it reaches this header without a crossover."
+			(at 152.4 48.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1210,7 +972,7 @@
 			)
 		)
 		(property "aipcb.role" "connector"
-			(at 50.8 93.98 0)
+			(at 152.4 48.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1219,7 +981,7 @@
 			)
 		)
 		(property "aipcb.path" "J2"
-			(at 50.8 93.98 0)
+			(at 152.4 48.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1240,9 +1002,103 @@
 			(uuid "da3817dd-0869-5fa0-bddc-62612266ab26")
 		)
 		(instances
-			(project "usb-port"
+			(project "diff-pair"
 				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
 					(reference "J2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector_Generic:Conn_01x02")
+		(at 50.8 93.98 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "50bdc83c-b1a4-52e5-8ea6-e8d3d0797063")
+		(property "Reference" "J3"
+			(at 50.8 77.47 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "CONN_PWR_1X02"
+			(at 50.8 110.49 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical"
+			(at 50.8 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 50.8 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "2-pin 2.54 mm header for unregulated DC input"
+			(at 50.8 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "aipcb.reason" "Supply in. Nothing on this board generates power."
+			(at 50.8 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "aipcb.role" "connector"
+			(at 50.8 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "aipcb.path" "J3"
+			(at 50.8 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "c36081f7-0dc4-5acc-abda-dbef8d69c966")
+		)
+		(pin "2"
+			(uuid "db511d4d-84e3-529c-9698-9b442bb34946")
+		)
+		(instances
+			(project "diff-pair"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "J3")
 					(unit 1)
 				)
 			)
@@ -1265,7 +1121,7 @@
 				)
 			)
 		)
-		(property "Value" "R_22R_0603"
+		(property "Value" "R_10K_0603"
 			(at 101.6 111.76 0)
 			(effects
 				(font
@@ -1291,7 +1147,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "22 ohm 1% resistor, 0603"
+		(property "Description" "10 kohm resistor, 0603"
 			(at 101.6 93.98 0)
 			(effects
 				(font
@@ -1300,7 +1156,7 @@
 				(hide yes)
 			)
 		)
-		(property "aipcb.reason" "The 22 ohm series resistors set the driver's source impedance to match the 90 ohm differential line."
+		(property "aipcb.reason" "Upper leg of a reference divider. Deliberately *not* on the pair -- a third pad on either half would make its two ends ambiguous, and the router says so rather than guessing which pads face each other."
 			(at 101.6 93.98 0)
 			(effects
 				(font
@@ -1309,7 +1165,7 @@
 				(hide yes)
 			)
 		)
-		(property "aipcb.role" "series"
+		(property "aipcb.role" "divider"
 			(at 101.6 93.98 0)
 			(effects
 				(font
@@ -1334,7 +1190,7 @@
 			(uuid "cab5efc1-5882-5bfa-aee5-93e2055f4d52")
 		)
 		(instances
-			(project "usb-port"
+			(project "diff-pair"
 				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
 					(reference "R1")
 					(unit 1)
@@ -1359,7 +1215,7 @@
 				)
 			)
 		)
-		(property "Value" "R_22R_0603"
+		(property "Value" "R_10K_0603"
 			(at 152.4 111.76 0)
 			(effects
 				(font
@@ -1385,7 +1241,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "22 ohm 1% resistor, 0603"
+		(property "Description" "10 kohm resistor, 0603"
 			(at 152.4 93.98 0)
 			(effects
 				(font
@@ -1394,7 +1250,7 @@
 				(hide yes)
 			)
 		)
-		(property "aipcb.reason" "Partner of R1. Both must be the same value or the pair goes asymmetric."
+		(property "aipcb.reason" "Lower leg. Same value, so the reference sits at half the rail."
 			(at 152.4 93.98 0)
 			(effects
 				(font
@@ -1403,7 +1259,7 @@
 				(hide yes)
 			)
 		)
-		(property "aipcb.role" "series"
+		(property "aipcb.role" "divider"
 			(at 152.4 93.98 0)
 			(effects
 				(font
@@ -1428,7 +1284,7 @@
 			(uuid "cd352a9c-1d83-54d4-ad08-047eed840df0")
 		)
 		(instances
-			(project "usb-port"
+			(project "diff-pair"
 				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
 					(reference "R2")
 					(unit 1)
@@ -1437,31 +1293,32 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:R")
+		(lib_id "power:PWR_FLAG")
 		(at 50.8 139.7 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
+		(in_bom no)
+		(on_board no)
 		(dnp no)
-		(uuid "992542c8-dbfc-5a1d-84a8-8c26a2df8f43")
-		(property "Reference" "R3"
-			(at 50.8 121.92 0)
+		(uuid "69d499c7-ed77-58bc-9dbb-ef3fc8d27fb3")
+		(property "Reference" "#FLG01"
+			(at 50.8 139.7 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 50.8 137.16 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Value" "R_10K_0603"
-			(at 50.8 157.48 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+		(property "Footprint" ""
 			(at 50.8 139.7 0)
 			(effects
 				(font
@@ -1479,34 +1336,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "10 kohm resistor, 0603"
-			(at 50.8 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "aipcb.reason" "A floating ID pin lets the port enumerate as a host by accident."
-			(at 50.8 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "aipcb.role" "pull_down"
-			(at 50.8 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "aipcb.path" "R3"
+		(property "Description" ""
 			(at 50.8 139.7 0)
 			(effects
 				(font
@@ -1516,15 +1346,77 @@
 			)
 		)
 		(pin "1"
-			(uuid "6051a048-de99-543f-b0b2-a4054c7ecf58")
-		)
-		(pin "2"
-			(uuid "a7b948e5-14f5-5211-b1e9-d4576d5882e1")
+			(uuid "8f71853a-592f-5003-b7cd-56427ad0671e")
 		)
 		(instances
-			(project "usb-port"
+			(project "diff-pair"
 				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
-					(reference "R3")
+					(reference "#FLG01")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 101.6 139.7 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "db081c74-f487-5a00-9bed-429b2898c3d1")
+		(property "Reference" "#FLG02"
+			(at 101.6 139.7 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 101.6 137.16 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 101.6 139.7 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 101.6 139.7 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 101.6 139.7 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "48c29d44-0a29-5f91-9791-972130a7159c")
+		)
+		(instances
+			(project "diff-pair"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#FLG02")
 					(unit 1)
 				)
 			)
@@ -1541,7 +1433,7 @@
 		)
 		(uuid "6f06b2f8-5579-5eda-9c29-945ef3680051")
 	)
-	(global_label "VBUS"
+	(global_label "VCC"
 		(shape input)
 		(at 50.8 40.64 90)
 		(effects
@@ -1576,52 +1468,8 @@
 	)
 	(wire
 		(pts
-			(xy 101.6 44.45)
-			(xy 101.6 40.64)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d5421cd5-10ec-505a-a808-9b45ae5d8ecd")
-	)
-	(global_label "VBUS"
-		(shape input)
-		(at 101.6 40.64 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "44b2745a-afe4-5cea-b460-6069e3d609f9")
-	)
-	(wire
-		(pts
-			(xy 101.6 52.07)
-			(xy 101.6 55.88)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "3ae445ee-c099-5b1d-a0d6-b05d137c87a0")
-	)
-	(global_label "GND"
-		(shape input)
-		(at 101.6 55.88 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "73e6ade1-1119-52f9-a349-46f70a2786a4")
-	)
-	(wire
-		(pts
-			(xy 160.02 43.18)
-			(xy 163.83 43.18)
+			(xy 96.52 45.72)
+			(xy 92.71 45.72)
 		)
 		(stroke
 			(width 0)
@@ -1629,21 +1477,21 @@
 		)
 		(uuid "ed52594f-17b5-5ac9-a4ed-d91dc10985c4")
 	)
-	(global_label "VBUS"
+	(global_label "GND"
 		(shape input)
-		(at 163.83 43.18 0)
+		(at 92.71 45.72 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left)
+			(justify right)
 		)
 		(uuid "5f1b3fea-0502-5b37-be5d-7763b4a71dfe")
 	)
 	(wire
 		(pts
-			(xy 160.02 50.8)
-			(xy 163.83 50.8)
+			(xy 96.52 48.26)
+			(xy 92.71 48.26)
 		)
 		(stroke
 			(width 0)
@@ -1651,21 +1499,21 @@
 		)
 		(uuid "29aec4e8-195d-5d0b-989a-7a27a0de84b5")
 	)
-	(global_label "USB_DM"
+	(global_label "DIFF_P"
 		(shape input)
-		(at 163.83 50.8 0)
+		(at 92.71 48.26 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left)
+			(justify right)
 		)
 		(uuid "16dc7b97-e7f5-5499-89df-6161fb18a030")
 	)
 	(wire
 		(pts
-			(xy 160.02 48.26)
-			(xy 163.83 48.26)
+			(xy 96.52 50.8)
+			(xy 92.71 50.8)
 		)
 		(stroke
 			(width 0)
@@ -1673,21 +1521,21 @@
 		)
 		(uuid "01c9e9db-b93e-56bb-b961-965e6bcf06ed")
 	)
-	(global_label "USB_DP"
+	(global_label "DIFF_N"
 		(shape input)
-		(at 163.83 48.26 0)
+		(at 92.71 50.8 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left)
+			(justify right)
 		)
 		(uuid "197294be-e7e2-500a-a9a8-2491bdf47767")
 	)
 	(wire
 		(pts
-			(xy 160.02 53.34)
-			(xy 163.83 53.34)
+			(xy 96.52 53.34)
+			(xy 92.71 53.34)
 		)
 		(stroke
 			(width 0)
@@ -1695,65 +1543,21 @@
 		)
 		(uuid "743028d9-5f70-5458-b8fb-38548ab105c5")
 	)
-	(global_label "ID"
+	(global_label "VREF"
 		(shape input)
-		(at 163.83 53.34 0)
+		(at 92.71 53.34 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left)
+			(justify right)
 		)
 		(uuid "6b306db0-89f5-5436-bd39-88357302f7b8")
 	)
 	(wire
 		(pts
-			(xy 152.4 58.42)
-			(xy 152.4 62.23)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "b6766c0e-23eb-5707-9d17-8c3cf45a64c4")
-	)
-	(global_label "GND"
-		(shape input)
-		(at 152.4 62.23 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "43ac4f7f-044b-5934-9169-cb3ceee236d6")
-	)
-	(wire
-		(pts
-			(xy 149.86 58.42)
-			(xy 149.86 62.23)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "2b3281ff-d667-59c8-a9bc-1a6f0f71b75c")
-	)
-	(global_label "GND"
-		(shape input)
-		(at 149.86 62.23 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "d87938ae-2b33-5f12-8079-31b0851faee5")
-	)
-	(wire
-		(pts
-			(xy 45.72 91.44)
-			(xy 41.91 91.44)
+			(xy 147.32 45.72)
+			(xy 143.51 45.72)
 		)
 		(stroke
 			(width 0)
@@ -1761,9 +1565,9 @@
 		)
 		(uuid "597433dc-d4d7-5451-a376-31915ac84f1f")
 	)
-	(global_label "VBUS"
+	(global_label "GND"
 		(shape input)
-		(at 41.91 91.44 180)
+		(at 143.51 45.72 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -1774,8 +1578,8 @@
 	)
 	(wire
 		(pts
-			(xy 45.72 93.98)
-			(xy 41.91 93.98)
+			(xy 147.32 48.26)
+			(xy 143.51 48.26)
 		)
 		(stroke
 			(width 0)
@@ -1783,9 +1587,9 @@
 		)
 		(uuid "929aa441-92de-551a-82e3-9c13d5661719")
 	)
-	(global_label "DEV_DP"
+	(global_label "DIFF_P"
 		(shape input)
-		(at 41.91 93.98 180)
+		(at 143.51 48.26 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -1796,8 +1600,8 @@
 	)
 	(wire
 		(pts
-			(xy 45.72 96.52)
-			(xy 41.91 96.52)
+			(xy 147.32 50.8)
+			(xy 143.51 50.8)
 		)
 		(stroke
 			(width 0)
@@ -1805,9 +1609,9 @@
 		)
 		(uuid "fa291296-0a49-55b1-99e0-e95ab912e7ae")
 	)
-	(global_label "DEV_DM"
+	(global_label "DIFF_N"
 		(shape input)
-		(at 41.91 96.52 180)
+		(at 143.51 50.8 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -1818,8 +1622,8 @@
 	)
 	(wire
 		(pts
-			(xy 45.72 99.06)
-			(xy 41.91 99.06)
+			(xy 147.32 53.34)
+			(xy 143.51 53.34)
 		)
 		(stroke
 			(width 0)
@@ -1827,9 +1631,9 @@
 		)
 		(uuid "b5215b25-0317-57a7-9b42-1f1ed3e370e7")
 	)
-	(global_label "GND"
+	(global_label "VCC"
 		(shape input)
-		(at 41.91 99.06 180)
+		(at 143.51 53.34 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -1837,6 +1641,50 @@
 			(justify right)
 		)
 		(uuid "427408a8-9e51-541d-ac5d-00eaa9ee0585")
+	)
+	(wire
+		(pts
+			(xy 45.72 93.98)
+			(xy 41.91 93.98)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4e186359-b7f1-56bf-9855-4012f5a6d75f")
+	)
+	(global_label "VCC"
+		(shape input)
+		(at 41.91 93.98 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "972ca98b-de55-5d31-8a61-96dd97b86522")
+	)
+	(wire
+		(pts
+			(xy 45.72 96.52)
+			(xy 41.91 96.52)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "05ad6a99-6718-54e3-973a-a7f7c248813b")
+	)
+	(global_label "GND"
+		(shape input)
+		(at 41.91 96.52 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "7e0dbe32-1786-5c33-9547-55e7cf78dbda")
 	)
 	(wire
 		(pts
@@ -1849,7 +1697,7 @@
 		)
 		(uuid "6ff81c57-ffaf-50c9-9fb5-a27c6e39acce")
 	)
-	(global_label "USB_DP"
+	(global_label "VCC"
 		(shape input)
 		(at 101.6 86.36 90)
 		(effects
@@ -1871,7 +1719,7 @@
 		)
 		(uuid "60e832a9-646c-5aed-a1b9-78db6fc3df49")
 	)
-	(global_label "DEV_DP"
+	(global_label "VREF"
 		(shape input)
 		(at 101.6 101.6 270)
 		(effects
@@ -1893,7 +1741,7 @@
 		)
 		(uuid "988ca6de-4568-5595-98c3-2fa23550e339")
 	)
-	(global_label "USB_DM"
+	(global_label "VREF"
 		(shape input)
 		(at 152.4 86.36 90)
 		(effects
@@ -1915,7 +1763,7 @@
 		)
 		(uuid "6a8dea15-6022-59fd-9ae7-53ee16f9a120")
 	)
-	(global_label "DEV_DM"
+	(global_label "GND"
 		(shape input)
 		(at 152.4 101.6 270)
 		(effects
@@ -1928,47 +1776,47 @@
 	)
 	(wire
 		(pts
-			(xy 50.8 135.89)
-			(xy 50.8 132.08)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "0bf108f8-0f97-576e-afa5-cbf8b813c1a8")
-	)
-	(global_label "ID"
-		(shape input)
-		(at 50.8 132.08 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "83f335d4-4432-5b7f-8a7e-e83b83249899")
-	)
-	(wire
-		(pts
+			(xy 50.8 139.7)
 			(xy 50.8 143.51)
-			(xy 50.8 147.32)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "cdc87a7c-907f-555a-8436-add82ab08b1e")
+		(uuid "4fa05bd6-b1a3-5f92-9715-e4e10cf1cc14")
 	)
 	(global_label "GND"
 		(shape input)
-		(at 50.8 147.32 270)
+		(at 50.8 143.51 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify right)
 		)
-		(uuid "23e27c94-140a-5ab2-98c5-cb60a29c767a")
+		(uuid "6fbe9e00-da18-523c-91cf-9a5c129b80db")
+	)
+	(wire
+		(pts
+			(xy 101.6 139.7)
+			(xy 101.6 143.51)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6cf2a387-a3b0-569b-9143-364af5de6cf5")
+	)
+	(global_label "VCC"
+		(shape input)
+		(at 101.6 143.51 270)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "e836796a-b0b4-58c1-a566-8b40f743ac4f")
 	)
 	(sheet_instances
 		(path "/"

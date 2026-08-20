@@ -46,6 +46,7 @@ __all__ = [
     "environment_for",
     "side_gate",
     "side_point",
+    "stretch_points",
     "stretch_route",
 ]
 
@@ -176,6 +177,51 @@ def _reach(obstacle: Obstacle, centre: Point, axis: Point) -> float:
 # ---------------------------------------------------------------------------
 # the stretcher
 # ---------------------------------------------------------------------------
+
+
+def stretch_points(
+    start: Point,
+    end: Point,
+    triangulation: Triangulation,
+    rules: RouteRules,
+    *,
+    label: str = "route",
+) -> list[Point]:
+    """Tighten a path between two arbitrary points, with no waypoints.
+
+    Used for a differential pair's centre-line, which runs between the midpoints of
+    the pads rather than between pads.
+    """
+    start_triangle = triangulation.locate(start)
+    end_triangle = triangulation.locate(end)
+    if start_triangle is None or end_triangle is None:
+        which = "start" if start_triangle is None else "end"
+        raise StretchError(
+            f"{label}: the {which} is not in the routable area",
+            hint="the point falls inside another part's clearance",
+        )
+
+    crossings = triangulation.portal_path(
+        start,
+        start_triangle,
+        end,
+        end_triangle,
+        corridor=rules.corridor,
+        congestion=rules.congestion,
+    )
+    if not crossings and start_triangle != end_triangle:
+        raise StretchError(
+            f"{label}: the free area is split in two by other parts' clearances",
+            hint="move the parts apart, or route on another layer",
+        )
+
+    reduced = reduce_crossings(crossings)
+    sleeve = triangulation.sleeve(reduced, start_triangle)
+    diagonals = [
+        (triangulation.diagonals[i].a, triangulation.diagonals[i].b) for i in reduced
+    ]
+    centroids = [_centroid(triangulation.triangles[t]) for t in sleeve]
+    return tighten(start, end, orient_portals(diagonals, centroids))
 
 
 def stretch_route(
