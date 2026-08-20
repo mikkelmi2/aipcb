@@ -197,6 +197,18 @@
 				(xyz 0 0 0)
 			)
 		)
+		(property "aipcb.fingerprint" "bce94bd014a58fa9"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(hide yes)
+			)
+			(uuid "9757e65d-6d57-5089-8d55-88dced03a1a0")
+		)
 		(path "/91d1efbb-b8c9-59a8-92ba-83608233adf4")
 		(sheetname "/")
 		(sheetfile "led-blinker.kicad_sch")
@@ -359,6 +371,18 @@
 			(rotate
 				(xyz 0 0 0)
 			)
+		)
+		(property "aipcb.fingerprint" "2e852fb35d3d8522"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(hide yes)
+			)
+			(uuid "1a4dec09-747d-5caa-be8d-9357ab270e90")
 		)
 		(path "/e086b5b5-648d-509c-b73b-50d4c95a3157")
 		(sheetname "/")
@@ -591,6 +615,18 @@
 				(xyz 0 0 0)
 			)
 		)
+		(property "aipcb.fingerprint" "4f9d8b982c0c0ab5"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(hide yes)
+			)
+			(uuid "ac9df5ad-0ccb-573f-898f-5ef833758b7b")
+		)
 		(path "/e5e0dc37-2d3f-5462-94d0-b31a150c4fd2")
 		(sheetname "/")
 		(sheetfile "led-blinker.kicad_sch")
@@ -705,6 +741,18 @@
 				(xyz 0 0 0)
 			)
 		)
+		(property "aipcb.fingerprint" "4a8ec53e7ec01255"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(hide yes)
+			)
+			(uuid "1d7777bf-cae3-5a9b-90dc-94bced63e0bd")
+		)
 		(path "/25ffc717-23bb-5608-927f-eaddd91c1dc7")
 		(sheetname "/")
 		(sheetfile "led-blinker.kicad_sch")
@@ -818,6 +866,18 @@
 			(rotate
 				(xyz 0 0 0)
 			)
+		)
+		(property "aipcb.fingerprint" "5e7842c0b77c3822"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(hide yes)
+			)
+			(uuid "23ac5631-1cda-51a1-b4ac-6413d7a045e9")
 		)
 		(path "/0e15e568-bf26-5925-80a7-12f988602bab")
 		(sheetname "/")
@@ -1069,6 +1129,18 @@
 			(rotate
 				(xyz 0 0 0)
 			)
+		)
+		(property "aipcb.fingerprint" "c1867493d234b52b"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(hide yes)
+			)
+			(uuid "9794be4a-ad32-53da-85d1-fb8bbd30eae4")
 		)
 		(path "/76d1ceda-6a12-5031-88a9-d667de280c45")
 		(sheetname "/")

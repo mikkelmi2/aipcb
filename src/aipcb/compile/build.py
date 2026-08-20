@@ -14,6 +14,7 @@ from pathlib import Path
 from aipcb.checks.kicad_bindings import check_kicad_bindings
 from aipcb.checks.semantic import run_semantic_checks
 from aipcb.compile.board import build_board
+from aipcb.compile.preserve import MergeStats, merge_board
 from aipcb.compile.project import (
     build_fp_lib_table,
     build_project,
@@ -24,7 +25,7 @@ from aipcb.compile.schematic import build_schematic
 from aipcb.diagnostics import AipcbError, Report
 from aipcb.elaborate import elaborate
 from aipcb.ids import element_uuid
-from aipcb.kicad.sexpr import dump
+from aipcb.kicad.sexpr import SExprError, SNode, dump, parse
 from aipcb.loader import load_design
 from aipcb.netlist import Netlist
 
@@ -38,6 +39,8 @@ class BuildResult:
     netlist: Netlist
     written: list[Path] = field(default_factory=list)
     project: str = ""
+    merge: MergeStats | None = None
+    """What was preserved from an existing board, when one was there."""
 
 
 def compile_netlist(design_path: Path, report: Report) -> Netlist:
@@ -54,8 +57,13 @@ def build_design(
     *,
     out_dir: Path | None = None,
     report: Report | None = None,
+    fresh: bool = False,
 ) -> BuildResult:
     """Compile a design to KiCad files.
+
+    By default the build is *incremental*: an existing board is read first and the
+    parts of it a human edited are folded into the new one. Pass ``fresh=True`` to
+    regenerate from source and discard those edits.
 
     Raises :class:`~aipcb.diagnostics.AipcbError` if validation failed, carrying the
     report so the caller can present it.
@@ -96,9 +104,13 @@ def build_design(
     written.append(schematic_path)
 
     board_path = target / f"{project}.kicad_pcb"
-    _write_if_changed(
-        board_path, dump(build_board(netlist, project=project, report=report))
-    )
+    board = build_board(netlist, project=project, report=report)
+    merge_stats: MergeStats | None = None
+    if not fresh:
+        existing = _read_board(board_path, report)
+        if existing is not None:
+            board, merge_stats = merge_board(board, existing, netlist, report)
+    _write_if_changed(board_path, dump(board))
     written.append(board_path)
 
     symbol_libs = {
@@ -121,7 +133,35 @@ def build_design(
     _write_if_changed(fp_table, dump(build_fp_lib_table(footprint_libs)))
     written.append(fp_table)
 
-    return BuildResult(netlist=netlist, written=written, project=project)
+    return BuildResult(
+        netlist=netlist, written=written, project=project, merge=merge_stats
+    )
+
+
+def _read_board(path: Path, report: Report) -> SNode | None:
+    """Parse an existing board, or explain why it could not be used.
+
+    A board we cannot parse is not silently overwritten: whatever is in it might be
+    hours of somebody's routing, and the right response is to say so rather than to
+    quietly replace it.
+    """
+    if not path.exists():
+        return None
+    try:
+        return parse(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        report.warning(
+            "existing-board-unreadable",
+            f"could not read the existing board at {path}: {exc}",
+            hint="it will be replaced; move it aside first if it holds work you want",
+        )
+    except SExprError as exc:
+        report.warning(
+            "existing-board-unparseable",
+            f"the existing board at {path} is not valid KiCad syntax: {exc}",
+            hint="it will be replaced; move it aside first if it holds work you want",
+        )
+    return None
 
 
 def _project_name(design_name: str) -> str:

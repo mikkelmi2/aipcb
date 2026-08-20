@@ -195,6 +195,18 @@
 				(xyz 0 0 0)
 			)
 		)
+		(property "aipcb.fingerprint" "93f1e1e707c680e7"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(hide yes)
+			)
+			(uuid "9757e65d-6d57-5089-8d55-88dced03a1a0")
+		)
 		(path "/91d1efbb-b8c9-59a8-92ba-83608233adf4")
 		(sheetname "/")
 		(sheetfile "usb-port.kicad_sch")
@@ -308,6 +320,18 @@
 			(rotate
 				(xyz 0 0 0)
 			)
+		)
+		(property "aipcb.fingerprint" "0514b1c2e7b2c0b4"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(hide yes)
+			)
+			(uuid "af5b4327-0469-5e9b-8212-b760993bd07f")
 		)
 		(path "/223b983f-581f-5df6-aa46-f61a255dcdb6")
 		(sheetname "/")
@@ -723,6 +747,18 @@
 				(xyz 0 0 0)
 			)
 		)
+		(property "aipcb.fingerprint" "f8969e7295f3a050"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(hide yes)
+			)
+			(uuid "ac9df5ad-0ccb-573f-898f-5ef833758b7b")
+		)
 		(path "/e5e0dc37-2d3f-5462-94d0-b31a150c4fd2")
 		(sheetname "/")
 		(sheetfile "usb-port.kicad_sch")
@@ -936,6 +972,18 @@
 				(xyz 0 0 0)
 			)
 		)
+		(property "aipcb.fingerprint" "cec87639efb1f2b6"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(hide yes)
+			)
+			(uuid "780db729-bc2e-5dc6-9283-19aea4d97b7f")
+		)
 		(path "/2baaa32e-49e8-5a85-a53e-6ce43a4f04c1")
 		(sheetname "/")
 		(sheetfile "usb-port.kicad_sch")
@@ -1049,6 +1097,18 @@
 			(rotate
 				(xyz 0 0 0)
 			)
+		)
+		(property "aipcb.fingerprint" "81a3a8f3ebb57ca5"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(hide yes)
+			)
+			(uuid "1d7777bf-cae3-5a9b-90dc-94bced63e0bd")
 		)
 		(path "/25ffc717-23bb-5608-927f-eaddd91c1dc7")
 		(sheetname "/")
@@ -1164,6 +1224,18 @@
 				(xyz 0 0 0)
 			)
 		)
+		(property "aipcb.fingerprint" "3bf64a43ca6cf994"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(hide yes)
+			)
+			(uuid "ec7c5432-5c5f-581a-953e-4cf1e819205d")
+		)
 		(path "/277b2398-9da4-52bd-bad9-12fd5898785d")
 		(sheetname "/")
 		(sheetfile "usb-port.kicad_sch")
@@ -1277,6 +1349,18 @@
 			(rotate
 				(xyz 0 0 0)
 			)
+		)
+		(property "aipcb.fingerprint" "1e6035595ac92052"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(hide yes)
+			)
+			(uuid "bd38f5bf-3f57-5e3c-a7dd-d1e670582d1c")
 		)
 		(path "/992542c8-dbfc-5a1d-84a8-8c26a2df8f43")
 		(sheetname "/")

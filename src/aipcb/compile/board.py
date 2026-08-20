@@ -17,6 +17,7 @@ from __future__ import annotations
 import copy
 
 from aipcb.compile.place import BoardPlacement, plan_placement
+from aipcb.compile.preserve import FINGERPRINT_PROPERTY, component_fingerprint
 from aipcb.diagnostics import Report
 from aipcb.ids import element_uuid, net_codes
 from aipcb.kicad.footprints import Extent, footprint_extent, resolve_footprint
@@ -246,6 +247,7 @@ def _adapt_footprint(
     hier: tuple[str, ...],
     sheet_file: str,
     dnp: bool,
+    fingerprint: str,
 ) -> SNode:
     """Turn a library footprint into a placed instance on the board."""
     node = copy.deepcopy(source)
@@ -273,6 +275,9 @@ def _adapt_footprint(
 
     _set_property(node, "Reference", refdes, "F.SilkS", hier)
     _set_property(node, "Value", value, "F.Fab", hier)
+    # Recorded so a later build can tell whether the source has changed its mind
+    # about this footprint, and therefore whether a hand-placed position stands.
+    _set_property(node, FINGERPRINT_PROPERTY, fingerprint, "F.Fab", hier, hide=True)
     # Every other property keeps the library's text but must not keep the library's
     # UUID: that id is fixed in the .kicad_mod, so all seven 0603 resistors on a
     # board would otherwise share one.
@@ -305,7 +310,13 @@ def _set_head(node: SNode, name: str) -> None:
 
 
 def _set_property(
-    node: SNode, key: str, value: str, layer: str, hier: tuple[str, ...]
+    node: SNode,
+    key: str,
+    value: str,
+    layer: str,
+    hier: tuple[str, ...],
+    *,
+    hide: bool = False,
 ) -> None:
     """Set a footprint property, keeping the library's text placement."""
     for prop in node.children("property"):
@@ -318,6 +329,13 @@ def _set_property(
         prop.add(SNode("uuid").add(quoted(element_uuid("fp-prop", *hier, key))))
         return
 
+    effects = SNode("effects").add(
+        SNode("font").add(
+            SNode("size").add(num(1), num(1)), SNode("thickness").add(num(0.15))
+        )
+    )
+    if hide:
+        effects.add(SNode("hide").add(sym("yes")))
     node.add(
         SNode("property").add(
             quoted(key),
@@ -325,11 +343,7 @@ def _set_property(
             SNode("at").add(num(0), num(0), num(0)),
             SNode("layer").add(quoted(layer)),
             SNode("uuid").add(quoted(element_uuid("fp-prop", *hier, key))),
-            SNode("effects").add(
-                SNode("font").add(
-                    SNode("size").add(num(1), num(1)), SNode("thickness").add(num(0.15))
-                )
-            ),
+            effects,
         )
     )
 
@@ -498,6 +512,7 @@ def build_board(
                 hier=component.hier,
                 sheet_file=sheet_file,
                 dnp=component.dnp,
+                fingerprint=component_fingerprint(component, netlist),
             )
         )
 
