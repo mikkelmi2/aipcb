@@ -1,0 +1,42 @@
+# Active components.
+
+parts:
+  ATTINY85_DIP8:
+    description: Microchip ATtiny85, 8-bit AVR MCU, 8-pin DIP
+    symbol: MCU_Microchip_ATtiny:ATtiny85-20P
+    footprint: Package_DIP:DIP-8_W7.62mm
+    value: ATtiny85-20PU
+    keywords: [mcu, avr, microcontroller]
+    pins:
+      "1": { type: bidirectional, name: RESET, description: "Reset, also PB5" }
+      "2": { type: bidirectional, name: PB3, description: "XTAL1 / ADC3" }
+      "3": { type: bidirectional, name: PB4, description: "XTAL2 / ADC2" }
+      "4": { type: power_in, name: GND }
+      "5": { type: bidirectional, name: PB0, description: "MOSI / AREF" }
+      "6": { type: bidirectional, name: PB1, description: "MISO" }
+      "7": { type: bidirectional, name: PB2, description: "SCK / ADC1" }
+      "8": { type: power_in, name: VCC }
+    limits:
+      voltage_max_v: 6.0
+      current_max_a: 0.2
+    supplier:
+      manufacturer: Microchip
+      mpn: ATTINY85-20PU
+      datasheet: https://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-2586-AVR-8-bit-Microcontroller-ATtiny25-ATtiny45-ATtiny85_Datasheet.pdf
+
+  AMS1117_3V3:
+    description: AMS1117-3.3, 1 A fixed 3.3 V LDO regulator, SOT-223
+    symbol: Regulator_Linear:AMS1117-3.3
+    footprint: Package_TO_SOT_SMD:SOT-223-3_TabPin2
+    value: AMS1117-3.3
+    keywords: [ldo, regulator, linear]
+    pins:
+      "1": { type: power_in, name: GND }
+      "2": { type: power_out, name: VO, description: Regulated 3.3 V output }
+      "3": { type: power_in, name: VI, description: Unregulated input }
+    limits:
+      voltage_max_v: 15.0
+      current_max_a: 1.0
+    supplier:
+      manufacturer: Advanced Monolithic Systems
+      mpn: AMS1117-3.3

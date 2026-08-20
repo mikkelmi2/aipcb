@@ -1,0 +1,182 @@
+# A USB 2.0 Micro-B breakout.
+#
+# This example exists for the differential pair. USB_DP and USB_DM are declared as
+# partners from both sides, share a net class that carries the impedance target,
+# and are constrained to be routed together -- all of it expressed as intent that
+# the router will later have to satisfy, rather than as geometry.
+
+name: usb-port
+revision: A
+description: USB Micro-B receptacle broken out to a 4-pin header, with series
+  resistors and ESD-friendly grounding.
+
+libraries:
+  - ../library/passives.yaml
+  - ../library/connectors.yaml
+
+net_classes:
+  usb:
+    trace_width_mm: 0.25
+    clearance_mm: 0.2
+    diff_pair_width_mm: 0.34
+    diff_pair_gap_mm: 0.2
+    impedance_ohm: 90.0
+    max_skew_mm: 0.15
+    prefer_layers: [F.Cu]
+    description: 90 ohm differential on 1.6 mm FR4 with a solid ground plane below.
+  power:
+    trace_width_mm: 0.6
+    clearance_mm: 0.25
+
+nets:
+  VBUS:
+    class: power
+    voltage: 5.0
+    max_current_a: 0.5
+    reason: Bus power. The host may cut it at any time, so nothing may assume it.
+  GND:
+    class: ground
+    reason: Shield and signal ground are joined at the connector, the usual
+      single-point compromise on a board this small.
+
+  USB_DP:
+    class: usb
+    impedance_ohm: 90.0
+    diff_pair: USB_DM
+    description: Connector side of the pair, before the series resistors.
+  USB_DM:
+    class: usb
+    impedance_ohm: 90.0
+    diff_pair: USB_DP
+    description: Connector side of the pair, before the series resistors.
+
+  DEV_DP:
+    class: usb
+    impedance_ohm: 90.0
+    diff_pair: DEV_DM
+    description: Device side of the pair, after the series resistors.
+  DEV_DM:
+    class: usb
+    impedance_ohm: 90.0
+    diff_pair: DEV_DP
+    description: Device side of the pair, after the series resistors.
+
+  ID:
+    class: signal
+    description: Held low so the port always enumerates as a device, never a host.
+
+components:
+  J1:
+    part: USB_MICRO_B
+    role: connector
+    reason: Micro-B rather than Type-C, because this board is only ever a device.
+    pins:
+      VBUS: VBUS
+      D+: USB_DP
+      D-: USB_DM
+      ID: ID
+      GND: GND
+      Shield: GND
+
+  R1:
+    part: R_22R_0603
+    role: series
+    for: J1
+    reason: The 22 ohm series resistors set the driver's source impedance to match
+      the 90 ohm differential line.
+    pins:
+      "1": USB_DP
+      "2": DEV_DP
+
+  R2:
+    part: R_22R_0603
+    role: series
+    for: J1
+    reason: Partner of R1. Both must be the same value or the pair goes asymmetric.
+    pins:
+      "1": USB_DM
+      "2": DEV_DM
+
+  R3:
+    part: R_10K_0603
+    role: pull_down
+    for: J1
+    reason: A floating ID pin lets the port enumerate as a host by accident.
+    pins:
+      "1": ID
+      "2": GND
+
+  C1:
+    part: C_10U_0805
+    role: bulk
+    for: J1
+    reason: Rides out the inrush when the cable is plugged in.
+    pins:
+      "1": VBUS
+      "2": GND
+
+  C2:
+    part: C_100N_0603
+    role: decoupling
+    for: J1
+    reason: The ceramic the bulk capacitor is too slow to be.
+    pins:
+      "1": VBUS
+      "2": GND
+
+  J2:
+    part: CONN_BRK_1X04
+    role: connector
+    reason: Whatever consumes this port plugs in here.
+    pins:
+      P1: VBUS
+      P2: DEV_DM
+      P3: DEV_DP
+      P4: GND
+
+constraints:
+  - kind: group
+    name: usb_series
+    members: [R1, R2]
+    reason: The series resistors must sit side by side, or the two halves of the
+      pair take different-length detours around them and the skew budget is spent
+      before routing even starts.
+
+  - kind: max_distance
+    between: [R1, R2, J1]
+    mm: 12.0
+    reason: Keep the stub between the connector and the series resistors short;
+      it is an impedance discontinuity either way.
+
+  - kind: keep_apart
+    between: [C1, J1]
+    mm: 3.0
+    reason: The bulk capacitor is tall enough to foul the connector's shell.
+
+layout:
+  outline:
+    shape: rect
+    width_mm: 22.0
+    height_mm: 16.0
+  stackup:
+    copper_layers: 2
+    thickness_mm: 1.6
+    finish: ENIG
+  placement:
+    rules:
+      - members: [J1]
+        side: front
+        orientation_deg: 0
+        reason: The receptacle overhangs the board edge.
+      - members: [J2]
+        side: front
+        reason: Opposite edge from the USB connector, so cables do not fight.
+  routes:
+    - net: USB_DP
+      layer: F.Cu
+      reason: Kept on the top layer with the ground plane directly below, so the
+        impedance target holds for the whole run.
+    - net: USB_DM
+      layer: F.Cu
+      reason: Must stay on the same layer as USB_DP; a via on one leg only would
+        break both the impedance and the skew budget.
