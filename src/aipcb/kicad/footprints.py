@@ -8,6 +8,7 @@ inside a DRC report.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -110,3 +111,89 @@ def footprint_exists(lib_id: str) -> bool:
     except FootprintNotFound:
         return False
     return True
+
+
+@dataclass(frozen=True, slots=True)
+class Extent:
+    """An axis-aligned box in a footprint's own coordinate system, in millimetres."""
+
+    min_x: float
+    min_y: float
+    max_x: float
+    max_y: float
+
+    @property
+    def width(self) -> float:
+        return self.max_x - self.min_x
+
+    @property
+    def height(self) -> float:
+        return self.max_y - self.min_y
+
+    def padded(self, margin: float) -> Extent:
+        return Extent(
+            self.min_x - margin, self.min_y - margin,
+            self.max_x + margin, self.max_y + margin,
+        )
+
+
+def _extend(bounds: list[float], x: float, y: float) -> None:
+    bounds[0] = min(bounds[0], x)
+    bounds[1] = min(bounds[1], y)
+    bounds[2] = max(bounds[2], x)
+    bounds[3] = max(bounds[3], y)
+
+
+def footprint_extent(footprint: Footprint) -> Extent:
+    """Measure how much room a footprint needs.
+
+    The courtyard is the layer that exists to answer exactly this question -- it is
+    the manufacturer's statement of the space the part must be given -- so it is
+    used when present. Falling back to pad extents underestimates a part with a
+    body wider than its pads, so the fallback adds a margin.
+    """
+    courtyard = [math.inf, math.inf, -math.inf, -math.inf]
+    pads = [math.inf, math.inf, -math.inf, -math.inf]
+
+    for node in footprint.node.items:
+        if not isinstance(node, SNode):
+            continue
+        layer = node.get("layer") or ""
+        target = courtyard if layer.endswith(".CrtYd") else None
+
+        if node.name in ("fp_line", "fp_rect") and target is not None:
+            for corner in ("start", "end"):
+                point = node.child(corner)
+                if point is not None:
+                    _extend(target, float(point.value(0) or 0), float(point.value(1) or 0))
+        elif node.name in ("fp_poly", "fp_circle") and target is not None:
+            pts = node.child("pts")
+            if pts is not None:
+                for xy in pts.children("xy"):
+                    _extend(target, float(xy.value(0) or 0), float(xy.value(1) or 0))
+        elif node.name == "pad":
+            at = node.child("at")
+            size = node.child("size")
+            if at is None or size is None:
+                continue
+            px, py = float(at.value(0) or 0), float(at.value(1) or 0)
+            half_w = float(size.value(0) or 0) / 2
+            half_h = float(size.value(1) or 0) / 2
+            rotation = float(at.value(2) or 0) % 180
+            if abs(rotation - 90) < 1e-6:
+                half_w, half_h = half_h, half_w
+            _extend(pads, px - half_w, py - half_h)
+            _extend(pads, px + half_w, py + half_h)
+
+    if courtyard[0] != math.inf:
+        return Extent(*courtyard)
+    if pads[0] != math.inf:
+        return Extent(*pads).padded(0.5)
+    return Extent(-1.0, -1.0, 1.0, 1.0)
+
+
+def footprint_pad_nets(footprint: Footprint) -> tuple[str, ...]:
+    """Pad numbers in the order they appear, duplicates included."""
+    return tuple(
+        value for pad in footprint.node.children("pad") if (value := pad.value(0))
+    )

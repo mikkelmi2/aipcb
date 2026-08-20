@@ -95,15 +95,33 @@ which is what the agent loop consumes:
 ```bash
 .venv/bin/aipcb build examples/usb-port/design.yaml --out build/
 kicad-cli sch erc --severity-all build/usb-port.kicad_sch
+kicad-cli pcb drc --severity-all --schematic-parity build/usb-port.kicad_pcb
 ```
 
 ```
 Found 0 violations
+Found 18 unconnected items
+Found 0 schematic parity issues
 ```
 
-The build writes a `.kicad_sch`, a `.kicad_pro` carrying the net classes as KiCad
-design rules, and project-local `sym-lib-table` / `fp-lib-table` files. Open the
-schematic in KiCad and it renders, checks, and plots like any other.
+The build writes a `.kicad_sch`, a `.kicad_pcb`, a `.kicad_pro` carrying the net
+classes as KiCad design rules, and project-local `sym-lib-table` / `fp-lib-table`
+files. Open either file in KiCad and it renders, checks, and plots like any other.
+
+The unconnected items are the ratlines: nothing is routed yet, which is what M7 is
+for. Everything else is clean — in particular *schematic parity*, which is KiCad
+checking that every footprint is tied to its symbol and every pad sits on the net
+the source says it does.
+
+Footprint placement comes from the design's intent rather than from a layout file.
+Components joined by a `group` or `max_distance` constraint, or by a `for:`
+reference, are clustered and packed together; the clusters are then shelf-packed
+into the board outline. If they do not fit, the diagnostic says what size would:
+
+```
+warning[placement-overflow]: the components do not fit inside the board outline:
+they need about 33.3 x 35.6 mm, and the outline gives 22.0 x 16.0 mm
+```
 
 Connectivity is expressed with net labels on pin stubs rather than routed wires,
 and symbols are laid out on a grid grouped by module instance. That is deliberate:
@@ -152,7 +170,7 @@ The three bundled examples build up from there:
 | Command | What it does |
 |---|---|
 | `aipcb validate DESIGN` | schema and semantic checks, with source-referenced diagnostics |
-| `aipcb build DESIGN` | compile to `.kicad_sch`, `.kicad_pro` and the project library tables |
+| `aipcb build DESIGN` | compile to `.kicad_sch`, `.kicad_pcb`, `.kicad_pro` and the project library tables |
 | `aipcb parts DESIGN` | list the parts the design's libraries provide |
 | `aipcb schema` | emit the JSON Schema for the source format, for editor completion |
 | `aipcb version` | report the aipcb and KiCad versions in use |
@@ -166,8 +184,8 @@ unreadable.
 |---|---|
 | M1 — format, validation, examples | **done** |
 | M2 — schematic compile (`.kicad_sch`, passes ERC) | **done** |
-| M3 — netlist and board skeleton | next |
-| M4 — check loop over `kicad-cli` ERC/DRC JSON | |
+| M3 — netlist and board skeleton | **done** |
+| M4 — check loop over `kicad-cli` ERC/DRC JSON | next |
 | M5 — query layer for partial reads | |
 | M6 — incremental build preserving manual edits; Gerber export | |
 | M7 — topological (rubber-band) routing | research |
@@ -182,7 +200,7 @@ unreadable.
 ## Development
 
 ```bash
-.venv/bin/pytest          # 181 tests
+.venv/bin/pytest          # 239 tests
 .venv/bin/ruff check .
 .venv/bin/mypy
 ```

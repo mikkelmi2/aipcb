@@ -502,11 +502,21 @@ def _wire(start: Point, end: Point, uuid: str) -> SNode:
 
 
 def _label(name: str, at: Point, angle: float, uuid: str) -> SNode:
+    """A global label.
+
+    Local labels would work equally well for connectivity, but KiCad names their
+    nets after the sheet they sit on -- a label ``VBUS`` on the root sheet becomes
+    the net ``/VBUS``. The board would then have to use those prefixed names to
+    keep schematic parity, and every net name the toolchain reported would differ
+    from the one written in the source. Global labels have no such prefix, and a
+    flattened netlist has no sheets to scope anything to anyway.
+    """
     justify = "left" if angle in (0.0, 90.0) else "right"
-    return SNode("label").add(
+    return SNode("global_label").add(
         quoted(name),
+        SNode("shape").add(sym("input")),
         SNode("at").add(num(at.x), num(at.y), num(angle)),
-        _effects(LABEL_FONT, justify=f"{justify} bottom"),
+        _effects(LABEL_FONT, justify=justify),
         SNode("uuid").add(quoted(uuid)),
     )
 

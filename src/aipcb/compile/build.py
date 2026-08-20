@@ -13,6 +13,7 @@ from pathlib import Path
 
 from aipcb.checks.kicad_bindings import check_kicad_bindings
 from aipcb.checks.semantic import run_semantic_checks
+from aipcb.compile.board import build_board
 from aipcb.compile.project import (
     build_fp_lib_table,
     build_project,
@@ -93,6 +94,12 @@ def build_design(
     schematic_path = target / f"{project}.kicad_sch"
     _write_if_changed(schematic_path, dump(build_schematic(netlist, project=project)))
     written.append(schematic_path)
+
+    board_path = target / f"{project}.kicad_pcb"
+    _write_if_changed(
+        board_path, dump(build_board(netlist, project=project, report=report))
+    )
+    written.append(board_path)
 
     symbol_libs = {
         c.part.symbol.partition(":")[0]

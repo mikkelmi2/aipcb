@@ -1541,13 +1541,14 @@
 		)
 		(uuid "6f06b2f8-5579-5eda-9c29-945ef3680051")
 	)
-	(label "VBUS"
+	(global_label "VBUS"
+		(shape input)
 		(at 50.8 40.64 90)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "402d6069-f6b8-5377-8800-65e9c940ebbc")
 	)
@@ -1562,13 +1563,14 @@
 		)
 		(uuid "ff54b946-eac2-5293-9bb7-a960bd3eb59f")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 50.8 55.88 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "fbf17362-6ca4-5077-bf6d-c3a01d56cd45")
 	)
@@ -1583,13 +1585,14 @@
 		)
 		(uuid "d5421cd5-10ec-505a-a808-9b45ae5d8ecd")
 	)
-	(label "VBUS"
+	(global_label "VBUS"
+		(shape input)
 		(at 101.6 40.64 90)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "44b2745a-afe4-5cea-b460-6069e3d609f9")
 	)
@@ -1604,13 +1607,14 @@
 		)
 		(uuid "3ae445ee-c099-5b1d-a0d6-b05d137c87a0")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 101.6 55.88 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "73e6ade1-1119-52f9-a349-46f70a2786a4")
 	)
@@ -1625,13 +1629,14 @@
 		)
 		(uuid "ed52594f-17b5-5ac9-a4ed-d91dc10985c4")
 	)
-	(label "VBUS"
+	(global_label "VBUS"
+		(shape input)
 		(at 163.83 43.18 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "5f1b3fea-0502-5b37-be5d-7763b4a71dfe")
 	)
@@ -1646,13 +1651,14 @@
 		)
 		(uuid "29aec4e8-195d-5d0b-989a-7a27a0de84b5")
 	)
-	(label "USB_DM"
+	(global_label "USB_DM"
+		(shape input)
 		(at 163.83 50.8 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "16dc7b97-e7f5-5499-89df-6161fb18a030")
 	)
@@ -1667,13 +1673,14 @@
 		)
 		(uuid "01c9e9db-b93e-56bb-b961-965e6bcf06ed")
 	)
-	(label "USB_DP"
+	(global_label "USB_DP"
+		(shape input)
 		(at 163.83 48.26 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "197294be-e7e2-500a-a9a8-2491bdf47767")
 	)
@@ -1688,13 +1695,14 @@
 		)
 		(uuid "743028d9-5f70-5458-b8fb-38548ab105c5")
 	)
-	(label "ID"
+	(global_label "ID"
+		(shape input)
 		(at 163.83 53.34 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "6b306db0-89f5-5436-bd39-88357302f7b8")
 	)
@@ -1709,13 +1717,14 @@
 		)
 		(uuid "b6766c0e-23eb-5707-9d17-8c3cf45a64c4")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 152.4 62.23 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "43ac4f7f-044b-5934-9169-cb3ceee236d6")
 	)
@@ -1730,13 +1739,14 @@
 		)
 		(uuid "2b3281ff-d667-59c8-a9bc-1a6f0f71b75c")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 149.86 62.23 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "d87938ae-2b33-5f12-8079-31b0851faee5")
 	)
@@ -1751,13 +1761,14 @@
 		)
 		(uuid "597433dc-d4d7-5451-a376-31915ac84f1f")
 	)
-	(label "VBUS"
+	(global_label "VBUS"
+		(shape input)
 		(at 41.91 91.44 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "64063250-6c4f-5a06-9c5f-6d4586666fed")
 	)
@@ -1772,13 +1783,14 @@
 		)
 		(uuid "929aa441-92de-551a-82e3-9c13d5661719")
 	)
-	(label "DEV_DM"
+	(global_label "DEV_DM"
+		(shape input)
 		(at 41.91 93.98 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "c190d181-6c9f-5dbb-96ff-29e82cb93e64")
 	)
@@ -1793,13 +1805,14 @@
 		)
 		(uuid "fa291296-0a49-55b1-99e0-e95ab912e7ae")
 	)
-	(label "DEV_DP"
+	(global_label "DEV_DP"
+		(shape input)
 		(at 41.91 96.52 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "3b987e19-eb75-5d85-be5b-3656b7474702")
 	)
@@ -1814,13 +1827,14 @@
 		)
 		(uuid "b5215b25-0317-57a7-9b42-1f1ed3e370e7")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 41.91 99.06 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "427408a8-9e51-541d-ac5d-00eaa9ee0585")
 	)
@@ -1835,13 +1849,14 @@
 		)
 		(uuid "6ff81c57-ffaf-50c9-9fb5-a27c6e39acce")
 	)
-	(label "USB_DP"
+	(global_label "USB_DP"
+		(shape input)
 		(at 101.6 86.36 90)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "75c8013c-0900-5f86-a499-9e24bc737dc4")
 	)
@@ -1856,13 +1871,14 @@
 		)
 		(uuid "60e832a9-646c-5aed-a1b9-78db6fc3df49")
 	)
-	(label "DEV_DP"
+	(global_label "DEV_DP"
+		(shape input)
 		(at 101.6 101.6 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "8d8ee55e-1dd2-5f06-9b94-4062f51c8208")
 	)
@@ -1877,13 +1893,14 @@
 		)
 		(uuid "988ca6de-4568-5595-98c3-2fa23550e339")
 	)
-	(label "USB_DM"
+	(global_label "USB_DM"
+		(shape input)
 		(at 152.4 86.36 90)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "8709c807-32a3-5cc9-b75a-9c9ff2a4a2c9")
 	)
@@ -1898,13 +1915,14 @@
 		)
 		(uuid "6a8dea15-6022-59fd-9ae7-53ee16f9a120")
 	)
-	(label "DEV_DM"
+	(global_label "DEV_DM"
+		(shape input)
 		(at 152.4 101.6 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "5afa946f-f8a9-5a0c-b906-fd69ac24564e")
 	)
@@ -1919,13 +1937,14 @@
 		)
 		(uuid "0bf108f8-0f97-576e-afa5-cbf8b813c1a8")
 	)
-	(label "ID"
+	(global_label "ID"
+		(shape input)
 		(at 50.8 132.08 90)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify left)
 		)
 		(uuid "83f335d4-4432-5b7f-8a7e-e83b83249899")
 	)
@@ -1940,13 +1959,14 @@
 		)
 		(uuid "cdc87a7c-907f-555a-8436-add82ab08b1e")
 	)
-	(label "GND"
+	(global_label "GND"
+		(shape input)
 		(at 50.8 147.32 270)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right bottom)
+			(justify right)
 		)
 		(uuid "23e27c94-140a-5ab2-98c5-cb60a29c767a")
 	)
