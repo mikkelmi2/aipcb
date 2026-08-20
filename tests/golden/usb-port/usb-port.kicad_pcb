@@ -346,26 +346,26 @@
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "1def2ff3-3b23-4840-b2af-2cd1b455896e")
 			(effects
 				(font
 					(size 1.27 1.27)
 					(thickness 0.15)
 				)
 			)
+			(uuid "5f8551d9-e6f8-5bfe-ad9b-036335abd01c")
 		)
 		(property "Description" ""
 			(at 0 0 0)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "71b11b6b-38b2-4c48-a7ea-3f16dbec7e2e")
 			(effects
 				(font
 					(size 1.27 1.27)
 					(thickness 0.15)
 				)
 			)
+			(uuid "c7aa79a0-e557-5f6d-8457-80d6aea90889")
 		)
 		(attr smd)
 		(fp_line

@@ -132,6 +132,36 @@ net for net, pin for pin.
 Rebuild without changing anything and the output is byte-identical, so the file is
 not even rewritten.
 
+### The check loop
+
+`aipcb check` builds the design, runs KiCad's ERC and DRC, and reports what they
+found *against the source*:
+
+```bash
+.venv/bin/aipcb check examples/usb-port/design.yaml
+```
+
+Set an impossible clearance on the `usb` net class and KiCad's complaint comes back
+pointing at the line that caused it:
+
+```
+examples/usb-port/design.yaml:69:3: error[kicad-clearance]: Clearance violation
+(netclass 'usb' clearance 2,5000 mm; actual 0,2500 mm) [pad J1 pad 1, pad J1 pad 2]
+  at: components.J1.pins.1
+  hint: widen the clearance for this net class under `net_classes:`, or move the
+        parts apart with a `keep_apart` constraint
+```
+
+The mapping is exact, not heuristic. Every item in a KiCad report carries a UUID,
+and every UUID we emit is a hash of a source path, so recovering the owner is a
+dictionary lookup — no matching on coordinates, no parsing of description strings.
+A test asserts that *every* UUID appearing in a generated file maps back, so the
+index cannot silently fall behind the emitters.
+
+A UUID that does not map is reported too, and says what it means: the board
+contains something `aipcb` did not generate, so a human added it in KiCad and that
+is where the fix belongs. That case becomes load-bearing in M6.
+
 ### A minimal design
 
 ```yaml
@@ -171,6 +201,7 @@ The three bundled examples build up from there:
 |---|---|
 | `aipcb validate DESIGN` | schema and semantic checks, with source-referenced diagnostics |
 | `aipcb build DESIGN` | compile to `.kicad_sch`, `.kicad_pcb`, `.kicad_pro` and the project library tables |
+| `aipcb check DESIGN` | build, run KiCad's ERC and DRC, report violations against the source |
 | `aipcb parts DESIGN` | list the parts the design's libraries provide |
 | `aipcb schema` | emit the JSON Schema for the source format, for editor completion |
 | `aipcb version` | report the aipcb and KiCad versions in use |
@@ -185,8 +216,8 @@ unreadable.
 | M1 — format, validation, examples | **done** |
 | M2 — schematic compile (`.kicad_sch`, passes ERC) | **done** |
 | M3 — netlist and board skeleton | **done** |
-| M4 — check loop over `kicad-cli` ERC/DRC JSON | next |
-| M5 — query layer for partial reads | |
+| M4 — check loop over `kicad-cli` ERC/DRC JSON | **done** |
+| M5 — query layer for partial reads | next |
 | M6 — incremental build preserving manual edits; Gerber export | |
 | M7 — topological (rubber-band) routing | research |
 
@@ -200,7 +231,7 @@ unreadable.
 ## Development
 
 ```bash
-.venv/bin/pytest          # 239 tests
+.venv/bin/pytest          # 271 tests
 .venv/bin/ruff check .
 .venv/bin/mypy
 ```
