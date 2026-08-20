@@ -1,0 +1,145 @@
+# A 3.3 V linear supply.
+#
+# The point of this example is the module system: `regulated_rail` is
+# parameterised the way the architecture describes -- instantiated like a function
+# with its input and output rails bound at the call site -- and `count:` stamps out
+# repeated decoupling without repeating the YAML.
+
+name: ldo-supply
+revision: A
+description: Unregulated DC in, 3.3 V out, using an AMS1117 LDO.
+
+libraries:
+  - ../library/passives.yaml
+  - ../library/semiconductors.yaml
+  - ../library/connectors.yaml
+
+net_classes:
+  power:
+    trace_width_mm: 0.8
+    clearance_mm: 0.25
+    via_diameter_mm: 0.8
+    via_drill_mm: 0.4
+    description: An LDO passing 1 A needs tracks that can carry it.
+
+nets:
+  VIN:
+    class: power
+    voltage: 5.0
+    max_current_a: 1.0
+    reason: Nominally 5 V, but the AMS1117 tolerates up to 15 V.
+  VOUT:
+    class: power
+    voltage: 3.3
+    max_current_a: 1.0
+  GND:
+    class: ground
+
+components:
+  J1:
+    part: CONN_PWR_1X02
+    role: connector
+    reason: Unregulated input from an external supply.
+    pins:
+      VIN: VIN
+      GND: GND
+
+  J2:
+    part: CONN_PWR_1X02
+    role: connector
+    reason: Regulated output to whatever this board is feeding.
+    pins:
+      VIN: VOUT
+      GND: GND
+
+modules:
+  regulated_rail:
+    description: A fixed LDO with its input and output capacitors.
+    params:
+      regulator:
+        type: part
+        required: true
+        description: The LDO part. Its pinout must be GND / VO / VI.
+      input_cap:
+        type: part
+        default: C_10U_0805
+        description: Stabilises the input against supply lead inductance.
+      output_cap:
+        type: part
+        default: C_22U_0805
+        description: The AMS1117 needs at least 22 uF on its output to stay stable.
+      bypass_count:
+        type: int
+        default: 2
+        description: How many 100 nF ceramics to put across the output rail.
+    ports: [VIN, VOUT, GND]
+    components:
+      U:
+        part: "{{ regulator }}"
+        role: regulator
+        reason: Linear regulation is enough here; the drop is small and the load light.
+        pins:
+          VI: VIN
+          VO: VOUT
+          GND: GND
+      CIN:
+        part: "{{ input_cap }}"
+        role: bulk
+        for: U
+        reason: Supplies the transient current the input leads cannot.
+        pins:
+          "1": VIN
+          "2": GND
+      COUT:
+        part: "{{ output_cap }}"
+        role: bulk
+        for: U
+        reason: Required for loop stability, not just for noise.
+        pins:
+          "1": VOUT
+          "2": GND
+      CBYP:
+        part: C_100N_0603
+        count: "{{ bypass_count }}"
+        role: bypass
+        for: U
+        reason: Ceramics handle the high-frequency noise the bulk capacitor cannot.
+        pins:
+          "1": VOUT
+          "2": GND
+    constraints:
+      - kind: max_distance
+        between: [CIN, U]
+        mm: 5.0
+        reason: Input capacitor loop inductance sets how well the LDO rejects
+          supply transients.
+      - kind: max_distance
+        between: [COUT, U]
+        mm: 5.0
+        reason: The output capacitor is part of the regulator's control loop.
+
+instances:
+  rail_3v3:
+    module: regulated_rail
+    reason: The board's only rail.
+    params:
+      regulator: AMS1117_3V3
+      bypass_count: 2
+    connect:
+      VIN: VIN
+      VOUT: VOUT
+      GND: GND
+
+layout:
+  outline:
+    shape: rect
+    width_mm: 25.0
+    height_mm: 18.0
+  stackup:
+    copper_layers: 2
+    thickness_mm: 1.6
+  placement:
+    rules:
+      - members: [J1, J2]
+        side: front
+        reason: Connectors go on the board edge.

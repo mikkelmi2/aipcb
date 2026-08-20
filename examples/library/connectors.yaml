@@ -1,0 +1,58 @@
+# Connectors.
+
+parts:
+  USB_MICRO_B:
+    description: USB 2.0 Micro-B receptacle, horizontal
+    symbol: Connector:USB_B_Micro
+    footprint: Connector_USB:USB_Micro-B_Amphenol_10103594-0001LF_Horizontal
+    value: USB_B_Micro
+    keywords: [usb, connector]
+    pins:
+      "1": { type: power_out, name: VBUS, description: "Bus power, 5 V nominal" }
+      "2": { type: bidirectional, name: "D-", description: "USB differential minus" }
+      "3": { type: bidirectional, name: "D+", description: "USB differential plus" }
+      "4": { type: passive, name: ID, description: OTG identification }
+      "5": { type: power_out, name: GND }
+      "6": { type: passive, name: Shield, description: Connector shell }
+    limits:
+      voltage_max_v: 30.0
+      current_max_a: 1.5
+
+  CONN_ISP_1X06:
+    description: 6-pin 2.54 mm header for AVR ISP programming
+    symbol: Connector_Generic:Conn_01x06
+    footprint: Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical
+    value: ISP
+    keywords: [header, programming]
+    pins:
+      "1": { type: passive, name: MISO }
+      "2": { type: power_out, name: VCC, description: "The programmer supplies the board" }
+      "3": { type: passive, name: SCK }
+      "4": { type: passive, name: MOSI }
+      "5": { type: passive, name: RESET }
+      "6": { type: power_out, name: GND }
+
+  CONN_PWR_1X02:
+    description: 2-pin 2.54 mm header for unregulated DC input
+    symbol: Connector_Generic:Conn_01x02
+    footprint: Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical
+    value: PWR_IN
+    keywords: [header, power]
+    pins:
+      "1": { type: power_out, name: VIN, description: "Positive supply in" }
+      "2": { type: power_out, name: GND }
+    limits:
+      voltage_max_v: 15.0
+      current_max_a: 2.0
+
+  CONN_BRK_1X04:
+    description: 4-pin 2.54 mm breakout header
+    symbol: Connector_Generic:Conn_01x04
+    footprint: Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical
+    value: BRK
+    keywords: [header, breakout]
+    pins:
+      "1": { type: passive, name: P1 }
+      "2": { type: passive, name: P2 }
+      "3": { type: passive, name: P3 }
+      "4": { type: passive, name: P4 }

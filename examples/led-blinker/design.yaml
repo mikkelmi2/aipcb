@@ -1,0 +1,149 @@
+# An ATtiny85 blinking an LED, programmable in circuit over ISP.
+#
+# The smallest design that still exercises the whole layer-1 model: a part
+# database, intent-carrying roles, a parameterised module, and placement
+# constraints with reasons attached.
+
+name: led-blinker
+revision: A
+description: ATtiny85 with an indicator LED and an AVR ISP header.
+
+libraries:
+  - ../library/passives.yaml
+  - ../library/semiconductors.yaml
+  - ../library/connectors.yaml
+
+net_classes:
+  power:
+    trace_width_mm: 0.5
+    clearance_mm: 0.2
+    description: Rails carry more current than signals, so they get wider tracks.
+  signal:
+    trace_width_mm: 0.25
+    clearance_mm: 0.2
+
+nets:
+  VCC:
+    class: power
+    voltage: 3.3
+    max_current_a: 0.05
+    reason: Supplied by the ISP programmer; the board has no regulator of its own.
+  GND:
+    class: ground
+  RESET:
+    class: signal
+    description: Held high by R1; pulled low by the programmer to enter ISP mode.
+  PB0:
+    class: signal
+    description: ISP MOSI.
+  PB1:
+    class: signal
+    description: ISP MISO.
+  PB2:
+    class: signal
+    description: ISP SCK.
+  PB4:
+    class: signal
+    description: Drives the indicator LED.
+
+components:
+  U1:
+    part: ATTINY85_DIP8
+    role: mcu
+    reason: Eight pins is enough for one LED and an ISP header, and it is DIP so
+      the board can be hand-assembled.
+    pins:
+      VCC: VCC
+      GND: GND
+      RESET: RESET
+      PB0: PB0
+      PB1: PB1
+      PB2: PB2
+      PB4: PB4
+
+  C1:
+    part: C_100N_0603
+    role: decoupling
+    for: U1
+    reason: Local charge reservoir for the MCU's supply pin.
+    pins:
+      "1": VCC
+      "2": GND
+
+  R1:
+    part: R_10K_0603
+    role: pull_up
+    for: U1
+    reason: RESET must not float, or the MCU resets on noise.
+    pins:
+      "1": VCC
+      "2": RESET
+
+  J1:
+    part: CONN_ISP_1X06
+    role: connector
+    reason: Standard 6-pin AVR ISP pinout.
+    pins:
+      MISO: PB1
+      VCC: VCC
+      SCK: PB2
+      MOSI: PB0
+      RESET: RESET
+      GND: GND
+
+modules:
+  indicator:
+    description: An LED with its series resistor. Instantiate once per indicator.
+    params:
+      resistor:
+        type: part
+        default: R_330R_0603
+        description: Sets the LED current. 330R gives about 4 mA at 3.3 V.
+    ports: [DRIVE, GND]
+    nets:
+      ANODE:
+        class: signal
+        description: Between the resistor and the LED anode.
+    components:
+      R:
+        part: "{{ resistor }}"
+        role: current_limit
+        reason: Limits LED current to well under the MCU's 40 mA pin rating.
+        pins:
+          "1": DRIVE
+          "2": ANODE
+      D:
+        part: LED_RED_0603
+        role: indicator
+        pins:
+          A: ANODE
+          K: GND
+
+instances:
+  led1:
+    module: indicator
+    reason: The one thing this board does.
+    connect:
+      DRIVE: PB4
+      GND: GND
+
+constraints:
+  - kind: max_distance
+    between: [C1, U1]
+    mm: 5.0
+    reason: A decoupling capacitor works through its loop inductance, so the loop
+      to the supply pin must stay short.
+
+layout:
+  outline:
+    shape: rect
+    width_mm: 30.0
+    height_mm: 20.0
+  stackup:
+    copper_layers: 2
+    thickness_mm: 1.6
+  placement:
+    rules:
+      - members: [J1]
+        side: front
+        reason: The programming header must be reachable with the board assembled.

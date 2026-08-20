@@ -1,0 +1,119 @@
+# Passive components.
+#
+# Every part binds a logical pinout to a KiCad symbol and footprint. `aipcb
+# validate` checks that both exist in the installed KiCad libraries, and that the
+# pins declared here match the symbol's.
+
+parts:
+  R_22R_0603:
+    description: 22 ohm 1% resistor, 0603
+    symbol: Device:R
+    footprint: Resistor_SMD:R_0603_1608Metric
+    value: 22R
+    keywords: [resistor, series]
+    pins:
+      "1": { type: passive }
+      "2": { type: passive }
+    limits:
+      voltage_max_v: 75
+      power_max_w: 0.1
+
+  R_330R_0603:
+    description: 330 ohm resistor, 0603
+    symbol: Device:R
+    footprint: Resistor_SMD:R_0603_1608Metric
+    value: 330R
+    keywords: [resistor, current_limit]
+    pins:
+      "1": { type: passive }
+      "2": { type: passive }
+    limits:
+      voltage_max_v: 75
+      power_max_w: 0.1
+
+  R_5K1_0603:
+    description: 5.1 kohm 1% resistor, 0603
+    symbol: Device:R
+    footprint: Resistor_SMD:R_0603_1608Metric
+    value: 5K1
+    keywords: [resistor, usb, cc]
+    pins:
+      "1": { type: passive }
+      "2": { type: passive }
+    limits:
+      voltage_max_v: 75
+      power_max_w: 0.1
+
+  R_10K_0603:
+    description: 10 kohm resistor, 0603
+    symbol: Device:R
+    footprint: Resistor_SMD:R_0603_1608Metric
+    value: 10K
+    keywords: [resistor, pull_up]
+    pins:
+      "1": { type: passive }
+      "2": { type: passive }
+    limits:
+      voltage_max_v: 75
+      power_max_w: 0.1
+
+  C_100N_0603:
+    description: 100 nF X7R ceramic capacitor, 0603, 50 V
+    symbol: Device:C
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    value: 100n
+    keywords: [capacitor, decoupling]
+    pins:
+      "1": { type: passive }
+      "2": { type: passive }
+    limits:
+      voltage_max_v: 50
+
+  C_1U_0603:
+    description: 1 uF X5R ceramic capacitor, 0603, 25 V
+    symbol: Device:C
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    value: 1u
+    keywords: [capacitor, bypass]
+    pins:
+      "1": { type: passive }
+      "2": { type: passive }
+    limits:
+      voltage_max_v: 25
+
+  C_10U_0805:
+    description: 10 uF X5R ceramic capacitor, 0805, 16 V
+    symbol: Device:C
+    footprint: Capacitor_SMD:C_0805_2012Metric
+    value: 10u
+    keywords: [capacitor, bulk]
+    pins:
+      "1": { type: passive }
+      "2": { type: passive }
+    limits:
+      voltage_max_v: 16
+
+  C_22U_0805:
+    description: 22 uF X5R ceramic capacitor, 0805, 10 V
+    symbol: Device:C
+    footprint: Capacitor_SMD:C_0805_2012Metric
+    value: 22u
+    keywords: [capacitor, bulk]
+    pins:
+      "1": { type: passive }
+      "2": { type: passive }
+    limits:
+      voltage_max_v: 10
+
+  LED_RED_0603:
+    description: Red indicator LED, 0603, 2.0 V forward
+    symbol: Device:LED
+    footprint: LED_SMD:LED_0603_1608Metric
+    value: RED
+    keywords: [led, indicator]
+    pins:
+      "1": { type: passive, name: K, description: Cathode }
+      "2": { type: passive, name: A, description: Anode }
+    limits:
+      voltage_max_v: 5
+      current_max_a: 0.02
