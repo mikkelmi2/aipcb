@@ -158,3 +158,34 @@ Note a system-level side effect: Phase 0 installed `podman` system-wide via apt
 ## Chain end
 
 Halted after M10. Final report: [`chain-m10-m12.md`](chain-m10-m12.md).
+
+---
+
+# Resumption — ADR 0009 decided
+
+The project owner decided the blocking question on 2026-08-21 and the chain
+resumed. Recorded here so the halt and the restart read as one story.
+
+**Decision: ADR 0009 Option 1** — fill via a `pcbnew` subprocess — approved with
+four binding conditions (rationale, version lock, bridge-not-turn framing,
+subprocess hygiene). Written into [ADR 0009](../decisions/0009-pours.md) under
+"The decision"; its status moved from *Proposed — blocked* to *Accepted*. The
+orchestrator also recorded the owner's cultural note in a new `CLAUDE.md`: ADR
+premises about external tools' capabilities have expiry dates, twice observed now
+(kiutils, headless fill).
+
+**M12 spec updated before dispatch** (`docs/milestones/m12-simulation.md`): Phase 0
+marked complete so the milestone agent does not redo it, the "minutes to hours per
+pair" framing replaced with the measured 30 s – 2 min, the M12b parallelism call
+handed to the agent as a measured judgement rather than an assumed requirement,
+and Phase 0's two plan-changing findings promoted into the spec body — calibrate on
+`mcu-4layer` rather than `diff-pair`, and `diff-pair`'s declared 100 Ω target is
+unreachable for its geometry, so that acceptance criterion is not satisfiable as
+written.
+
+**Prerequisites dispatched before M10**, as separate commits: the missing
+`aux_axis_origin` and the position-file naming. Both are silent-corruption
+defects — wrong output, no error — which is the class this project exists to
+eliminate, so they are fixed with tests before the milestone that will exercise
+them.
+
