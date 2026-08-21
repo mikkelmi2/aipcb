@@ -347,7 +347,7 @@ def launch_corridor(stubs: list[Track]) -> object:
     return unary_union(
         [
             LineString([t.start, t.end]).buffer(
-                t.width / 2 + _LAUNCH_CLEARANCE_MM, resolution=8
+                t.width / 2 + _LAUNCH_CLEARANCE_MM, quad_segs=8
             )
             for t in stubs
             if t.length > _EPS
@@ -766,7 +766,7 @@ def _assemble(
             continue
         size = via.child("size")
         radius = float(size.value() or 0.4) / 2 if size else 0.2
-        if ShapelyPoint(at).buffer(radius, resolution=8).intersects(corridor):
+        if ShapelyPoint(at).buffer(radius, quad_segs=8).intersects(corridor):
             dropped += 1
             continue
         vias.append(via)

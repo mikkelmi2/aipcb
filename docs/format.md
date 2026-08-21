@@ -1076,7 +1076,15 @@ Three approximations are deliberate and worth knowing about:
 * Each end of a pair grows a short straight **launch**, because a microstrip port
   has to run along an axis and a trace that ends on a diagonal has nowhere to be fed
   from. The port occupies exactly that launch, so it does not lengthen the link — but
-  the pad and antipad that were really there are not modelled.
+  the pad and antipad that were really there are not modelled. The launch runs
+  perpendicular to the pair's own separation, so the two halves stay parallel rather
+  than overlapping.
+* **The corridor the launches occupy is cleared** of other nets' copper. A launch
+  runs outward from where the pair ends, which is where a pad was, and past the pad
+  is the component — with the footprints gone, that region is full of the next pins'
+  fanout. The port stands in for the pad and for the driver, connector and cable
+  beyond it, so the fanout is removed rather than shorted to. Each slice reports how
+  much copper it took out.
 * **Footprints are dropped** from the slice. The interior of a run, which is what an
   impedance target is about, is unaffected; the last few tenths of a millimetre at
   each end are not.

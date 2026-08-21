@@ -201,6 +201,82 @@ class TestSlice:
             assert float(size.value(0) or 0) <= 0.06, "the keeper pad adds copper"
             assert pad.child("net") is not None
 
+    def test_the_two_launches_of_one_end_never_share_a_line(self, routed_pcie) -> None:
+        """The defect this guards produced a 437 ohm reading on an 85 ohm pair.
+
+        A pair that leaves its pads broadside has both endpoints separated along one
+        axis. Launch along that same axis and the two ports run on one line, overlap,
+        and short P to N -- with a plausible-looking board and a clean exit code. So
+        the launch axis has to be the one the endpoints do *not* separate along, and
+        the test asks that of every pair on the reference board.
+        """
+        netlist, board = routed_pcie
+        for pair in logical_pairs(netlist):
+            settings = netlist.simulation.for_class(pair.net_class)
+            sliced = build_slice(board, netlist, pair, settings, port_impedance_ohm=50.0)
+            ports = {port.number: port for port in sliced.ports}
+            for near, far in ((1, 3), (2, 4)):
+                a, b = ports[near], ports[far]
+                separation = (b.at[0] - a.at[0], b.at[1] - a.at[1])
+                along_x = abs(separation[0]) >= abs(separation[1])
+                launched_along_x = a.rotation in (90.0, 270.0)
+                assert along_x != launched_along_x, (
+                    f"{pair.name}: ports {near} and {far} are launched along the axis "
+                    "they are separated on, so they overlap"
+                )
+
+    def test_the_launch_corridor_has_no_foreign_copper_left_in_it(
+        self, routed_pcie
+    ) -> None:
+        """A launch runs out past the pad, where the next pins' fanout lives.
+
+        On `examples/pcie-sata` every pair end has a ground track crossing within a
+        millimetre. Left in place, the launch is welded to ground and the solver
+        reports the short at exit code zero, so the slice cuts the corridor out and
+        says how much it removed.
+        """
+        from shapely.geometry import LineString
+
+        netlist, board = routed_pcie
+        pair = next(p for p in logical_pairs(netlist) if p.name.startswith("SATA0_TX"))
+        settings = netlist.simulation.for_class(pair.net_class)
+        sliced = build_slice(board, netlist, pair, settings, port_impedance_ohm=50.0)
+        assert any("removed from the corridor" in n for n in sliced.notes)
+
+        # The port's body runs from its outer face back towards the trace; the
+        # rotation says which way. Written out because it is the same mapping the
+        # solver reads out of the placement file.
+        bodies = {0.0: (0, -1), 90.0: (-1, 0), 180.0: (0, 1), 270.0: (1, 0)}
+        corridors = [
+            LineString(
+                [
+                    port.at,
+                    (
+                        port.at[0] + bodies[port.rotation][0] * port.length_mm,
+                        port.at[1] + bodies[port.rotation][1] * port.length_mm,
+                    ),
+                ]
+            ).buffer(port.width_mm / 2 + 0.10)
+            for port in sliced.ports
+        ]
+
+        codes = {int(n.value(0) or 0): n.value(1) for n in sliced.board.children("net")}
+        for segment in sliced.board.children("segment"):
+            if codes.get(int(segment.child("net").value() or 0)) in sliced.pair.nets:
+                continue
+            line = LineString(
+                [
+                    (float(segment.child("start").value(0) or 0),
+                     float(segment.child("start").value(1) or 0)),
+                    (float(segment.child("end").value(0) or 0),
+                     float(segment.child("end").value(1) or 0)),
+                ]
+            )
+            for number, shape in enumerate(corridors, start=1):
+                assert not line.intersects(shape), (
+                    f"foreign copper still runs through port {number}'s launch"
+                )
+
     def test_an_unrouted_pair_is_refused_by_name(self, routed_mcu) -> None:
         netlist, _ = routed_mcu
         pair = next(p for p in logical_pairs(netlist))
