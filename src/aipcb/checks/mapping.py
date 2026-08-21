@@ -111,7 +111,8 @@ def _index_pours(index: UuidIndex, netlist: Netlist) -> None:
     aipcb generated", which is exactly the wrong answer: the pour *is* declared, and
     the fix belongs on its line in the YAML rather than in KiCad.
     """
-    from aipcb.compile.zones import keepout_uuid, zone_uuid
+    from aipcb.compile.edge import EDGE_ROLE
+    from aipcb.compile.zones import finger_keepout_uuid, keepout_uuid, zone_uuid
     from aipcb.route.stitch import MAX_STITCH_VIAS, stitch_uuid
     from aipcb.route.transition import MAX_TRANSITION_VIAS, transition_uuid
 
@@ -136,6 +137,20 @@ def _index_pours(index: UuidIndex, netlist: Netlist) -> None:
                 path=("layout", "placement", "keepouts", position),
             ),
         )
+    # The keepout M11b puts round a card edge's fingers is generated rather than
+    # declared, so it needs mapping back to the component that caused it.
+    if netlist.pours:
+        for component in netlist.components_with_role(EDGE_ROLE):
+            index.add(
+                finger_keepout_uuid(component.refdes),
+                SourceRef(
+                    "card-edge pour keepout",
+                    f"the finger field of {component.refdes}, kept clear of pour",
+                    path=netlist.mech_path("placement", component.refdes),
+                    loc=netlist.mech_loc("placement", component.refdes),
+                ),
+            )
+
     for position, stitching in enumerate(netlist.stitching):
         ref = SourceRef(
             "stitching via",
