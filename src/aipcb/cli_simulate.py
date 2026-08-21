@@ -170,7 +170,8 @@ def _emit_findings(batch: SimulationBatch, report: Report) -> None:
             continue
         path = result.pair.source_path
         for note in metrics.notes:
-            report.warning("si-not-physical", f"{metrics.pair}: {note}", path=path)
+            code = "si-not-physical" if not metrics.usable and "|Sdd21|" in note else "si-caveat"
+            report.warning(code, f"{metrics.pair}: {note}", path=path)
         if metrics.verdicts.get("impedance") == "warn" and metrics.target_ohm:
             report.warning(
                 "si-impedance",
