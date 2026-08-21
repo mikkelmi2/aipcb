@@ -22,6 +22,8 @@ so a UUID-keyed override would have hit twelve pads instead of one.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from aipcb.compile.frame import BoardFrame
 from aipcb.ids import element_uuid
 from aipcb.kicad.sexpr import SNode, num, quoted, sym
@@ -30,10 +32,15 @@ from aipcb.model.layout import NetClass, copper_layer_names
 from aipcb.model.pours import Pour
 from aipcb.netlist import Netlist
 
+if TYPE_CHECKING:
+    from aipcb.compile.place import BoardPlacement
+
 __all__ = [
     "DEFAULT_MIN_THICKNESS",
     "ZONE_CONNECT",
     "apply_pad_connect",
+    "finger_keepout_uuid",
+    "finger_keepouts",
     "keepout_uuid",
     "keepout_zones",
     "pad_zone_connect",
@@ -103,6 +110,7 @@ def zone_nodes(
     netlist: Netlist,
     frame: BoardFrame,
     codes: dict[str, int],
+    placement: BoardPlacement | None = None,
 ) -> list[SNode]:
     """Every pour, as an unfilled KiCad zone, plus the keepouts they must respect."""
     nodes: list[SNode] = []
@@ -113,6 +121,72 @@ def zone_nodes(
         nodes.append(_zone(pour, index, code, frame, _class_for(netlist, pour.net)))
     if nodes:
         nodes.extend(keepout_zones(netlist))
+        if placement is not None:
+            nodes.extend(finger_keepouts(netlist, placement))
+    return nodes
+
+
+def finger_keepout_uuid(refdes: str) -> str:
+    """The stable identity of the keepout around one edge connector's fingers."""
+    return element_uuid("zone", "fingers", refdes)
+
+
+def finger_keepouts(netlist: Netlist, placement: BoardPlacement) -> list[SNode]:
+    """Keep the pour off a card edge's plated finger field (M11b).
+
+    Gold fingers are plated after the copper is etched, and pour copper that runs up
+    to them is copper the plating bath reaches too. Every card-edge footprint wants
+    a clear border round the finger area; nothing in KiCad's footprint says so, and
+    nothing in the pour knows about it, so the integration has to add it.
+
+    The clearance is ``placement.<ref>.pour_keepout_mm``, defaulting to
+    :data:`aipcb.compile.edge.DEFAULT_FINGER_KEEPOUT_MM`. Emitted on the outer
+    copper layers only: an inner plane under the fingers is not plated, and it is
+    the reference the pairs entering the connector are designed against.
+    """
+    from aipcb.compile.edge import edge_connectors
+
+    layout = netlist.layout
+    copper = copper_layer_names(layout.stackup.copper_layers if layout else 2)
+    outer = tuple(name for name in (copper[0], copper[-1]))
+    nodes: list[SNode] = []
+    for connector in edge_connectors(netlist, placement):
+        node = SNode("zone")
+        node.add(SNode("net").add(num(0)))
+        node.add(SNode("net_name").add(quoted("")))
+        node.add(SNode("layers").add(*(quoted(name) for name in outer)))
+        node.add(SNode("uuid").add(quoted(finger_keepout_uuid(connector.refdes))))
+        node.add(
+            SNode("name").add(
+                quoted(f"{connector.refdes} finger field, kept clear of pour")
+            )
+        )
+        node.add(SNode("hatch").add(sym("edge"), num(_OUTLINE_HATCH)))
+        node.add(SNode("connect_pads").add(SNode("clearance").add(num(0))))
+        node.add(SNode("min_thickness").add(num(DEFAULT_MIN_THICKNESS)))
+        node.add(SNode("filled_areas_thickness").add(sym("no")))
+        node.add(
+            SNode("keepout").add(
+                # Tracks and vias are allowed: the pairs have to reach the fingers.
+                # Only the pour is kept out.
+                SNode("tracks").add(sym("allowed")),
+                SNode("vias").add(sym("allowed")),
+                SNode("pads").add(sym("allowed")),
+                SNode("copperpour").add(sym("not_allowed")),
+                SNode("footprints").add(sym("allowed")),
+            )
+        )
+        node.add(
+            SNode("fill").add(
+                SNode("thermal_gap").add(num(DEFAULT_THERMAL_GAP)),
+                SNode("thermal_bridge_width").add(num(DEFAULT_THERMAL_BRIDGE)),
+            )
+        )
+        pts = SNode("pts")
+        for x, y in connector.keepout_polygon():
+            pts.add(SNode("xy").add(num(x), num(y)))
+        node.add(SNode("polygon").add(pts))
+        nodes.append(node)
     return nodes
 
 

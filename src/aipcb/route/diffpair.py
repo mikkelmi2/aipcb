@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from shapely.geometry import LineString
 
 from aipcb.diagnostics import Report
+from aipcb.impedance import hammerstad_microstrip
 from aipcb.model.layout import NetClass
 from aipcb.netlist import Netlist
 from aipcb.route.obstacles import RoutingEnvironment
@@ -29,6 +30,7 @@ __all__ = [
     "achievable_range",
     "estimate_gap",
     "find_pairs",
+    "geometry_for_class",
     "split_centre_line",
 ]
 
@@ -48,6 +50,14 @@ class DiffPair:
     width: float
     gap: float
     max_skew: float | None = None
+    net_class: str = ""
+    """The class both halves belong to, for looking up its high-speed rules."""
+    max_uncoupled: float | None = None
+    """M11d rule 3: how much of each half may run uncoupled, in millimetres."""
+    standoff: float = 1.0
+    """M11d rule 1: the clearance multiplier this pair is tightened against."""
+    target_ohm: float | None = None
+    """The differential impedance the geometry was derived for, if any."""
 
     @property
     def pitch(self) -> float:
@@ -107,8 +117,9 @@ def find_pairs(
 
         starts, ends = _match_ends(pads["p"], pads["n"], environment)
         net_class = netlist.net_classes.get(net.net_class, NetClass())
-        width = net_class.diff_pair_width_mm or net_class.trace_width_mm
-        gap = _gap_for(net, net_class, netlist, report, positive)
+        width, gap = geometry_for_class(
+            netlist, net.net_class, net_class, net, report, positive
+        )
 
         pairs.append(
             DiffPair(
@@ -119,6 +130,10 @@ def find_pairs(
                 width=width,
                 gap=gap,
                 max_skew=net_class.max_skew_mm,
+                net_class=net.net_class,
+                max_uncoupled=net_class.max_uncoupled_mm,
+                standoff=net_class.standoff,
+                target_ohm=net_class.impedance_diff_ohm,
             )
         )
         seen.update((positive, negative))
@@ -140,6 +155,40 @@ def _match_ends(
     if straight <= crossed:
         return (positive[0], negative[0]), (positive[1], negative[1])
     return (positive[0], negative[1]), (positive[1], negative[0])
+
+
+def geometry_for_class(
+    netlist: Netlist,
+    class_name: str,
+    net_class: NetClass,
+    net: object,
+    report: Report,
+    name: str,
+) -> tuple[float, float]:
+    """The width and gap a pair of this class is routed at.
+
+    A controlled-impedance class (M11a) derives both from its stackup, and an
+    explicit ``diff_pair_width_mm`` or ``diff_pair_gap_mm`` overrides what was
+    derived rather than being ignored -- ``aipcb validate`` is where the
+    disagreement is reported, so that the board is built from what the source
+    actually says. Everything else keeps the M8 behaviour exactly.
+    """
+    from aipcb.highspeed import target_for
+
+    target = target_for(netlist, class_name, net_class)
+    if target is not None:
+        if target.unreachable is not None:
+            report.warning(
+                "diff-pair-impedance-unreachable",
+                f"{name}: {target.unreachable}",
+                hint="change the gap, the stackup or the reference layer; the pair "
+                "is routed at the class's declared width and gap meanwhile",
+                net=name,
+            )
+        return target.width_mm, target.gap_mm
+
+    width = net_class.diff_pair_width_mm or net_class.trace_width_mm
+    return width, _gap_for(net, net_class, netlist, report, name)
 
 
 def _gap_for(
@@ -245,16 +294,12 @@ def estimate_gap(target_ohm: float, width: float, height: float) -> float:
 
 
 def _microstrip_impedance(width: float, height: float, epsilon_r: float = 4.3) -> float:
-    """Hammerstad's approximation for the impedance of a single microstrip."""
-    effective = (epsilon_r + 1) / 2 + (epsilon_r - 1) / 2 * (
-        1 / math.sqrt(1 + 12 * height / max(width, 1e-6))
-    )
-    ratio = width / max(height, 1e-6)
-    if ratio < 1:
-        return (60 / math.sqrt(effective)) * math.log(8 / ratio + ratio / 4)
-    return (120 * math.pi / math.sqrt(effective)) / (
-        ratio + 1.393 + 0.667 * math.log(ratio + 1.444)
-    )
+    """Hammerstad's approximation for the impedance of a single microstrip.
+
+    Kept on the M8 path deliberately; :mod:`aipcb.impedance` explains why the
+    controlled-impedance path uses IPC-2141 instead and what the two disagree by.
+    """
+    return hammerstad_microstrip(width, height, epsilon_r)
 
 
 # ---------------------------------------------------------------------------

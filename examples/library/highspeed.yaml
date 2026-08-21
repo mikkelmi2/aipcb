@@ -1,0 +1,181 @@
+# Parts for the high-speed reference board.
+#
+# Three of the four entries here are ordinary: a KiCad symbol, a KiCad footprint,
+# and a pinout. The fourth is worth reading before it surprises somebody.
+#
+# **SATA_CTRL_QFN48 borrows a symbol.** KiCad 9 ships no symbol for an
+# ASM1064/JMB585-class PCIe-to-SATA bridge, and the only SATA footprint it ships
+# (`Connector_SATA_SAS:SATA_Amphenol_10029364-001LF_Horizontal`) has pad numbers
+# `P1..P15`/`S1..S7`/`MP` that no shipped symbol matches -- so neither the
+# controller nor a real SATA receptacle can be bound the ordinary way.
+#
+# Rather than invent library files, the controller borrows `Conn_01x49`: a 49-pin
+# generic symbol, which is exactly the pad count of a QFN-48 with an exposed pad,
+# and whose pins are all `passive`. That last part is deliberate and was arrived at
+# the hard way -- the first attempt borrowed a real 48-pin QFN symbol, and KiCad's
+# ERC then judged this board's pinout against *that part's* electrical types and
+# reported a reference clock driving a power pin. A borrowed symbol brings its
+# opinions with it; a generic one has none. The pin *names* below are this board's
+# own and are what `pins:` resolves against.
+#
+# The footprints are real, the pinout is real, and the geometry is real. The
+# schematic symbols are outlines with the right number of pins. What M11 is about
+# is the board, and the board is the real thing.
+
+parts:
+  PCIE_X1_EDGE:
+    description: PCI Express x1 card-edge fingers, 36 contacts at 1 mm pitch. The
+      footprint carries the card outline and the keying notch as Edge.Cuts geometry;
+      aipcb validates the board outline against it rather than emitting it.
+    symbol: Connector:Bus_PCI_Express_x1
+    refdes_prefix: J
+    footprint: Connector_PCBEdge:BUS_PCIexpress_x1
+    value: PCIe x1 edge
+    keywords: [pcie, edge, connector, gold_fingers]
+    pins:
+      # B side -- the F.Cu row, contacts B1..B18.
+      "B1": { type: power_out, name: "+12V", description: "Bus power" }
+      "B2": { type: power_out, name: "+12V" }
+      "B3": { type: power_out, name: "+12V" }
+      "B4": { type: power_out, name: GND }
+      "B5": { type: bidirectional, name: SMCLK }
+      "B6": { type: bidirectional, name: SMDAT }
+      "B7": { type: power_out, name: GND }
+      "B8": { type: power_out, name: "+3.3V" }
+      "B9": { type: input, name: JTAG1 }
+      "B10": { type: power_out, name: 3.3Vaux }
+      "B11": { type: open_collector, name: WAKE }
+      "B12": { type: passive, name: RSVD_B12 }
+      "B13": { type: power_out, name: GND }
+      "B14": { type: input, name: PETp0, description: "Lane 0 transmit, card to host" }
+      "B15": { type: input, name: PETn0 }
+      "B16": { type: power_out, name: GND }
+      "B17": { type: passive, name: PRSNT2, description: "Presence detect, x1 end" }
+      "B18": { type: power_out, name: GND }
+      # A side -- the B.Cu row, contacts A1..A18.
+      "A1": { type: passive, name: PRSNT1, description: "Presence detect, tied to B17" }
+      "A2": { type: power_out, name: "+12V" }
+      "A3": { type: power_out, name: "+12V" }
+      "A4": { type: power_out, name: GND }
+      "A5": { type: input, name: JTAG2 }
+      "A6": { type: input, name: JTAG3 }
+      "A7": { type: output, name: JTAG4 }
+      "A8": { type: input, name: JTAG5 }
+      "A9": { type: power_out, name: "+3.3V" }
+      "A10": { type: power_out, name: "+3.3V" }
+      "A11": { type: input, name: PERST }
+      "A12": { type: power_out, name: GND }
+      "A13": { type: input, name: "REFCLK+", description: "100 MHz reference clock" }
+      "A14": { type: input, name: "REFCLK-" }
+      "A15": { type: power_out, name: GND }
+      "A16": { type: output, name: PERp0, description: "Lane 0 receive, host to card" }
+      "A17": { type: output, name: PERn0 }
+      "A18": { type: power_out, name: GND }
+
+  SATA_7P_1P25:
+    description: 7-way 1.25 mm side-entry connector standing in for a SATA data
+      receptacle -- same contact count and very nearly the same pitch. Two shell
+      pads, both numbered MP, which is the same shared-pad-number case as a USB
+      receptacle's shield tabs.
+    symbol: Connector_Generic_MountingPin:Conn_01x07_MountingPin
+    refdes_prefix: J
+    footprint: Connector_JST:JST_GH_SM07B-GHS-TB_1x07-1MP_P1.25mm_Horizontal
+    value: SATA data
+    keywords: [sata, connector, high_speed]
+    pins:
+      "1": { type: power_in, name: GND }
+      "2": { type: passive, name: "A+", description: "Host transmit, positive" }
+      "3": { type: passive, name: "A-" }
+      "4": { type: power_in, name: GND }
+      "5": { type: passive, name: "B-", description: "Host receive, negative" }
+      "6": { type: passive, name: "B+" }
+      "7": { type: power_in, name: GND }
+      "MP": { type: passive, name: MountPin, description: "Shell tabs, two of them" }
+
+  SATA_CTRL_QFN48:
+    description: A PCIe x1 to 4-port SATA bridge controller, ASM1064 class, in a
+      48-pin QFN with an exposed pad. See the note at the top of this file about the
+      symbol.
+    symbol: Connector_Generic:Conn_01x49
+    refdes_prefix: U
+    footprint: Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.15x5.15mm
+    value: SATA-CTRL-48
+    keywords: [sata, pcie, controller, qfn]
+    pins:
+      # West side, north to south. SATA ports 2 and 3 leave here, port 2 from the
+      # northern group because its connector is the nearer of the two: the bundle
+      # turns north together, and the track that turns first has to start furthest
+      # from the turn.
+      "1": { type: passive, name: RSVD1 }
+      "2": { type: passive, name: SATA2_TXP }
+      "3": { type: passive, name: SATA2_TXN }
+      "4": { type: power_in, name: GND_W1 }
+      "5": { type: passive, name: SATA2_RXN }
+      "6": { type: passive, name: SATA2_RXP }
+      "7": { type: passive, name: RSVD7 }
+      "8": { type: passive, name: SATA3_TXP }
+      "9": { type: passive, name: SATA3_TXN }
+      "10": { type: power_in, name: GND_W2 }
+      "11": { type: passive, name: SATA3_RXN }
+      "12": { type: passive, name: SATA3_RXP }
+      # South side, west to east -- the PCIe interface, facing the card edge, in the
+      # order the fingers are in so that no pair has to cross another.
+      "13": { type: input, name: PERSTN, description: "Reset in from the host" }
+      "14": { type: power_in, name: GND_S1 }
+      "15": { type: input, name: REFCLKP }
+      "16": { type: input, name: REFCLKN }
+      "17": { type: power_in, name: GND_S2 }
+      "18": { type: output, name: PETP }
+      "19": { type: output, name: PETN }
+      "20": { type: power_in, name: GND_S3 }
+      "21": { type: input, name: PERP }
+      "22": { type: input, name: PERN }
+      "23": { type: power_in, name: GND_S4 }
+      "24": { type: passive, name: RSVD24 }
+      # East side, south to north. Ports 0 and 1. The order is the mirror of the
+      # west side's, because an east-edge connector's contacts run the other way up:
+      # what matters is that the pin order down the package matches the pad order
+      # down the connector, so no pair has to cross itself or its neighbour.
+      "25": { type: passive, name: SATA0_TXP }
+      "26": { type: passive, name: SATA0_TXN }
+      "27": { type: power_in, name: GND_E1 }
+      "28": { type: passive, name: SATA0_RXN }
+      "29": { type: passive, name: SATA0_RXP }
+      "30": { type: passive, name: RSVD30 }
+      "31": { type: passive, name: SATA1_TXP }
+      "32": { type: passive, name: SATA1_TXN }
+      "33": { type: power_in, name: GND_E2 }
+      "34": { type: passive, name: SATA1_RXN }
+      "35": { type: passive, name: SATA1_RXP }
+      "36": { type: passive, name: RSVD36 }
+      # North side, east to west. Supply, and the pins a real bridge would spend on
+      # configuration straps.
+      "37": { type: passive, name: RSVD37 }
+      "38": { type: power_in, name: VDD33_A }
+      "39": { type: passive, name: RSVD39 }
+      "40": { type: passive, name: RSVD40 }
+      "41": { type: passive, name: RSVD41 }
+      "42": { type: power_in, name: GND_N }
+      "43": { type: passive, name: RSVD43 }
+      "44": { type: passive, name: RSVD44 }
+      "45": { type: power_in, name: VDD33_B }
+      "46": { type: passive, name: RSVD46 }
+      "47": { type: passive, name: RSVD47 }
+      "48": { type: passive, name: RSVD48 }
+      "49": { type: power_in, name: EP, description: "Exposed pad, tied to ground" }
+    limits:
+      voltage_max_v: 4.6
+
+  C_100N_0402:
+    description: 100 nF X7R ceramic capacitor, 0402, 16 V -- the AC-coupling part
+      for a PCIe transmit pair, small enough that the pair barely notices it.
+    symbol: Device:C
+    refdes_prefix: C
+    footprint: Capacitor_SMD:C_0402_1005Metric
+    value: 100n
+    keywords: [capacitor, ac_coupling, high_speed]
+    pins:
+      "1": { type: passive }
+      "2": { type: passive }
+    limits:
+      voltage_max_v: 16

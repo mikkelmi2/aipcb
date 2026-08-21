@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import ClassVar
 
 from aipcb.compile.board import standard_layers, unconnected_net_name
 from aipcb.compile.build import build_design, compile_netlist
@@ -284,11 +285,26 @@ class TestAgainstKicad:
         assert run.returncode == 0, f"KiCad could not load the board: {run.stdout}{run.stderr}"
         return json.loads(report_path.read_text(encoding="utf-8"))
 
+    #: Violations an example is allowed to keep on the *unrouted* board, with the
+    #: reason. One entry, and it is a consequence of a decision rather than a
+    #: defect: `pcie-sata` strips the `Edge.Cuts` graphics out of its card-edge
+    #: footprint, because the board outline has one author and it is the `board:`
+    #: block (ADR 0010). KiCad's `lib_footprint_mismatch` rule notices that the
+    #: placed footprint is not byte-identical to its library copy, and it is right.
+    #: The alternative -- emitting the footprint's own edge geometry as well as the
+    #: design's -- was measured, and KiCad reports it as a self-intersecting board
+    #: outline, which is worse.
+    KEPT_VIOLATIONS: ClassVar[dict[str, set[str]]] = {
+        "pcie-sata": {"lib_footprint_mismatch"}
+    }
+
     def test_board_loads_and_drc_is_clean(self, example_design: Path, tmp_path: Path) -> None:
         payload = self._drc(example_design, tmp_path)
+        allowed = self.KEPT_VIOLATIONS.get(example_design.parent.name, set())
         violations = [
             f"[{v['severity']}] {v['type']}: {v['description']}"
             for v in payload["violations"]
+            if v["type"] not in allowed
         ]
         assert not violations, "\n".join(violations)
 

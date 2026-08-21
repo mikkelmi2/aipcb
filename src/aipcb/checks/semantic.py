@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from aipcb.checks.edge import run_edge_checks
+from aipcb.checks.impedance import run_impedance_checks
 from aipcb.checks.mech import run_mechanical_checks
 from aipcb.checks.pours import run_pour_checks
 from aipcb.diagnostics import Report, summarise
@@ -286,9 +288,11 @@ CHECKS: tuple[Callable[[Netlist, Report], None], ...] = (
     check_net_class_defined,
     check_roles_have_reasons,
     check_unconnected_pins,
+    run_impedance_checks,
     # Mechanical conflicts last, because they are the only ones that need geometry
     # and the electrical problems above are the ones worth reading first.
     run_mechanical_checks,
+    run_edge_checks,
     run_pour_checks,
 )
 

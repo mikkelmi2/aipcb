@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 
+from aipcb.compile.edge import EDGE_ROLE, strip_edge_graphics
 from aipcb.compile.frame import BoardFrame, auto_frame, frame_for
 from aipcb.compile.place import BoardPlacement, plan_placement
 from aipcb.compile.preserve import FINGERPRINT_PROPERTY, component_fingerprint
@@ -299,9 +300,19 @@ def _adapt_footprint(
     fingerprint: str,
     attributes: tuple[str, ...] = (),
     zone_connect: dict[str, int] | None = None,
+    drop_edge_graphics: bool = False,
+    denied_attributes: frozenset[str] = frozenset(),
 ) -> SNode:
     """Turn a library footprint into a placed instance on the board."""
     node = copy.deepcopy(source)
+    if drop_edge_graphics:
+        # A card-edge footprint draws its own `Edge.Cuts`: the tongue, the tip
+        # chamfers and the keying notch. Emitting it would give the board outline
+        # two authors, and KiCad's own DRC reports the result as a self-intersecting
+        # outline the moment the design draws the same edge -- measured, not
+        # assumed. The design's `board:` block is the single author, and
+        # :mod:`aipcb.checks.edge` is what makes sure it says the same thing.
+        strip_edge_graphics(node)
     for token in _FILE_ONLY:
         node.remove(token)
     _set_head(node, lib_id)
@@ -344,7 +355,7 @@ def _adapt_footprint(
     node.add(SNode("path").add(quoted(f"/{component_uuid}")))
     node.add(SNode("sheetname").add(quoted("/")))
     node.add(SNode("sheetfile").add(quoted(sheet_file)))
-    _set_attributes(node, (*attributes, *(("dnp",) if dnp else ())))
+    _set_attributes(node, (*attributes, *(("dnp",) if dnp else ())), denied_attributes)
 
     _assign_uuids(node, hier)
     _assign_nets(node, nets, hier)
@@ -355,7 +366,9 @@ def _adapt_footprint(
     return node
 
 
-def _set_attributes(node: SNode, flags: tuple[str, ...]) -> None:
+def _set_attributes(
+    node: SNode, flags: tuple[str, ...], denied: frozenset[str] = frozenset()
+) -> None:
     """Add footprint attribute flags, merging into whatever the library already set.
 
     KiCad allows one ``attr`` node holding several flags, and it compares those
@@ -366,16 +379,23 @@ def _set_attributes(node: SNode, flags: tuple[str, ...]) -> None:
     and leaving the node alone when there is nothing to add is what keeps every
     board built before this existed byte-identical.
     """
-    if not flags:
-        return
     attr = node.child("attr")
+    stale = [
+        a for a in (attr.atoms() if attr is not None else ()) if a.value in denied
+    ]
+    if not flags and not stale:
+        return
     if attr is None:
         attr = SNode("attr")
         node.add(attr)
+    for atom in stale:
+        attr.items.remove(atom)
     present = {a.value for a in attr.atoms()}
     for flag in flags:
         if flag not in present:
             attr.add(sym(flag))
+    if not attr.atoms():
+        node.remove("attr")
 
 
 #: What a symbol's library flags mean when written on a footprint instead.
@@ -394,6 +414,28 @@ def _symbol_attributes(symbol_id: str) -> tuple[str, ...]:
         if node is not None and node.value(0) == "no":
             flags.append(attribute)
     return tuple(flags)
+
+
+def _contradicted_attributes(symbol_id: str) -> frozenset[str]:
+    """Footprint attributes the symbol positively denies.
+
+    KiCad's own libraries do not always agree with themselves. The
+    `Connector_PCBEdge:BUS_PCIexpress_x1` footprint is marked
+    ``exclude_from_bom`` -- reasonably, since gold fingers are etched rather than
+    bought -- while the `Connector:Bus_PCI_Express_x1` symbol says ``in_bom yes``,
+    and KiCad's `footprint_symbol_mismatch` DRC rule reports the pair. Somebody has
+    to win, and it is the schematic: it is where the netlist and the BOM come from.
+    """
+    try:
+        symbol = resolve_symbol(symbol_id)
+    except SymbolNotFound:  # pragma: no cover - validation catches this earlier
+        return frozenset()
+    denied = {
+        attribute
+        for token, attribute in _SYMBOL_ATTRIBUTES
+        if (node := symbol.node.child(token)) is not None and node.value(0) == "yes"
+    }
+    return frozenset(denied)
 
 
 #: Footprint children whose ``at`` angle KiCad stores absolutely, and which therefore
@@ -656,7 +698,9 @@ def build_board(
                 dnp=component.dnp,
                 fingerprint=component_fingerprint(component, netlist),
                 attributes=_symbol_attributes(component.part.symbol),
+                denied_attributes=_contradicted_attributes(component.part.symbol),
                 zone_connect=zone_connect,
+                drop_edge_graphics=component.role == EDGE_ROLE,
             )
         )
 
@@ -665,7 +709,7 @@ def build_board(
 
     # Zones last, and unfilled. The boundary and the rules are source intent; the
     # copper inside them is KiCad's to compute, at check and export time (M10b).
-    for zone in zone_nodes(netlist, frame, codes):
+    for zone in zone_nodes(netlist, frame, codes, placement):
         root.add(zone)
 
     root.add(SNode("embedded_fonts").add(sym("no")))

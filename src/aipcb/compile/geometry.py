@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from typing import NamedTuple
 
-__all__ = ["MM", "Point", "place_direction", "place_point"]
+__all__ = ["MM", "Point", "place_direction", "place_point", "rotate_kicad"]
 
 #: Schematic and board coordinates are millimetres throughout.
 MM = 1.0
@@ -50,3 +50,20 @@ def place_direction(rotation_deg: float, angle_deg: float) -> Point:
     return place_point(Point(0.0, 0.0), rotation_deg,
                        math.cos(math.radians(angle_deg)),
                        math.sin(math.radians(angle_deg)))
+
+
+def rotate_kicad(point: tuple[float, float], degrees: float) -> tuple[float, float]:
+    """Rotate a point about the origin the way KiCad turns a footprint.
+
+    KiCad's rotation is counter-clockwise *as drawn*, and its files have Y pointing
+    down, so the transform is the mirror of the textbook one. Getting it backwards
+    puts every pad of a rotated footprint on the wrong side of its part -- pin 1
+    above where KiCad draws it below -- and the router then lands its copper on the
+    neighbouring pad, which DRC reports as a short between two nets that never
+    touched in the schematic. M8 shipped that bug twice; it lives here once.
+    """
+    if not degrees:
+        return point
+    theta = math.radians(degrees)
+    cos, sin = math.cos(theta), math.sin(theta)
+    return (point[0] * cos + point[1] * sin, -point[0] * sin + point[1] * cos)

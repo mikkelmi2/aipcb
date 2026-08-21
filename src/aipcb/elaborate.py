@@ -121,6 +121,18 @@ class _Elaborator:
         paths.extend(("fanout", name) for name in design.fanout)
         paths.extend(("pours", i) for i in range(len(design.pours)))
         paths.extend(("stitching", i) for i in range(len(design.stitching)))
+        paths.extend(("net_classes", name) for name in design.net_classes)
+        paths.extend(
+            ("net_classes", name, field)
+            for name in design.net_classes
+            for field in (
+                "impedance_diff_ohm",
+                "diff_pair_width_mm",
+                "diff_pair_gap_mm",
+                "reference",
+                "max_uncoupled_mm",
+            )
+        )
         found: dict[tuple[str | int, ...], Loc] = {}
         for path in paths:
             loc = self.smap.get(path)

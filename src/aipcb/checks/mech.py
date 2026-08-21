@@ -22,6 +22,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from aipcb.compile.edge import edge_refdes
 from aipcb.compile.frame import BoardFrame, frame_for
 from aipcb.compile.place import component_extents, courtyard_box, plan_placement
 from aipcb.diagnostics import Report
@@ -257,6 +258,13 @@ def _check_placed_parts(
     holes = [ShapelyPolygon(ring) for ring in frame.cutout_polygons()]
     fixed = set(netlist.fixed_refs())
 
+    # A card-edge connector's courtyard hangs off the board on purpose: its fingers
+    # run to the edge and its keep-clear reaches past it into the slot. Checking it
+    # against the outline would report the one component whose overhang is the
+    # point. M11b checks it a better way instead -- the footprint's own Edge.Cuts
+    # against the declared outline, in :mod:`aipcb.checks.edge`.
+    overhanging = set(edge_refdes(netlist))
+
     placed: list[_Placed] = []
     for refdes in sorted(placement.positions):
         position = placement.positions[refdes]
@@ -273,7 +281,7 @@ def _check_placed_parts(
 
     for entry in placed:
         shape = shapely_box(*entry.box)
-        if entry.fixed and not board.covers(shape):
+        if entry.fixed and entry.refdes not in overhanging and not board.covers(shape):
             outside = round(shape.difference(board).area, 3)
             report.error(
                 "fixed-part-outside-outline",
