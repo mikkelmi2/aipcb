@@ -73,7 +73,7 @@ class TestExport:
 
     def test_drill_file_declares_tools(self, tmp_path: Path) -> None:
         result, _ = self._export("usb-port", tmp_path)
-        drill = next(p for p in result.files if p.suffix == ".drl")
+        drill = next(p for p in result.files if p.name.endswith("-PTH.drl"))
         text = drill.read_text(encoding="utf-8")
         assert text.startswith("M48"), "not an Excellon header"
         assert "METRIC" in text
@@ -207,7 +207,9 @@ class TestDrillOrigin:
             report,
         )
         assert result.ok, report.render()
-        drill = next(p for p in result.files if p.suffix == ".drl")
+        # The plated file specifically: the drill export is split by plating, and
+        # `mcu-4layer` has no non-plated holes at all, so the NPTH file is empty.
+        drill = next(p for p in result.files if p.name.endswith("-PTH.drl"))
         holes = _drill_coordinates(drill)
         assert holes
 
@@ -224,6 +226,90 @@ class TestDrillOrigin:
                 abs(hx - want[0]) < 1e-3 and abs(hy - want[1]) < 1e-3
                 for hx, hy in holes
             ), f"via at {(x, y)} is not in the drill file at {want}"
+
+    @needs_kicad_cli
+    def test_the_drill_file_a_consumer_globs_for_exists(self, tmp_path: Path) -> None:
+        """``<board>.drl`` is not a name anything downstream looks for.
+
+        With neither ``--excellon-separate-th`` nor a plating split, KiCad emits one
+        ``MixedPlating`` file called ``<board>.drl``. It is perfectly good Excellon
+        and a human board house reads it happily; the ecosystem's tools do not,
+        because they glob for ``-PTH.drl`` (gerber2ems calls ``sys.exit(1)`` when the
+        glob is empty) and because a fab that plates by file expects the split. So
+        the test asks the question the consumer asks -- is there exactly one PTH
+        file -- rather than "did we pass the flag".
+        """
+        result, _ = self._export_only("mcu-4layer", tmp_path)
+        pth = sorted(p.name for p in result.directory.glob("*-PTH.drl"))
+        assert len(pth) == 1, f"the *-PTH.drl glob found {pth}"
+        npth = sorted(p.name for p in result.directory.glob("*-NPTH.drl"))
+        assert len(npth) == 1, f"the *-NPTH.drl glob found {npth}"
+        assert not list(result.directory.glob("mcu-4layer.drl")), (
+            "the unsplit MixedPlating drill file is still being written"
+        )
+        assert _drill_coordinates(result.directory / pth[0]), "the PTH file has no holes"
+
+    @needs_kicad_cli
+    def test_placement_coordinates_are_measured_from_the_drill_origin(
+        self, tmp_path: Path
+    ) -> None:
+        """The placement file's *frame*, which is the half a filename fix cannot see.
+
+        Naming the file ``*-all-pos.csv`` made it discoverable. It did not make it
+        right: ``pcb export pos`` defaults to absolute page coordinates, so every row
+        read ``145.5, -122.5`` -- the board's position on an A4 sheet, with KiCad's
+        downward Y. Consumers place things relative to the board's own corner, so a
+        port read out of that file would land somewhere off the board entirely, and
+        nothing would say so.
+
+        Read the file, not the flag: every row must sit inside the board's bounding
+        box, and each one must equal the footprint's own offset from the declared
+        origin.
+        """
+        board, netlist, origin = self._routed_board("mcu-4layer", tmp_path)
+        placed = {
+            str(fp.child("property").value(1)): (
+                float(at.value(0) or 0), float(at.value(1) or 0)
+            )
+            for fp in board.children("footprint")
+            if (at := fp.child("at")) is not None
+            and fp.child("property") is not None
+        }
+        assert placed, "the board has no footprints; the test would prove nothing"
+
+        report = Report()
+        result = export_board(
+            tmp_path / "routed" / "mcu-4layer.kicad_pcb",
+            tmp_path / "fab",
+            netlist,
+            report,
+        )
+        assert result.ok, report.render()
+        positions = next(p for p in result.files if p.name.endswith("pos.csv"))
+        rows = list(csv.DictReader(positions.read_text(encoding="utf-8").splitlines()))
+        assert rows
+
+        negative = [r for r in rows if float(r["PosX"]) < 0 or float(r["PosY"]) < 0]
+        assert not negative, (
+            "placement coordinates outside the board's own corner: "
+            f"{[(r['Ref'], r['PosX'], r['PosY']) for r in negative[:4]]}"
+        )
+        for row in rows:
+            want = placed.get(row["Ref"])
+            assert want is not None, f"{row['Ref']} is not on the board"
+            assert (float(row["PosX"]), float(row["PosY"])) == (
+                pytest.approx(want[0] - origin[0], abs=1e-3),
+                pytest.approx(origin[1] - want[1], abs=1e-3),
+            ), f"{row['Ref']} is not placed relative to the drill/place file origin"
+
+    def _export_only(self, name: str, tmp_path: Path):
+        design = REPO_ROOT / "examples" / name / "design.yaml"
+        report = Report()
+        build = build_design(design, out_dir=tmp_path / "build", report=report)
+        board = next(p for p in build.written if p.suffix == ".kicad_pcb")
+        result = export_board(board, tmp_path / "fab", build.netlist, report)
+        assert result.ok, report.render()
+        return result, report
 
     def _routed_board(self, name: str, tmp_path: Path):
         design = REPO_ROOT / "examples" / name / "design.yaml"
