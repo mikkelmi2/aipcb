@@ -193,6 +193,17 @@ def _emit_findings(batch: SimulationBatch, report: Report) -> None:
                 path=path,
                 pair=metrics.pair,
             )
+        if metrics.verdicts.get("mode_conversion") == "warn":
+            report.warning(
+                "si-mode-conversion",
+                f"{metrics.pair} converts {metrics.mode_conversion_db:.1f} dB of its "
+                f"differential signal to common mode at "
+                f"{metrics.mode_conversion_hz / 1e9:.2f} GHz",
+                hint="intra-pair skew is what does this; M11e's `hs-skew` measures "
+                "the same defect as a length",
+                path=path,
+                pair=metrics.pair,
+            )
         if metrics.verdicts.get("insertion_loss") == "warn":
             worst = min(metrics.insertion_loss_db.items(), key=lambda kv: kv[1])
             report.warning(

@@ -142,6 +142,9 @@ class Metrics:
     insertion_loss_db: dict[str, float]
     """Differential insertion loss at the class's key frequencies, keyed by label."""
     delay_ns: float | None
+    mode_conversion_db: float = -300.0
+    """Worst differential-to-common conversion in the band. Skew is what makes it."""
+    mode_conversion_hz: float = 0.0
     usable: bool = True
     """False when the extraction is not physical, whatever the numbers say."""
     verdicts: dict[str, str] = field(default_factory=dict)
@@ -170,6 +173,8 @@ class Metrics:
                 k: round(v, 2) for k, v in sorted(self.insertion_loss_db.items())
             },
             "delay_ns": None if self.delay_ns is None else round(self.delay_ns, 4),
+            "mode_conversion_db": round(self.mode_conversion_db, 2),
+            "mode_conversion_ghz": round(self.mode_conversion_hz / 1e9, 3),
             "usable": self.usable,
             "verdicts": dict(sorted(self.verdicts.items())),
             "notes": list(self.notes),
@@ -178,8 +183,8 @@ class Metrics:
 
 def _mixed_mode(
     sp: SParameters,
-) -> tuple[list[complex], list[complex], list[complex]] | None:
-    """``(gamma_dd, Sdd11, Sdd21)`` from the four-port matrix, or ``None``.
+) -> tuple[list[complex], list[complex], list[complex], list[complex]] | None:
+    """``(gamma_dd, Sdd11, Sdd21, Scd21)`` from the four-port matrix, or ``None``.
 
     ``gamma_dd`` is gerber2ems's own differential reflection coefficient -- the one
     its ``Z_diff`` plot uses -- reproduced here so the number this tool reports and
@@ -192,6 +197,7 @@ def _mixed_mode(
     gamma: list[complex] = []
     sdd11: list[complex] = []
     sdd21: list[complex] = []
+    scd21: list[complex] = []
     for index in range(len(sp.frequencies)):
         s11 = sp.s(0, 0)[index]
         s21 = sp.s(2, 0)[index]
@@ -212,7 +218,19 @@ def _mixed_mode(
                 + sp.s(3, 2)[index]
             )
         )
-    return gamma, sdd11, sdd21
+        # Differential in, common out: the far end's mode conversion. Length
+        # mismatch inside a pair is what produces it, so this is the metric that
+        # sees skew where an impedance number cannot.
+        scd21.append(
+            0.5
+            * (
+                sp.s(1, 0)[index]
+                - sp.s(1, 2)[index]
+                + sp.s(3, 0)[index]
+                - sp.s(3, 2)[index]
+            )
+        )
+    return gamma, sdd11, sdd21, scd21
 
 
 def analyse(
@@ -229,7 +247,7 @@ def analyse(
     mixed = _mixed_mode(sp)
     if mixed is None or not sp.frequencies:
         return None
-    gamma, sdd11, sdd21 = mixed
+    gamma, sdd11, sdd21, scd21 = mixed
 
     low = max(_NOISE_FLOOR_HZ, settings.start_hz)
     high = settings.stop_hz
@@ -277,6 +295,7 @@ def analyse(
         )
 
     worst_rl_index = max(wide, key=lambda i: abs(sdd11[i]))
+    worst_cd_index = max(wide, key=lambda i: abs(scd21[i]))
     key_points = {
         f"{settings.stop_hz / 2e9:.1f}GHz": sp.at(settings.stop_hz / 2),
         f"{settings.stop_hz / 1e9:.1f}GHz": sp.at(settings.stop_hz),
@@ -310,6 +329,8 @@ def analyse(
         worst_return_loss_hz=sp.frequencies[worst_rl_index],
         insertion_loss_db=insertion,
         delay_ns=delay,
+        mode_conversion_db=_db(scd21[worst_cd_index]),
+        mode_conversion_hz=sp.frequencies[worst_cd_index],
         usable=usable,
         notes=notes,
     )
@@ -395,6 +416,11 @@ def _verdicts(metrics: Metrics, settings: ResolvedSimulation) -> None:
     worst = min(metrics.insertion_loss_db.values(), default=0.0)
     metrics.verdicts["insertion_loss"] = (
         "pass" if worst >= settings.insertion_loss_db else "warn"
+    )
+    metrics.verdicts["mode_conversion"] = (
+        "pass"
+        if metrics.mode_conversion_db <= settings.mode_conversion_db
+        else "warn"
     )
 
 
