@@ -19,6 +19,7 @@ import copy
 from aipcb.compile.frame import BoardFrame, auto_frame, frame_for
 from aipcb.compile.place import BoardPlacement, plan_placement
 from aipcb.compile.preserve import FINGERPRINT_PROPERTY, component_fingerprint
+from aipcb.compile.zones import apply_pad_connect, pad_zone_connect, zone_nodes
 from aipcb.diagnostics import Report
 from aipcb.ids import element_uuid, net_codes
 from aipcb.kicad.footprints import Extent, footprint_extent, resolve_footprint
@@ -297,6 +298,7 @@ def _adapt_footprint(
     dnp: bool,
     fingerprint: str,
     attributes: tuple[str, ...] = (),
+    zone_connect: dict[str, int] | None = None,
 ) -> SNode:
     """Turn a library footprint into a placed instance on the board."""
     node = copy.deepcopy(source)
@@ -346,6 +348,9 @@ def _adapt_footprint(
 
     _assign_uuids(node, hier)
     _assign_nets(node, nets, hier)
+    # Per pad *instance*, and after the nets are on, so the override lands on the
+    # same pad the router calls `U2.4#2`.
+    apply_pad_connect(node, refdes, zone_connect or {})
     _turn_with_footprint(node, rotation)
     return node
 
@@ -588,6 +593,7 @@ def build_board(
     if frame is None:
         frame = auto_frame(*_auto_size(placement, extents), placement.origin)
 
+    zone_connect = pad_zone_connect(netlist)
     unconnected = _unconnected_nets(netlist)
     synthetic = {name for pins in unconnected.values() for name in pins.values()}
     codes = net_codes(set(netlist.nets) | synthetic)
@@ -650,11 +656,17 @@ def build_board(
                 dnp=component.dnp,
                 fingerprint=component_fingerprint(component, netlist),
                 attributes=_symbol_attributes(component.part.symbol),
+                zone_connect=zone_connect,
             )
         )
 
     for segment in edge_geometry(frame):
         root.add(segment)
+
+    # Zones last, and unfilled. The boundary and the rules are source intent; the
+    # copper inside them is KiCad's to compute, at check and export time (M10b).
+    for zone in zone_nodes(netlist, frame, codes):
+        root.add(zone)
 
     root.add(SNode("embedded_fonts").add(sym("no")))
     return root

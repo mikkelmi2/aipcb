@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from aipcb.checks.mech import run_mechanical_checks
+from aipcb.checks.pours import run_pour_checks
 from aipcb.diagnostics import Report, summarise
 from aipcb.model.parts import ElectricalType
 from aipcb.netlist import Netlist
@@ -288,6 +289,7 @@ CHECKS: tuple[Callable[[Netlist, Report], None], ...] = (
     # Mechanical conflicts last, because they are the only ones that need geometry
     # and the electrical problems above are the ones worth reading first.
     run_mechanical_checks,
+    run_pour_checks,
 )
 
 

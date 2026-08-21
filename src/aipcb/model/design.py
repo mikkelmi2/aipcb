@@ -18,8 +18,10 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from aipcb.model.board import Board
+from aipcb.model.common import NET_NAME_PATTERN
 from aipcb.model.layout import Layout, NetClass
 from aipcb.model.mech import Fanout, MechPlacement
+from aipcb.model.pours import Pour, Stitching
 
 __all__ = [
     "KNOWN_NET_CLASSES",
@@ -41,7 +43,7 @@ __all__ = [
 #: Reference designators: one or more letters followed by a number, e.g. ``U1``, ``TP12``.
 REFDES_RE = re.compile(r"^[A-Z]{1,4}[0-9]+$")
 #: Net names. Permissive, but no whitespace or characters that break KiCad's parser.
-NET_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.+\-/]*$")
+NET_NAME_RE = re.compile(NET_NAME_PATTERN)
 #: Identifiers for modules, instances and local component names.
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -49,7 +51,7 @@ IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 TEMPLATE_RE = re.compile(r"^\{\{\s*[A-Za-z_][A-Za-z0-9_]*\s*\}\}$")
 
 Ident = Annotated[str, Field(pattern=IDENT_RE.pattern)]
-NetName = Annotated[str, Field(pattern=NET_NAME_RE.pattern)]
+NetName = Annotated[str, Field(pattern=NET_NAME_PATTERN)]
 #: How a mechanical block names a component: its source name, or its path inside a
 #: module instance (``supply1.C1``).
 PartRef = Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")]
@@ -284,6 +286,15 @@ class Design(Strict):
         default_factory=dict,
         description="Packages that need pattern-based escape routing before the "
         "router can reach their pads.",
+    )
+    pours: tuple[Pour, ...] = Field(
+        default=(),
+        description="Copper pours: which net owns the free copper of which layer. "
+        "Emitted as KiCad zones and filled by KiCad's own engine.",
+    )
+    stitching: tuple[Stitching, ...] = Field(
+        default=(),
+        description="Patterns of vias tying a net's pours together between layers.",
     )
 
     @model_validator(mode="after")

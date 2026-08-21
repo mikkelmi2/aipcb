@@ -309,3 +309,46 @@ layout:
       - members: [R3]
         region_mm: [44, 29, 50, 34]
         reason: The reset pull-up, beside the pin it holds up.
+
+pours:
+  # Ground on both outer layers and on the In1 plane the stackup already reserved
+  # for it. Declaring a plane under `stackup.planes` keeps signals off the layer;
+  # this is what actually puts copper there.
+  - net: GND
+    layers: [F.Cu, B.Cu, In1.Cu]
+    scope: board
+    priority: 0
+    connect: thermal
+    reason: The reference the pair on F.Cu is designed against, and the return
+      path for everything that changes layer.
+
+  # In2 is the split plane. VCC takes the layer, and a rectangle in the
+  # south-east corner is given back to ground at a higher priority -- which is
+  # what "split plane" means: two nets, one layer, and an explicit rule about who
+  # wins where they overlap.
+  - net: VCC
+    layer: In2.Cu
+    scope: board
+    priority: 0
+    connect: thermal
+    reason: Supply distribution, so the outer layers carry signals and only
+      signals.
+  - net: GND
+    layer: In2.Cu
+    region:
+      rect: [[42.0, 2.0], [54.0, 16.0]]
+    priority: 1
+    min_contiguous: 0.9
+    reason: A ground island on the power plane under the corner where nothing
+      needs supply, so the decoupling in that corner has a short return. Higher
+      priority than the VCC pour, so it keeps the copper where the two overlap.
+
+stitching:
+  - net: GND
+    between: [F.Cu, B.Cu]
+    pattern: grid
+    pitch: 6.0
+    via: {drill: 0.3, diameter: 0.6}
+    reason: Through vias tie all three ground pours together -- the barrel passes
+      In1 on its way, which is what makes a four-layer ground one conductor
+      rather than three.

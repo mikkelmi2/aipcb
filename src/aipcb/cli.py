@@ -416,6 +416,16 @@ def check(
             f"[erc {'ran' if result.erc.ran else 'skipped'}, "
             f"drc {'ran' if result.drc.ran else 'skipped'}]"
         )
+        if result.stitching is not None and result.stitching.placed:
+            typer.echo(
+                f"  stitching: {len(result.stitching.placed)} vias placed, "
+                f"{result.stitching.total_skipped} positions skipped"
+            )
+        if result.fill is not None:
+            typer.echo(
+                f"  zones: {result.fill.filled}/{result.fill.zones} filled by "
+                f"KiCad {result.fill.kicad_version}, {result.fill.islands} islands"
+            )
         for handed in result.handed_over:
             typer.echo(
                 f"  unrouted ({handed['unrouted']}): {handed['net']} "

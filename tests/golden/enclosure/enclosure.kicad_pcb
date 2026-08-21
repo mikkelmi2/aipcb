@@ -999,6 +999,7 @@
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(uuid "f8c18071-605d-5055-b56b-aa25e87f2156")
 			(net 2 "GND")
+			(zone_connect 2)
 		)
 		(pad "6" smd rect
 			(at -2.875 -1.865 270)
@@ -1006,6 +1007,7 @@
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(uuid "f8c18071-605d-5055-b56b-aa25e87f2156")
 			(net 2 "GND")
+			(zone_connect 2)
 		)
 		(pad "6" smd rect
 			(at -2.755 0.185 270)
@@ -1013,6 +1015,7 @@
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(uuid "f8c18071-605d-5055-b56b-aa25e87f2156")
 			(net 2 "GND")
+			(zone_connect 2)
 		)
 		(pad "6" thru_hole oval
 			(at -2.755 1.115 0)
@@ -1023,6 +1026,7 @@
 			(remove_unused_layers no)
 			(uuid "f8c18071-605d-5055-b56b-aa25e87f2156")
 			(net 2 "GND")
+			(zone_connect 2)
 		)
 		(pad "6" thru_hole oval
 			(at -2.445 -1.885 0)
@@ -1033,6 +1037,7 @@
 			(remove_unused_layers no)
 			(uuid "f8c18071-605d-5055-b56b-aa25e87f2156")
 			(net 2 "GND")
+			(zone_connect 2)
 		)
 		(pad "6" smd rect
 			(at -0.985 1.385 0)
@@ -1040,6 +1045,7 @@
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(uuid "f8c18071-605d-5055-b56b-aa25e87f2156")
 			(net 2 "GND")
+			(zone_connect 2)
 		)
 		(pad "6" smd rect
 			(at 0.935 1.385 0)
@@ -1047,6 +1053,7 @@
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(uuid "f8c18071-605d-5055-b56b-aa25e87f2156")
 			(net 2 "GND")
+			(zone_connect 2)
 		)
 		(pad "6" thru_hole oval
 			(at 2.395 -1.885 0)
@@ -1057,6 +1064,7 @@
 			(remove_unused_layers no)
 			(uuid "f8c18071-605d-5055-b56b-aa25e87f2156")
 			(net 2 "GND")
+			(zone_connect 2)
 		)
 		(pad "6" thru_hole oval
 			(at 2.705 1.115 0)
@@ -1067,6 +1075,7 @@
 			(remove_unused_layers no)
 			(uuid "f8c18071-605d-5055-b56b-aa25e87f2156")
 			(net 2 "GND")
+			(zone_connect 2)
 		)
 		(pad "6" smd rect
 			(at 2.725 0.185 270)
@@ -1074,6 +1083,7 @@
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(uuid "f8c18071-605d-5055-b56b-aa25e87f2156")
 			(net 2 "GND")
+			(zone_connect 2)
 		)
 		(pad "6" smd rect
 			(at 2.875 -1.885 270)
@@ -1081,6 +1091,7 @@
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(uuid "f8c18071-605d-5055-b56b-aa25e87f2156")
 			(net 2 "GND")
+			(zone_connect 2)
 		)
 		(pad "6" smd rect
 			(at 2.975 -0.565 270)
@@ -1088,6 +1099,7 @@
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(uuid "f8c18071-605d-5055-b56b-aa25e87f2156")
 			(net 2 "GND")
+			(zone_connect 2)
 		)
 		(embedded_fonts no)
 		(model "${KICAD9_3DMODEL_DIR}/Connector_USB.3dshapes/USB_Micro-B_Amphenol_10103594-0001LF_Horizontal.step"
@@ -2123,6 +2135,39 @@
 		)
 		(layer "Edge.Cuts")
 		(uuid "4f47edc5-00d2-581e-97ec-4d9a58c77ebe")
+	)
+	(zone
+		(net 2)
+		(net_name "GND")
+		(layers "F.Cu" "B.Cu")
+		(uuid "b60ae68d-f104-55f0-bd74-a235dadd116a")
+		(hatch edge 0.5)
+		(connect_pads
+			(clearance 0.2)
+		)
+		(min_thickness 0.25)
+		(filled_areas_thickness no)
+		(fill yes
+			(thermal_gap 0.25)
+			(thermal_bridge_width 0.5)
+		)
+		(polygon
+			(pts
+				(xy 100 100)
+				(xy 136 100)
+				(xy 136 108)
+				(xy 148 108)
+				(xy 148 128)
+				(xy 147.849567 129.335126)
+				(xy 147.405813 130.603302)
+				(xy 146.690989 131.740939)
+				(xy 145.740939 132.690989)
+				(xy 144.603302 133.405813)
+				(xy 143.335126 133.849567)
+				(xy 142 134)
+				(xy 100 134)
+			)
+		)
 	)
 	(embedded_fonts no)
 )

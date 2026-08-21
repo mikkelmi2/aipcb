@@ -16,10 +16,13 @@ from typing import Any
 
 from aipcb.checks.kicad_reports import CheckOutcome, run_drc, run_erc
 from aipcb.checks.mapping import build_index
+from aipcb.checks.planes import PlaneReport, analyse_planes, report_planes
 from aipcb.compile.build import BuildResult, build_design
 from aipcb.diagnostics import Report
+from aipcb.kicad.fill import FillError, FillResult, fill_project
 from aipcb.netlist import Netlist
 from aipcb.route.plan import RoutedBoard
+from aipcb.route.stitch import StitchResult
 
 __all__ = ["CheckResult", "check_design"]
 
@@ -34,6 +37,14 @@ class CheckResult:
     drc: CheckOutcome = field(default_factory=CheckOutcome)
     routing: RoutedBoard | None = None
     """What the router made of the board, when the check routed it."""
+    stitching: StitchResult | None = None
+    """The stitching vias generated after routing and before the fill."""
+    fill: FillResult | None = None
+    """What KiCad's zone filler produced, when the design declares pours."""
+    planes: list[PlaneReport] = field(default_factory=list)
+    """Plane integrity, measured off the filled board (M10d)."""
+    filled_board: Path | None = None
+    """The staged, filled copy DRC actually ran against."""
 
     def summary(self) -> dict[str, Any]:
         out = {
@@ -45,6 +56,12 @@ class CheckResult:
         }
         if self.routing is not None:
             out["routing"] = self.routing.summary()
+        if self.stitching is not None:
+            out["stitching"] = self.stitching.summary()
+        if self.fill is not None:
+            out["fill"] = self.fill.to_dict()
+        if self.planes:
+            out["planes"] = [plane.to_dict() for plane in self.planes]
         return out
 
     @property
@@ -96,31 +113,102 @@ def _check_into(
 
     board_path = next((p for p in build.written if p.suffix == ".kicad_pcb"), None)
     if route and board_path is not None:
-        result.routing = _route_in_place(board_path, build.netlist, report)
+        result.routing, result.stitching = _route_in_place(
+            board_path, build.netlist, report
+        )
 
     if schematic:
         path = next((p for p in build.written if p.suffix == ".kicad_sch"), None)
         if path is not None:
             result.erc = run_erc(path, index, report, work=target)
     if board and board_path is not None:
-        result.drc = run_drc(board_path, index, report, work=target)
+        checked = _fill_for_checking(board_path, build.netlist, target, report, result)
+        if checked is None:
+            return result
+        result.drc = run_drc(checked, index, report, work=target)
+        _measure_planes(checked, build.netlist, report, result)
     return result
+
+
+def _fill_for_checking(
+    board_path: Path,
+    netlist: Netlist,
+    target: Path,
+    report: Report,
+    result: CheckResult,
+) -> Path | None:
+    """Fill the zones into a staged copy, and hand back the board DRC should read.
+
+    DRC over an unfilled pour checks nothing about the pour -- KiCad plots and
+    checks the fill data that is in the file and never regenerates it (ADR 0009,
+    Finding 1) -- so a board with pours is filled first, in a copy, leaving the
+    build output as the unfilled reference.
+
+    A fill that fails stops the check. It is tempting to fall back to the unfilled
+    board and carry on, and that is precisely the silent corruption this must not
+    do: an unfilled pour looks exactly like a filled one to every downstream tool
+    and exports as no copper at all.
+    """
+    if not netlist.pours:
+        return board_path
+    try:
+        filled, outcome = fill_project(
+            board_path, target / "filled", measure_islands=True
+        )
+    except FillError as exc:
+        report.error(
+            "zone-fill-failed",
+            f"the zones could not be filled, so DRC was not run: {exc.message}",
+            hint=exc.detail or "an unfilled pour exports as no copper at all, so "
+            "checking one would report a clean board that is not one",
+        )
+        return None
+    result.fill = outcome
+    result.filled_board = filled
+    return filled
+
+
+def _measure_planes(
+    board_path: Path, netlist: Netlist, report: Report, result: CheckResult
+) -> None:
+    """Read the filled zones back and report what the fill actually produced."""
+    from aipcb.kicad.sexpr import SExprError, parse
+
+    if not netlist.pours or result.fill is None:
+        return
+    try:
+        tree = parse(board_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, SExprError):  # pragma: no cover - just written
+        return
+    removed = {
+        zone.uuid: (zone.islands_removed, zone.area_removed_mm2)
+        for zone in result.fill.per_zone
+    }
+    result.planes = analyse_planes(tree, netlist, removed=removed)
+    report_planes(result.planes, netlist, report)
 
 
 def _route_in_place(
     board_path: Path, netlist: Netlist, report: Report
-) -> RoutedBoard | None:
-    """Route the freshly built board and write the copper back into it."""
+) -> tuple[RoutedBoard | None, StitchResult | None]:
+    """Route the freshly built board, stitch it, and write the copper back into it.
+
+    Stitching runs after routing and before the fill, which is the only ordering
+    that works: the tracks are what a via position has to avoid, and the fill is
+    what turns a via into part of the plane rather than isolated copper.
+    """
     from aipcb.kicad.sexpr import SExprError, dump, parse
     from aipcb.route.emit import attach_copper
     from aipcb.route.plan import route_board
+    from aipcb.route.stitch import stitch_board
 
     try:
         tree = parse(board_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, SExprError):  # pragma: no cover - just built
-        return None
+        return None, None
     topologies = tuple(netlist.layout.routes) if netlist.layout else ()
     routed = route_board(tree, netlist, report, topologies=topologies)
     attach_copper(tree, routed.connections, sorted(netlist.nets))
+    stitched = stitch_board(tree, netlist, report)
     board_path.write_text(dump(tree), encoding="utf-8")
-    return routed
+    return routed, stitched

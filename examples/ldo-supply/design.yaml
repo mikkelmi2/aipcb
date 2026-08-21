@@ -146,3 +146,13 @@ layout:
       - members: [J1, J2]
         side: front
         reason: Connectors go on the board edge.
+
+pours:
+  - net: GND
+    layers: [F.Cu, B.Cu]
+    scope: board
+    priority: 0
+    connect: thermal
+    reason: The ground plane a linear regulator dumps its heat and its return
+      current into.
+

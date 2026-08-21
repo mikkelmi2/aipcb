@@ -229,3 +229,47 @@ layout:
     finish: ENIG
   placement:
     margin_mm: 2.0
+
+pours:
+  # Ground on both outer layers, and the thermal-pad case stated out loud. The
+  # QFN's exposed pad is pad 33 on GND -- the part's heat path -- so it connects
+  # solid while every other ground pad on the board keeps its thermal relief.
+  #
+  # KiCad's own footprint for this package already carries `zone_connect 2` on
+  # that pad, so the override changes no copper here. It is written anyway,
+  # because a thermal decision that depends on what a library file happens to say
+  # is a thermal decision nobody made. `examples/usb-port` is where the override
+  # does the work on its own.
+  - net: GND
+    layers: [F.Cu, B.Cu]
+    scope: board
+    priority: 0
+    connect: thermal
+    min_contiguous: 0.9
+    pad_connect:
+      - pads: [U1.33]
+        connect: solid
+        reason: The exposed pad is how an ATmega328P in a QFN gets rid of its
+          heat. Thermal relief on it would be a thermal decision made by
+          accident.
+    reason: Ground on both faces, poured around a 0.5 mm-pitch escape field.
+      `min_contiguous` is set deliberately high for a board like this one, where
+      the escape field really does cut the back plane into pieces. The check
+      warns, and the warning is the honest answer rather than a threshold tuned
+      downward until it stopped complaining.
+
+stitching:
+  # The escape field cuts the back plane into pieces, and a piece of ground that
+  # reaches nothing is not ground. These vias tie the pieces on B.Cu up to the
+  # front pour. Measured: without them the receptacle's shield tab had its
+  # thermal spokes reaching an isolated island and KiCad reported a
+  # `starved_thermal` error; with them the board is DRC-clean. The plane is still
+  # in pieces afterwards -- the integrity report says so, and `min_contiguous`
+  # above turns it into a warning rather than hiding it.
+  - net: GND
+    between: [F.Cu, B.Cu]
+    pattern: grid
+    pitch: 4.0
+    via: {drill: 0.3, diameter: 0.6}
+    reason: Tie the back-side ground islands the escape field leaves behind to the
+      plane on the front.

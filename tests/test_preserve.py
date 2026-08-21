@@ -196,7 +196,25 @@ class TestPreservesManualWork:
         write_board(out, tree)
 
         build_design(design, out_dir=out)
-        assert len(list(board_tree(out).children("zone"))) == 1
+        zones = list(board_tree(out).children("zone"))
+        # The hand-drawn one survives, and the design's own pour is still there
+        # exactly once -- since M10 the source can declare a zone, so `zone` is
+        # both a preserved item and a generated one.
+        uuids = [z.get("uuid") for z in zones]
+        assert "11111111-2222-3333-4444-555555555555" in uuids
+        assert len(uuids) == len(set(uuids))
+        declared = len(compile_netlist(design, Report()).pours)
+        assert len(zones) == 1 + declared
+
+    def test_a_declared_pour_is_not_duplicated_by_a_rebuild(self, workspace) -> None:
+        """The generated zone is regenerated, never carried over as somebody's."""
+        design, out = workspace()
+        build_design(design, out_dir=out)
+        first = [z.get("uuid") for z in board_tree(out).children("zone")]
+        build_design(design, out_dir=out)
+        again = [z.get("uuid") for z in board_tree(out).children("zone")]
+        assert first == again
+        assert first, "usb-port declares a pour, so a zone should be emitted"
 
     def test_dragged_field_text_stays_where_it_was_dragged(self, workspace) -> None:
         design, out = workspace()

@@ -694,6 +694,7 @@
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(uuid "f8c18071-605d-5055-b56b-aa25e87f2156")
 			(net 3 "GND")
+			(zone_connect 2)
 		)
 		(pad "6" thru_hole oval
 			(at 2.395 -1.885 90)
@@ -1406,6 +1407,30 @@
 		)
 		(layer "Edge.Cuts")
 		(uuid "61922753-9db3-59fe-a5c0-f4e9c75450f1")
+	)
+	(zone
+		(net 3)
+		(net_name "GND")
+		(layers "F.Cu" "B.Cu")
+		(uuid "b60ae68d-f104-55f0-bd74-a235dadd116a")
+		(hatch edge 0.5)
+		(connect_pads
+			(clearance 0.2)
+		)
+		(min_thickness 0.25)
+		(filled_areas_thickness no)
+		(fill yes
+			(thermal_gap 0.25)
+			(thermal_bridge_width 0.5)
+		)
+		(polygon
+			(pts
+				(xy 100 100)
+				(xy 138 100)
+				(xy 138 140)
+				(xy 100 140)
+			)
+		)
 	)
 	(embedded_fonts no)
 )

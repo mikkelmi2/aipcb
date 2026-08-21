@@ -236,3 +236,34 @@ layout:
     finish: ENIG
   placement:
     margin_mm: 2.0
+
+pours:
+  - net: GND
+    layers: [F.Cu, B.Cu]
+    scope: board
+    priority: 0
+    connect: thermal
+    pad_connect:
+      # Every shield tab, flooded. `J1.6` with no `#` suffix means all twelve pads
+      # the Micro-B footprint numbers 6, which is what a shield wants -- and what
+      # a thermal relief at the board edge cannot reliably give it: with the pour
+      # clipped by the outline, one of the four spokes has nowhere to go, and
+      # KiCad reports the relief as starved.
+      - pads: [J1.6]
+        connect: solid
+        reason: A shield tab wants the lowest-impedance path to ground it can get,
+          and it is reflowed rather than hand-soldered.
+    reason: Ground on both faces of a shaped board. The pour follows the outline,
+      arc and cut corner included, and KiCad clips it to the cutout without being
+      told about it twice.
+
+stitching:
+  # A row of vias following the board edge, inset from it. On a board with a
+  # radiused corner this is the pattern that shows the difference between
+  # following an outline and following its bounding box.
+  - net: GND
+    pattern: edge
+    pitch: 4.0
+    inset: 1.5
+    reason: Tie the two ground pours together round the rim, so the return path
+      of anything crossing layers does not have to find its way to a signal via.

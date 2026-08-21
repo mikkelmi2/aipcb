@@ -259,8 +259,14 @@ class TestCheckLoop:
     #: fabricator would rather not etch. It is a limitation of the same-net trimming
     #: heuristic, not of this milestone, and it is recorded in docs/roadmap.md.
     #: Every other example, on every other rule, must still come back clean.
+    #: `qfn-fanout` sets `min_contiguous: 0.9` on a board whose 0.5 mm-pitch
+    #: escape field genuinely cuts the back plane into pieces, so the
+    #: fragmentation warning fires on purpose. It is the M10d acceptance case
+    #: living in an example rather than only in a fixture; lowering the threshold
+    #: to silence it would be tuning the question until the answer was yes.
     KNOWN_ISSUES: ClassVar[dict[str, frozenset[str]]] = {
         "diff-pair": frozenset({"kicad-copper-sliver"}),
+        "qfn-fanout": frozenset({"plane-fragmented"}),
     }
 
     def test_examples_check_clean(self, example_design: Path, tmp_path: Path) -> None:

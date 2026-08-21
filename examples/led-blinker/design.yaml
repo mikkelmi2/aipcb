@@ -150,3 +150,12 @@ layout:
       - members: [J1]
         side: front
         reason: The programming header must be reachable with the board assembled.
+
+pours:
+  - net: GND
+    layers: [F.Cu, B.Cu]
+    scope: board
+    priority: 0
+    connect: thermal
+    reason: Ground on both outer layers -- the default a two-layer board should
+      have unless there is a reason not to.

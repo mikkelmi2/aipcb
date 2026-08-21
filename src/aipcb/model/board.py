@@ -38,6 +38,7 @@ __all__ = [
     "Ring",
     "Segment",
     "Slot",
+    "polygon_ring",
     "rect_ring",
     "ring_area",
     "tessellate",
@@ -259,7 +260,7 @@ class Outline(Strict):
         """The edge as a closed ring of line and arc segments, in source coordinates."""
         if self.rect is not None:
             return rect_ring((0.0, 0.0), self.rect, self.corner_radius)
-        return _polygon_ring(self.polygon)
+        return polygon_ring(self.polygon)
 
 
 class Slot(Strict):
@@ -332,7 +333,7 @@ class Cutout(Strict):
             return rect_ring(origin, size, 0.0)
         if self.slot is not None:
             return _slot_ring(self.slot)
-        return _polygon_ring(self.polygon)
+        return polygon_ring(self.polygon)
 
 
 class Board(Strict):
@@ -412,7 +413,7 @@ def vertex_point(vertex: Vertex) -> Point:
     return (vertex[0], vertex[1])
 
 
-def _polygon_ring(vertices: tuple[Vertex, ...]) -> Ring:
+def polygon_ring(vertices: tuple[Vertex, ...]) -> Ring:
     """Turn a source vertex list into a closed ring.
 
     A plain vertex is reached by a straight line from the one before it; an
@@ -432,7 +433,7 @@ def _polygon_ring(vertices: tuple[Vertex, ...]) -> Ring:
             )
         else:
             ring.append(Line(start, end))
-    # `_polygon_ring` builds edge *i* as "into vertex i", so the list starts with the
+    # `polygon_ring` builds edge *i* as "into vertex i", so the list starts with the
     # edge that closes the ring. Rotating puts it back in reading order, which is
     # what a diff of the emitted file should look like.
     return tuple(ring[1:] + ring[:1])
