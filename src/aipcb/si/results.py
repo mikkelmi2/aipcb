@@ -324,22 +324,27 @@ def _impedance_band(
 
     A line whose impedance differs from its termination rings: its input impedance
     swings above and below its own characteristic impedance with a period of
-    ``1 / (2 * delay)``. Over a whole number of those periods the swing is
-    symmetric in the logarithm, so the median lands on the line. Over one and a
-    half, it lands wherever the half period happened to be -- which is how the same
-    geometry can read 75 ohms or 95 depending on where the sweep was stopped.
+    ``1 / (2 * delay)``. Over a whole number of those periods the swing is symmetric
+    in the logarithm, so the median lands on the line; over one and a half it lands
+    wherever the half period happened to be. The delay is measured from the pair's
+    own transmission phase, so the correction comes out of the data rather than out
+    of an assumed propagation velocity.
 
-    The delay is measured from the pair's own transmission phase, so the trim comes
-    out of the data rather than out of an assumed propagation velocity.
+    The count is *rounded*, not floored, and clamped to the band. Flooring was tried
+    and measured worse: on the `mcu-4layer` convergence sweep a band holding 1.9
+    periods got cut to 1, which threw away half the samples and spread three mesh
+    densities over 6.5% where keeping all of them spread them over 5.3%. Rounding
+    shortens the band only when that gets *closer* to a whole number of periods, and
+    otherwise leaves it alone.
     """
     if delay_ns is None or delay_ns <= 0 or len(wide) < 16:
         return wide, False
     period = 1.0 / (2 * delay_ns * 1e-9)
     low, high = frequencies[wide[0]], frequencies[wide[-1]]
-    count = int((high - low) // period)
+    count = round((high - low) / period)
     if count < 1:
         return wide, False
-    top = low + count * period
+    top = min(low + count * period, high)
     return [i for i in wide if frequencies[i] <= top], True
 
 
