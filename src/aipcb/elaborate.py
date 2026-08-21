@@ -100,6 +100,8 @@ class _Elaborator:
             board=design.board,
             placement=placement,
             fanout=fanout,
+            pours=design.pours,
+            stitching=design.stitching,
             unknown_mech_refs=(*unplaced, *unfanned),
             mech_names=mech_names,
             locs=self._mech_locs(),
@@ -117,6 +119,8 @@ class _Elaborator:
             paths.extend(("board", "cutouts", i) for i in range(len(design.board.cutouts)))
         paths.extend(("placement", name) for name in design.placement)
         paths.extend(("fanout", name) for name in design.fanout)
+        paths.extend(("pours", i) for i in range(len(design.pours)))
+        paths.extend(("stitching", i) for i in range(len(design.stitching)))
         found: dict[tuple[str | int, ...], Loc] = {}
         for path in paths:
             loc = self.smap.get(path)

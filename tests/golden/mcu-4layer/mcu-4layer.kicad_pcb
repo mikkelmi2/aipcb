@@ -2113,5 +2113,78 @@
 		(layer "Edge.Cuts")
 		(uuid "61922753-9db3-59fe-a5c0-f4e9c75450f1")
 	)
+	(zone
+		(net 3)
+		(net_name "GND")
+		(layers "F.Cu" "B.Cu" "In1.Cu")
+		(uuid "b60ae68d-f104-55f0-bd74-a235dadd116a")
+		(hatch edge 0.5)
+		(connect_pads
+			(clearance 0.2)
+		)
+		(min_thickness 0.25)
+		(filled_areas_thickness no)
+		(fill yes
+			(thermal_gap 0.25)
+			(thermal_bridge_width 0.5)
+		)
+		(polygon
+			(pts
+				(xy 100 100)
+				(xy 156 100)
+				(xy 156 144)
+				(xy 100 144)
+			)
+		)
+	)
+	(zone
+		(net 11)
+		(net_name "VCC")
+		(layer "In2.Cu")
+		(uuid "5ec7f9b8-fca1-51dd-bc13-67bb01351c76")
+		(hatch edge 0.5)
+		(connect_pads
+			(clearance 0.25)
+		)
+		(min_thickness 0.25)
+		(filled_areas_thickness no)
+		(fill yes
+			(thermal_gap 0.25)
+			(thermal_bridge_width 0.5)
+		)
+		(polygon
+			(pts
+				(xy 100 100)
+				(xy 156 100)
+				(xy 156 144)
+				(xy 100 144)
+			)
+		)
+	)
+	(zone
+		(net 3)
+		(net_name "GND")
+		(layer "In2.Cu")
+		(uuid "46265028-79b8-5785-8a4e-cfa8f2da9ab1")
+		(hatch edge 0.5)
+		(priority 1)
+		(connect_pads
+			(clearance 0.2)
+		)
+		(min_thickness 0.25)
+		(filled_areas_thickness no)
+		(fill yes
+			(thermal_gap 0.25)
+			(thermal_bridge_width 0.5)
+		)
+		(polygon
+			(pts
+				(xy 142 142)
+				(xy 154 142)
+				(xy 154 128)
+				(xy 142 128)
+			)
+		)
+	)
 	(embedded_fonts no)
 )

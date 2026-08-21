@@ -143,3 +143,17 @@ layout:
         region_mm: [18, 2, 44, 20]
         reason: Supply, divider and decoupling along the top edge, clear of the
           corridor the pair runs through.
+
+pours:
+  # Ground on both outer layers. The pair on F.Cu is designed against a reference
+  # plane; without one poured, the impedance target above is arithmetic about a
+  # board that does not exist. The zone is emitted unfilled -- KiCad's own filler
+  # runs at check and export time, because KiCad's fill is what DRC checks
+  # against. See ADR 0009.
+  - net: GND
+    layers: [F.Cu, B.Cu]
+    scope: board
+    priority: 0
+    connect: thermal
+    reason: The return path directly under the differential pair, and the only
+      thing that makes the declared 100 ohm target mean anything.

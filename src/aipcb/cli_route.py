@@ -103,6 +103,7 @@ def route_all(
     from aipcb.kicad.sexpr import dump
     from aipcb.route.emit import attach_copper, drop_generated, generated_uuids
     from aipcb.route.plan import RoutedBoard, route_board
+    from aipcb.route.stitch import stitch_board, stitch_uuids
 
     report = Report()
     target = out or design.parent
@@ -132,6 +133,12 @@ def route_all(
         # while ignoring all of it says which UUIDs *we* would produce, and anything
         # in the board carrying one of those is ours. Only run when there is copper
         # to sort out, which on a first build there is not.
+        #
+        # Last run's stitching vias go first, and before the router looks at the
+        # board at all: they are ours too, and leaving them in would make this run's
+        # routing depend on the previous run's stitching, which is the end of
+        # byte-stability.
+        drop_generated(board, stitch_uuids(result.netlist))
         if list(board.children("segment")) or list(board.children("via")):
             owned = generated_uuids(run(False).connections)
             drop_generated(board, owned)
@@ -139,6 +146,7 @@ def route_all(
         count, via_count = attach_copper(
             board, routed.connections, sorted(result.netlist.nets)
         )
+        stitched = stitch_board(board, result.netlist, report)
         board_path.write_text(dump(board), encoding="utf-8")
     except SourceError as exc:
         typer.echo(f"error: {exc}", err=True)
@@ -151,6 +159,8 @@ def route_all(
     layers = ", ".join(str(name) for name in sorted({leg.layer for leg in routed.routed}))
     summary["segments"] = count
     summary["vias"] = via_count
+    if stitched.placed or stitched.total_skipped:
+        summary["stitching"] = stitched.summary()
     if as_json:
         payload = report.to_dict()
         payload["routing"] = summary
@@ -164,6 +174,11 @@ def route_all(
             f"{count} track segments and {via_count} vias, "
             f"{summary['length_mm']} mm of copper"
         )
+        if stitched.placed or stitched.total_skipped:
+            typer.echo(
+                f"stitched {len(stitched.placed)} vias "
+                f"({stitched.total_skipped} positions skipped)"
+            )
         for handed in routed.handed_over():
             typer.echo(
                 f"  unrouted ({handed['unrouted']}): {handed['net']} "

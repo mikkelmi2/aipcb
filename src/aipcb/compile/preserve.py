@@ -301,9 +301,21 @@ def _carry_over_items(
     Copper that belongs to a net the design no longer has is dropped rather than
     carried: an orphaned track is a short waiting to happen, and keeping it would
     mean the board no longer matches the schematic.
+
+    An item whose UUID the fresh board already contains is *ours*, not somebody's:
+    since M10 the source can declare a zone, so `zone` is both a preserved item and
+    a generated one, and the same element must not arrive twice. Before M10 the two
+    sets never intersected, so this leaves every earlier board byte-identical.
     """
+    ours = {
+        uuid
+        for item in generated.children()
+        if (uuid := item.get("uuid")) is not None
+    }
     for item in existing.children():
         if item.name not in PRESERVED_ITEMS:
+            continue
+        if (uuid := item.get("uuid")) is not None and uuid in ours:
             continue
         net = item.get("net")
         if net is not None and net not in live_nets:

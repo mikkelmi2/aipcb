@@ -21,6 +21,7 @@ from aipcb.model.design import Constraint, Net
 from aipcb.model.layout import Layout, NetClass
 from aipcb.model.mech import Fanout, MechPlacement
 from aipcb.model.parts import Part
+from aipcb.model.pours import Pour, Stitching
 from aipcb.source import Loc
 
 __all__ = ["ElabComponent", "ElabConstraint", "ElabNet", "Netlist", "Node"]
@@ -132,6 +133,10 @@ class Netlist:
     """Mechanical placement, keyed by reference designator."""
     fanout: dict[str, Fanout] = field(default_factory=dict)
     """Fanout intent, keyed by reference designator."""
+    pours: tuple[Pour, ...] = ()
+    """Copper pours, in source order. The index is their identity."""
+    stitching: tuple[Stitching, ...] = ()
+    """Stitching-via patterns, in source order."""
     unknown_mech_refs: tuple[tuple[str, str], ...] = ()
     """``(block, name)`` for mechanical entries naming no component in the design."""
     mech_names: dict[str, str] = field(default_factory=dict)

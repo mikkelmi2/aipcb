@@ -10,11 +10,13 @@ itself would plot. We choose the layer set and the options; KiCad does the plott
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from aipcb.diagnostics import Report
 from aipcb.kicad.cli import KicadCliMissing, run_kicad
+from aipcb.kicad.fill import FillError, fill_project
 from aipcb.netlist import Netlist
 
 __all__ = ["ExportResult", "export_board", "gerber_layers", "position_file_name"]
@@ -77,10 +79,69 @@ def export_board(
     schematic: Path | None = None,
     position: bool = True,
 ) -> ExportResult:
-    """Plot Gerbers and drill files, and optionally a BOM and placement file."""
+    """Plot Gerbers and drill files, and optionally a BOM and placement file.
+
+    A board with pours is filled first, in a staged copy. ``kicad-cli pcb export
+    gerbers`` plots whatever fill data is in the file and never regenerates it
+    (ADR 0009, Finding 1), so plotting an unfilled pour ships a Gerber with no
+    plane copper on it at all -- silently, and looking exactly like a correct one.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     result = ExportResult(directory=out_dir)
 
+    if netlist.pours:
+        with tempfile.TemporaryDirectory(prefix="aipcb-fill-") as staging:
+            return _export_filled(
+                board, Path(staging), out_dir, netlist, report, result,
+                schematic=schematic, position=position,
+            )
+    return _plot(board, out_dir, netlist, report, result,
+                 schematic=schematic, position=position)
+
+
+def _export_filled(
+    board: Path,
+    staging: Path,
+    out_dir: Path,
+    netlist: Netlist,
+    report: Report,
+    result: ExportResult,
+    *,
+    schematic: Path | None,
+    position: bool,
+) -> ExportResult:
+    """Fill into ``staging`` and plot from there, so build output stays unfilled."""
+    try:
+        filled, outcome = fill_project(board, staging)
+    except FillError as exc:
+        report.error(
+            "zone-fill-failed",
+            f"the zones could not be filled, so nothing was exported: {exc.message}",
+            hint=exc.detail or "Gerbers plotted from an unfilled pour carry no plane "
+            "copper at all, which is worse than no Gerbers",
+        )
+        result.ok = False
+        return result
+    result.steps.append(f"fill ({outcome.filled}/{outcome.zones} zones)")
+    plotted = _plot(filled, out_dir, netlist, report, result,
+                    schematic=schematic, position=position)
+    # The staged copy is about to vanish with the temporary directory; the files
+    # that matter are already in `out_dir`.
+    plotted.files = sorted(p for p in out_dir.rglob("*") if p.is_file())
+    return plotted
+
+
+def _plot(
+    board: Path,
+    out_dir: Path,
+    netlist: Netlist,
+    report: Report,
+    result: ExportResult,
+    *,
+    schematic: Path | None,
+    position: bool,
+) -> ExportResult:
+    """Run every ``kicad-cli`` plot step against one board."""
     copper_layers = netlist.layout.stackup.copper_layers if netlist.layout else 2
     layers = ",".join(gerber_layers(copper_layers))
 

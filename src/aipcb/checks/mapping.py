@@ -100,7 +100,51 @@ def build_index(netlist: Netlist) -> UuidIndex:
         _index_net(index, net, netlist)
 
     _index_edges(index, netlist)
+    _index_pours(index, netlist)
     return index
+
+
+def _index_pours(index: UuidIndex, netlist: Netlist) -> None:
+    """Map a zone and every stitching via back to the block that asked for them.
+
+    Without this a clearance violation on a poured plane comes back as "not one
+    aipcb generated", which is exactly the wrong answer: the pour *is* declared, and
+    the fix belongs on its line in the YAML rather than in KiCad.
+    """
+    from aipcb.compile.zones import keepout_uuid, zone_uuid
+    from aipcb.route.stitch import MAX_STITCH_VIAS, stitch_uuid
+
+    for position, pour in enumerate(netlist.pours):
+        index.add(
+            zone_uuid(position),
+            SourceRef(
+                "copper pour",
+                pour.reason or pour.label,
+                path=("pours", position),
+                loc=netlist.locs.get(("pours", position)),
+                net=pour.net,
+            ),
+        )
+    keepouts = netlist.layout.placement.keepouts if netlist.layout else ()
+    for position, keepout in enumerate(keepouts if netlist.pours else ()):
+        index.add(
+            keepout_uuid(position),
+            SourceRef(
+                "keepout",
+                keepout.reason or f"region {list(keepout.region_mm)}",
+                path=("layout", "placement", "keepouts", position),
+            ),
+        )
+    for position, stitching in enumerate(netlist.stitching):
+        ref = SourceRef(
+            "stitching via",
+            stitching.reason or stitching.label,
+            path=("stitching", position),
+            loc=netlist.locs.get(("stitching", position)),
+            net=stitching.net,
+        )
+        for ordinal in range(MAX_STITCH_VIAS):
+            index.add(stitch_uuid(position, ordinal), ref)
 
 
 #: How many outline and cutout graphics to index. A DRC violation names a UUID, and

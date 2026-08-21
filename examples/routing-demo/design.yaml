@@ -157,3 +157,13 @@ layout:
             half of the board free for SENSE.
       reason: Routed deliberately rather than left to the auto-router, because the
         side it takes decides whether SENSE still has a corridor.
+
+pours:
+  - net: GND
+    layers: [F.Cu, B.Cu]
+    scope: board
+    priority: 0
+    connect: thermal
+    reason: Ground on both outer layers, poured around the routed copper rather
+      than planned against it -- the pour is emission and analysis, never an
+      input to the router.

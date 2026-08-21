@@ -4,6 +4,13 @@ KiCad is the backend of this toolchain, not a library dependency: we shell out t
 ``kicad-cli`` so everything runs headless in CI without linking against KiCad's
 Python API. This module is the single place that knows how to find it, run it, and
 turn its absence into a clear message rather than a traceback.
+
+One narrow exception, decided in `ADR 0009 <../../../docs/decisions/0009-pours.md>`_
+and confined to :mod:`aipcb.kicad.fill`: `kicad-cli` 9.0.8 cannot fill a zone, so a
+design that declares ``pours:`` reaches KiCad's own filler through a ``pcbnew``
+*subprocess*. The rule that survives is "no ``pcbnew`` in the aipcb package's own
+process", which is why that module is a separate one and why nothing here imports
+it.
 """
 
 from __future__ import annotations

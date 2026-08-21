@@ -207,3 +207,44 @@ layout:
           reason: Mirrors USB_DP's escape so the two halves stay the same length.
       reason: Must stay on the same layer as USB_DP; a via on one leg only would
         break both the impedance and the skew budget.
+
+pours:
+  - net: GND
+    layers: [F.Cu, B.Cu]
+    scope: board
+    priority: 0
+    connect: thermal
+    pad_connect:
+      # The receptacle's shield tab, flooded rather than thermally relieved -- a
+      # shield wants the lowest-impedance path to ground it can get, and the tab
+      # is reflowed, never hand-soldered.
+      #
+      # This names one pad *instance*. The Micro-B footprint has twelve pads
+      # numbered 6, and they share a UUID in the board this tool writes today
+      # (see docs/roadmap.md), so nothing UUID-shaped could pick one of them out.
+      # `J1.6#7` is the seventh pad numbered 6 in the footprint's own pad order,
+      # which is the same key the router's obstacle extractor uses.
+      - pads: [J1.6#7]
+        connect: solid
+        reason: One shield tab flooded to the plane, the other eleven left with
+          their thermal relief.
+    reason: The ground plane the 90 ohm differential target assumes. The pair
+      runs on F.Cu with this poured directly beside and below it.
+
+stitching:
+  # Both patterns, on one board: a lattice over the plane and a row round the
+  # rim. Positions that would foul a track, a pad, another hole or the board edge
+  # are dropped silently; the counts come back in the check report.
+  - net: GND
+    between: [F.Cu, B.Cu]
+    pattern: grid
+    pitch: 5.0
+    via: {drill: 0.3, diameter: 0.6}
+    reason: Tie the two ground pours together across the whole board, so the
+      shield ground and the signal ground are one conductor rather than two.
+  - net: GND
+    pattern: edge
+    pitch: 4.0
+    inset: 1.5
+    reason: A denser row round the rim, where the return current of anything
+      leaving the board by the connector has to go.
