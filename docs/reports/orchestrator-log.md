@@ -291,3 +291,47 @@ Notable, carried to the final report:
   10 m 58 s → 13 m 57 s; and `--no-route` now saying louder that it checks a
   different board.
 
+## M11 — high-speed
+
+Dispatched to a fresh subagent with the full spec plus two binding kickoff
+warnings: the pad-UUID aliasing (which M11b's own spec text predicts will bite at
+the edge connector), and an instruction to *verify* whether the M11d rules resolve
+the known `diff-pair` copper sliver — flagging it loudly if they do not, rather
+than retiring the marker or weakening the test.
+
+**Infrastructure failure, not a stop-condition.** The implementation session was
+terminated by an API session limit at the moment it printed "Now the performance
+measurements:". All of M11a–M11e, the tests, the docs and
+[ADR 0010](../decisions/0010-highspeed.md) were already committed across five
+commits (`3fadee9`, `76f2c98`, `8afd02c`, `11c3e16`, `d5452a6`) with a clean tree;
+only `docs/reports/m11.md` was missing. That is a gate-3 failure, so the
+orchestrator spent its **one permitted remediation pass** on exactly that: a fresh
+subagent to write the report and take the measurements the first session died on.
+The remediation was scoped to documenting and measuring the delivered code, not
+re-implementing it. The orchestrator deliberately did **not** run the test suite
+while that pass was working, so its wall-clock numbers are taken on a quiet machine.
+
+Two things the orchestrator established from the repository before remediating,
+so they could not be quietly smoothed over in a reconstruction:
+
+- **The `diff-pair` copper sliver was not resolved.**
+  `tests/test_check_loop.py` still carries
+  `"diff-pair": frozenset({"kicad-copper-sliver"})`. The kickoff expected M11d
+  rule 1 (the standoff corridor) to fix it. It did not. To the M11 session's
+  credit the marker was left standing rather than silenced — which is the honest
+  outcome — but it is an expectation that was not met and it is recorded as such.
+- **`pcie-sata` carries four accepted known issues**, each with reasoning written
+  into the test file rather than hidden: `diff-pair-wall-hugging`,
+  `diff-pair-skew`, `hs-skew` and `kicad-lib-footprint-mismatch`. The first is
+  precisely the outcome M11d rule 2 specifies (flag stands after one failed
+  re-tighten). The skew items need scrutiny at the gate: a pair delivered 0.25–0.29 mm
+  out against the 0.125 mm its own class declares sits close to the "marginal
+  delivery" this milestone exists to prevent — the mitigating reading being that
+  skew is an M11e *reporting* item rather than one of the three M11d rules whose
+  breach forces a hand-over.
+
+Also established before the gate: **`src/aipcb/route/stretch.py` is completely
+untouched** by M11. The M11d rules landed in `route/pairs.py` (+418 lines), the
+coupled-pair path. That is a more conservative reading of "M11d is the only
+permitted stretcher change" than the guardrail required.
+
