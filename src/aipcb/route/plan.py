@@ -58,7 +58,7 @@ from aipcb.route.obstacles import (
     extract_obstacles,
     preserved_copper,
 )
-from aipcb.route.pairs import measure_skew, realize_pair
+from aipcb.route.pairs import PairAudit, measure_skew, realize_pair
 from aipcb.route.stack import RoutingStack, stack_for
 from aipcb.route.stretch import (
     LayerGeometry,
@@ -135,6 +135,8 @@ class RoutedBoard:
     contested_cuts: dict[str, tuple[dict[str, object], ...]] = field(default_factory=dict)
     """Per connection, the tightest corridors its negotiated path depended on."""
     negotiation: Negotiation | None = None
+    pair_audits: list[PairAudit] = field(default_factory=list)
+    """What M11d measured about every pair it tried, coupled or refused."""
     fanout: FanoutResult | None = None
     """The escape pattern laid before routing began, when a package asked for one."""
     total_length: float = 0.0
@@ -168,6 +170,7 @@ class RoutedBoard:
             "converged": bool(self.negotiation and self.negotiation.converged),
             "handed_over": self.handed_over(),
             "fanout": self.fanout.summary() if self.fanout is not None else None,
+            "pairs": [audit.to_dict() for audit in self.pair_audits],
         }
 
 
@@ -333,7 +336,8 @@ def route_board(
         try:
             if connection.pair is not None:
                 coupled = realize_pair(
-                    connection, path, base, placed, netlist, stack, congestion, report
+                    connection, path, base, placed, netlist, stack, congestion,
+                    report, outcome.pair_audits,
                 )
                 if coupled is None:
                     _route_pair_halves(

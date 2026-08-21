@@ -267,6 +267,19 @@ class TestCheckLoop:
     KNOWN_ISSUES: ClassVar[dict[str, frozenset[str]]] = {
         "diff-pair": frozenset({"kicad-copper-sliver"}),
         "qfn-fanout": frozenset({"plane-fragmented"}),
+        # Two, and both are the milestone working rather than the board being
+        # wrong. `diff-pair-wall-hugging` is M11d rule 2 firing on the PCIe
+        # transmit pair, which leaves the controller between two ground pads
+        # 0.5 mm away and runs beside them for longer than five times its gap;
+        # re-tightening with their clearance inflated does not move a pad, so the
+        # flag stands, which is what the specification asks for. And
+        # `kicad-lib-footprint-mismatch` is the price of ADR 0010's decision that
+        # the board outline has one author: the card-edge footprint is placed
+        # without its own `Edge.Cuts`, so it is no longer byte-identical to its
+        # library copy, and KiCad says so.
+        "pcie-sata": frozenset(
+            {"diff-pair-wall-hugging", "kicad-lib-footprint-mismatch"}
+        ),
     }
 
     def test_examples_check_clean(self, example_design: Path, tmp_path: Path) -> None:

@@ -37,6 +37,7 @@ __all__ = [
     "PlaneLayer",
     "PlaneReport",
     "analyse_planes",
+    "filled_copper",
     "report_planes",
 ]
 
@@ -160,6 +161,43 @@ class PlaneReport:
 # ---------------------------------------------------------------------------
 # analysis
 # ---------------------------------------------------------------------------
+
+
+def filled_copper(board: SNode) -> dict[str, dict[str, BaseGeometry]]:
+    """Every zone's filled copper, unioned, by layer and then by net.
+
+    M10 computed this union inside :func:`_islands` and threw it away, keeping only
+    the areas and bounding boxes. M11e wants the *shape*: "is there plane under this
+    track" is a question about geometry, and "does the plane under it change net
+    half way along" is a question about which geometry. Exposed here rather than
+    recomputed there, so the copper the plane report measures and the copper the
+    reference check projects onto are the same copper.
+    """
+    from shapely.ops import unary_union
+
+    by_layer: dict[str, dict[str, list[BaseGeometry]]] = {}
+    for zone in board.children("zone"):
+        net = zone.get("net_name") or ""
+        for layer, polygons in _filled_by_layer(zone).items():
+            for points in polygons:
+                if len(points) < 3:
+                    continue
+                shape = _polygon(points)
+                if shape is not None:
+                    by_layer.setdefault(layer, {}).setdefault(net, []).append(shape)
+    return {
+        layer: {net: unary_union(shapes) for net, shapes in nets.items()}
+        for layer, nets in by_layer.items()
+    }
+
+
+def _polygon(points: list[Point]) -> BaseGeometry | None:
+    from shapely.geometry import Polygon as ShapelyPolygon
+
+    shape = ShapelyPolygon(points)
+    if not shape.is_valid:
+        shape = shape.buffer(0)
+    return None if shape.is_empty else shape
 
 
 def analyse_planes(
