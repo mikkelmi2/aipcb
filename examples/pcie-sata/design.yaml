@@ -587,3 +587,26 @@ stitching:
     reason: Through vias tie the two ground pours and the In1 plane into one
       conductor. A high-speed board wants these near where pairs change layer; this
       grid is the baseline the rest is judged against.
+
+simulation:
+  # What `aipcb simulate` may assume (M12). None of it reaches the board; it is the
+  # band each link is swept over and the thresholds a verdict is measured against.
+  # The defaults are deliberately PCIe-shaped, so only SATA has to say anything.
+  classes:
+    sata:
+      stop_ghz: 6.0
+      reason: SATA III is 6 Gbit/s, so the fundamental is 3 GHz and the third
+        harmonic is where the eye stops caring. Sweeping to 8 like the PCIe lanes
+        would spend a third of the mesh on frequencies this link never sees.
+    pcie_tx:
+      stop_ghz: 8.0
+      reason: PCIe Gen3 is 8 GT/s. The fundamental is 4 GHz; 8 covers the second
+        harmonic, which is where a via transition's stub starts to show.
+    pcie_rx:
+      stop_ghz: 8.0
+      reason: Same link, other direction. This class also carries the reference
+        clock, which is far slower - it is swept high anyway because the class is
+        one class and the extra cost is one pair.
+  reason: The numbers a simulation needs that the board does not. Everything else -
+    mesh density, slice margin, the pass thresholds - runs on the defaults, which
+    `docs/format.md` documents and M12 measured.
