@@ -1,6 +1,6 @@
 # 0009 — Copper pours: who fills the zones
 
-* **Status:** **Accepted — Option 1**, decided by the project owner on 2026-08-21
+* **Status:** **Accepted — Option 1**, implemented in M10, decided by the project owner on 2026-08-21
   with the conditions recorded under "The decision" below. M10 resumed on that
   basis; this ADR amends [ADR 0001](0001-kicad-io.md).
 * **Date:** 2026-08-21
@@ -89,6 +89,11 @@ input repeatedly in *separate processes*:
 |---|---|---|
 | synthetic probe (1 zone, 2 vias) | 5 | **1** |
 | `examples/usb-port` (2 zones, 31 pads, 92 segments, 4 vias) | 3 | **1** |
+
+> **Superseded in part by Finding 5.** Re-measured on the shipping implementation,
+> the *fill geometry* repeats exactly but the whole file does not: KiCad's writer
+> invents UUIDs for properties it adds. The stability policy is stated in the
+> stronger form because of it.
 
 Byte-identical every time, whole file, not merely the fill polygons. Eight runs is
 not a proof of determinism across all inputs — thermal spoke placement and island
@@ -233,3 +238,116 @@ property of the tool.
   exists to eliminate.
 - **A test that simulates `pcbnew` being absent**, asserting the failure is legible
   and loud.
+
+## Implementation findings
+
+Added while M10 was built on the decision above, on 2026-08-21 against the same
+KiCad 9.0.8. Everything here was measured on the code that shipped, not on a probe.
+
+### Finding 5 — the fill geometry repeats; the filled *file* does not
+
+Finding 3 measured "byte-identical across the whole file, not merely the fill
+polygons" on eight runs. Re-measured on the shipping implementation, filling
+`examples/usb-port` five times in five separate processes, the answer splits in two:
+
+| What was compared | Distinct results in 5 runs |
+|---|---|
+| the `filled_polygon` geometry | **1** |
+| the whole file | **5** |
+
+Exactly **12 lines differ** between any two runs, and all twelve are `uuid` tokens
+of `Datasheet` and `Description` properties that KiCad's writer *adds* to footprints
+that do not carry them, each with a freshly random identifier. Strip every `uuid`
+token and the five files hash identically.
+
+So the fill itself is deterministic — which is what the stability policy needed —
+but a filled file is not byte-stable, and M10b's policy is stated in the stronger
+form because of it: **the byte-identical guarantee covers unfilled build output.**
+The earlier reading was too generous to a claim nothing downstream depends on.
+
+Two smaller facts from the same measurement, both load-bearing:
+
+* **No UUID we emit is lost.** 279 UUIDs go into the fill on `usb-port` and all 279
+  come out, so `kicad-cli pcb drc` on the filled board still maps every violation
+  back to source exactly. The twelve new ones are additions, not replacements.
+* **`pcbnew` does not de-alias the duplicate pad UUIDs.** The 31 pads still carry
+  20 distinct identifiers after a round trip, so Finding 4's defect is neither made
+  worse nor quietly repaired by going through the fill.
+
+### Finding 6 — KiCad's own thermal-relief default produces boards KiCad rejects
+
+KiCad's zone dialog defaults to a 0.5 mm thermal gap and a 0.5 mm bridge. Emitting
+those produced `starved_thermal` errors on four of the eight examples that gained a
+pour: on a 1.7 mm through-hole pad at 2.54 mm pitch only one of the four spokes can
+reach the plane, and KiCad 9's rule wants at least two.
+
+Measured on `examples/routing-demo`, filling and running `kicad-cli pcb drc`:
+
+| Thermal relief | `starved_thermal` errors |
+|---|---|
+| gap 0.5, bridge 0.5 (KiCad's dialog default) | 2 |
+| gap 0.3, bridge 0.4 | 1 |
+| gap 0.25, bridge 0.6 | 0 |
+| gap 0.25, bridge 0.5 (**adopted**) | 0 |
+| solid connection | 0 |
+
+So `aipcb`'s default relief is a **0.25 mm gap with a 0.5 mm bridge**, and the
+divergence from KiCad's dialog is deliberate and documented in `docs/format.md`: a
+default that produces an error is not a default. A pour that wants KiCad's figures
+still says so with `thermal_gap:` and `thermal_bridge_width:`.
+
+The one case this does not fix is a pad whose relief is starved by *geometry* rather
+than by numbers — a receptacle's shield tab at the board edge, where the pour is
+clipped and a spoke has nowhere to go. That wants a solid connection, which is what
+a shield tab wants anyway, and `pad_connect:` is how the source says so.
+
+### Finding 7 — the per-pad override needs both "this pad" and "these pads"
+
+Finding 4 established that the override has to be keyed per pad *instance*, because
+a pad number is not an identity. Building it showed the other half: a reference that
+names **only** one instance is not enough either. `examples/enclosure` needs all
+twelve of a Micro-B's shield tabs flooded, and twelve `#N` lines to say so would be
+a worse source format than the problem it solves.
+
+So `U2.4` means every pad numbered 4 and `U2.4#2` means the second one alone, with
+the suffix outranking the bare form. Both appear in the examples: `enclosure` floods
+`J1.6`, and `usb-port` floods `J1.6#7` and leaves its eleven siblings thermal —
+which is also the test that proves the instance keying works, since those twelve
+pads share one UUID.
+
+### Finding 8 — same-net copper may touch; same-net *holes* may not
+
+The router's obstacle model correctly lets copper of one net overlap copper of the
+same net, so a stitching via on `GND` is not blocked by a routed `GND` via. Holes
+are a different rule: `mcu-4layer` put a stitching barrel **0.2104 mm** from a
+routed via against a 0.25 mm minimum, and `kicad-cli pcb drc` said so.
+
+Stitching therefore checks candidate positions against *every drilled hole on the
+board* — vias and through-hole pads, whatever their net — at KiCad's 0.25 mm
+hole-to-hole minimum, in addition to the copper-clearance check it inherits from the
+router's obstacle model. Oval pad drills are measured across their long axis.
+
+### Finding 9 — a stitching via has to land in copper, or it is a DRC violation
+
+A via on `GND` that does not touch any other `GND` copper is an isolated island, and
+KiCad reports it as an unconnected item. So every candidate position must lie inside
+the net's pours on **both** layers the barrel joins, eroded by the via's own radius,
+before anything else is checked. Stitching a net with no pour on one of those layers
+places nothing and says why (`stitching-no-plane`).
+
+This is also what makes stitching *useful* rather than decorative, measured on
+`examples/qfn-fanout`: a 0.5 mm-pitch escape field cuts the back-side ground into
+pieces, and a `starved_thermal` error landed on the receptacle's shield tab because
+its spokes reached an island connected to nothing. Adding a 4 mm grid tied those
+islands up to the front pour and the error went away — the board went from one DRC
+error to none, with the plane-integrity report still honestly reporting five islands
+on B.Cu.
+
+### Finding 10 — two of the ten examples have no ground to pour
+
+`examples/congestion` and `examples/overconstrained` declare four signal nets
+(`SWAP_A`..`SWAP_D`) and nothing else. They are routing-topology fixtures, not
+boards, and pouring one of their signal nets would be a fiction. They are the two
+examples that did **not** gain a `pours:` block, which is recorded here rather than
+worked around, and they are why the backward-compatibility claim has a live witness:
+`congestion` still builds with no zone in its output at all.

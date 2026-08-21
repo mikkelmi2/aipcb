@@ -52,11 +52,37 @@ tenants:
   load-capacitor loops are a fixed shape rather than a search;
 * antenna feeds, where the geometry *is* the specification.
 
-**Zone pours.** A layer given over to a plane under `stackup.planes` is a
-reservation today: the router stays off it and the nets that would have lived there
-are routed as tracks. Pouring the copper — and with it thermal reliefs, spoke
-counts, and stitching vias — is not built. It is what an exposed pad's thermal vias
-should really connect to.
+**Pour-aware routing.** M10 pours copper and reports what the fill produced; it
+does not let the pour influence where the router puts a track. The two things that
+would need is return-path preservation (a track on the layer above a plane should
+not cross a slot in it) and fragmentation-avoiding costs (a track that would cut a
+plane in two should pay for it). Both are research: the router's cost model is a
+per-layer congestion field, and a plane's connectivity is a global property of the
+finished copper, so the feedback loop is not a term you can simply add. The
+plane-integrity report is M10's answer — it tells the agent what the routing did to
+the plane, and the agent can move a track or give it a layer. Recorded in
+[ADR 0009](decisions/0009-pours.md).
+
+**Current-capacity analysis of pours as conductors.** Net classes carry
+`max_current_a`, and after M10 a plane is a real conductor with a measurable
+cross-section — but nothing checks one against the other, and doing it properly
+means current *distribution* over a shape rather than a width, which is a field
+solve rather than a rule.
+
+**Reimplementing zone fill** — rejected, not deferred. KiCad's fill is what DRC
+checks against, so a second implementation would be checked against the first,
+would differ, and the difference would be our bug on every board. Recorded in
+[ADR 0009](decisions/0009-pours.md); the fill runs through KiCad's own engine in a
+`pcbnew` subprocess, with a version lock so it is always the same engine that later
+checks it.
+
+**Making the *filled* board byte-stable.** Build output is byte-identical and
+always will be; the filled copy is not, because KiCad's writer adds `Datasheet` and
+`Description` properties with random UUIDs to footprints that lack them
+([ADR 0009](decisions/0009-pours.md), Finding 5). Emitting those two properties
+ourselves would close it, at the cost of changing the bytes of every board this
+tool has ever written. Nothing depends on it today: the copper is stable, and the
+copper is what the fabricator gets.
 
 **Same-net sliver trimming.** Where two tracks of one net diverge at a shallow
 angle they leave a wedge a few microns wide, which KiCad reports as a copper sliver
@@ -78,6 +104,21 @@ a file format should contain, and a DRC violation on one of them cannot say whic
 fix is to key the UUID on the pad instance, as the router already keys its obstacles;
 it changes the UUID of every affected pad, so it wants a milestone of its own rather
 than a quiet rewrite of every golden file.
+
+## Pours
+
+**A ground pour for the two examples that have no ground.** `examples/congestion`
+and `examples/overconstrained` declare four signal nets and nothing else; they are
+routing-topology fixtures rather than boards, and pouring one of their signal nets
+would be a fiction. They are the two of ten examples without a `pours:` block, and
+they are also the live witness that a design without one still builds with no zone
+in its output at all.
+
+**Keepout zones.** `layout.placement.keepouts` keeps the *router* out of an area,
+and the pour respects the outline and every cutout, but a KiCad keepout zone — the
+kind that also excludes copper pour, drawn as a zone with a `keepout` block — is not
+emitted. A pour region is the positive form of the same idea and covers the cases
+the examples needed.
 
 ## Validation
 
