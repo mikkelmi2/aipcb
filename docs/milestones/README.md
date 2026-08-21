@@ -17,7 +17,7 @@ with the numbers.
 | [`m1-m7-base.md`](m1-m7-base.md) | M1–M7 — source format, KiCad emission, check loop, query layer, incremental builds, topological routing | executed |
 | [`m8-multilayer.md`](m8-multilayer.md) | M8 — layered triangulations, negotiated congestion, differential pairs | executed |
 | [`m9-mech-placement.md`](m9-mech-placement.md) | M9 — board outline, mechanical placement, fanout, honest failure | executed |
-| [`m10-pours.md`](m10-pours.md) | M10 — copper pours, stitching vias, plane integrity | pending |
+| [`m10-pours.md`](m10-pours.md) | M10 — copper pours, stitching vias, plane integrity | **blocked** — see [`m10.md`](../reports/m10.md) |
 | [`m11-highspeed.md`](m11-highspeed.md) | M11 — controlled impedance, edge connectors, via transitions | pending |
 | [`m12-simulation.md`](m12-simulation.md) | M12 — SI simulation integration (openEMS/gerber2ems) | pending |
 | [`orchestrator-m10-m12.md`](orchestrator-m10-m12.md) | runs M10 → M11 → M12 unattended, with gates between them | pending |
