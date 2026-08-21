@@ -1036,6 +1036,7 @@ simulation:
   impedance_tolerance: 0.10   # +/- this against the class target still passes
   return_loss_db: -10.0
   insertion_loss_db: -3.0
+  mode_conversion_db: -20.0   # differential turned into common mode; skew does this
   classes:
     sata:
       stop_ghz: 6.0

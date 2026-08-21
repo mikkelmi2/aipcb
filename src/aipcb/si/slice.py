@@ -22,6 +22,9 @@ approximation worth stating out loud:
   1.5 mm launches would have added 18 ps. What the launch *does* do is replace the
   pad and its antipad with a uniform line, so this measures the run, not the
   discontinuity where the run ends.
+* **The corridor the launches occupy is cleared** of other nets' copper. Past the
+  pad is the component, and with the footprints gone that region is full of the
+  neighbouring pins' fanout -- see :func:`launch_corridor`.
 * **Footprints are dropped.** No pads, no antipads, no thermal reliefs. The
   interior of the run -- which is what an impedance target is about -- is
   unaffected; the last few tenths of a millimetre at each end are not modelled.

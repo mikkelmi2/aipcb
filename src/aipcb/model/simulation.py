@@ -98,6 +98,14 @@ class SimulationSettings(Strict):
         lt=0,
         description="Worst differential insertion loss that still passes, in dB.",
     )
+    mode_conversion_db: float = Field(
+        default=-20.0,
+        lt=0,
+        description="Worst differential-to-common conversion that still passes, in "
+        "dB. This is the metric intra-pair skew shows up in: a length mismatch "
+        "inside a pair turns differential signal into common-mode signal, which is "
+        "what radiates.",
+    )
     classes: dict[Ident, ClassSimulation] = Field(
         default_factory=dict,
         description="Per-net-class overrides, keyed by net-class name.",
@@ -118,6 +126,7 @@ class SimulationSettings(Strict):
             impedance_tolerance=self.impedance_tolerance,
             return_loss_db=self.return_loss_db,
             insertion_loss_db=self.insertion_loss_db,
+            mode_conversion_db=self.mode_conversion_db,
         )
 
 
@@ -134,3 +143,4 @@ class ResolvedSimulation(Strict):
     impedance_tolerance: float
     return_loss_db: float
     insertion_loss_db: float
+    mode_conversion_db: float
