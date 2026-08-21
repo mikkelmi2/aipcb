@@ -179,10 +179,6 @@ nets:
     max_current_a: 0.1
     reason: Present on the connector and decoupled, but this card runs entirely from
       3.3 V. Brought in so the fingers are not left floating.
-  PRSNT:
-    class: signal
-    reason: Presence detect. The host sees the card because A1 and B17 are tied
-      together across the full width of the fingers.
 
   # -- the PCIe lane ---------------------------------------------------------
   PCIE_TXP:
@@ -241,6 +237,13 @@ components:
     role: edge_connector
     reason: The card's whole reason for existing, and the one component whose
       footprint dictates the board outline rather than sitting inside it.
+    # Two contacts are deliberately left unconnected, and both for the same reason.
+    # A11 (PERST#) and the A1-B17 presence-detect strap both have to cross the lane,
+    # and this stackup has no signal layer left to cross it on: F.Cu and B.Cu each
+    # carry part of the lane, and In1 and In2 are planes. A real card links A1 to
+    # B17 with a trace that runs the length of the finger field on an inner signal
+    # layer, or with a wire link. Neither is something aipcb builds, and inventing a
+    # route that crosses three differential pairs would be worse than saying so.
     pins:
       B1: P12V
       B2: P12V
@@ -259,8 +262,6 @@ components:
       A12: GND
       A15: GND
       A18: GND
-      A1: PRSNT
-      B17: PRSNT
       B14: PCIE_TXP_C
       B15: PCIE_TXN_C
       A16: PCIE_RXP
@@ -293,9 +294,9 @@ components:
       "18": PCIE_TXP
       "19": PCIE_TXN
       "20": GND
-      "21": PCIE_RXP
-      "22": PCIE_RXN
-      "23": GND
+      "22": GND
+      "23": PCIE_RXP
+      "24": PCIE_RXN
       "25": SATA0_TXP
       "26": SATA0_TXN
       "27": GND
@@ -494,6 +495,35 @@ placement:
     fixed: { x: 26.5, y: 11.5, rot: 0 }
     reason: On the 12 V rail, beside the fingers it arrives on. This card does not
       use 12 V, but a rail brought aboard and left undecoupled is an antenna.
+
+transitions:
+  # The two pairs that arrive on the A-side fingers land on B.Cu, and the
+  # controller's pads are on F.Cu, so both have to change layer somewhere. Until
+  # M11c a pair could not: M8 gave a pair `max_vias = 0` and refused, and these two
+  # were handed over. A transition is a *pattern*, not two vias - the signal pair
+  # crosses at its own pitch and the return current crosses with it - so where it
+  # happens is a decision the source makes rather than one the router costs out.
+  - pair: [REFCLKP, REFCLKN]
+    at: [37.7, 20.0]
+    between: [F.Cu, B.Cu]
+    return_vias: 2
+    return_within_mm: 1.2
+    return_net: GND
+    via: { drill: 0.2, diameter: 0.4 }
+    reason: The reference clock leaves the controller on the front and reaches its
+      fingers on the back. Placed on the line between the two, because a transition
+      off to one side turns a straight pair into a dogleg and a dogleg reverses
+      which half is on which side - which the coupled router calls a crossover and
+      refuses, correctly.
+  - pair: [PCIE_RXP, PCIE_RXN]
+    at: [42.4, 20.0]
+    between: [F.Cu, B.Cu]
+    return_vias: 2
+    return_within_mm: 1.2
+    return_net: GND
+    via: { drill: 0.2, diameter: 0.4 }
+    reason: The receive pair, on its own line for the same reason, and far enough
+      from the transmit pair's run down the middle that its return vias clear it.
 
 layout:
   stackup:

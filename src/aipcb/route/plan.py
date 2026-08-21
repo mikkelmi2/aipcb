@@ -69,6 +69,7 @@ from aipcb.route.stretch import (
     Via,
     stretch_route,
 )
+from aipcb.route.transition import TransitionResult, generate_transitions
 from aipcb.route.triangulate import FreeSpaceError
 
 __all__ = [
@@ -139,6 +140,8 @@ class RoutedBoard:
     """What M11d measured about every pair it tried, coupled or refused."""
     fanout: FanoutResult | None = None
     """The escape pattern laid before routing began, when a package asked for one."""
+    transitions: TransitionResult | None = None
+    """The pair via transitions laid before routing began (M11c)."""
     total_length: float = 0.0
 
     @property
@@ -171,6 +174,9 @@ class RoutedBoard:
             "handed_over": self.handed_over(),
             "fanout": self.fanout.summary() if self.fanout is not None else None,
             "pairs": [audit.to_dict() for audit in self.pair_audits],
+            "transitions": (
+                self.transitions.summary() if self.transitions is not None else None
+            ),
         }
 
 
@@ -272,6 +278,18 @@ def route_board(
         outcome.connections.append(escape)
         outcome.total_length += escape.copper_length
 
+    #    The same regime, one tenant later: a declared pair via transition is two
+    #    signal vias, its return vias, and two coupled segments for the router to
+    #    route between (M11c).
+    transitions = generate_transitions(
+        board, base, netlist, stack, report, congestion=congestion
+    )
+    transitions.apply(base)
+    outcome.transitions = transitions
+    for piece in transitions.connections:
+        outcome.connections.append(piece)
+        outcome.total_length += piece.copper_length
+
     classes = _classes_in_use(netlist)
     reference_clearance = max((c.clearance_mm for c in classes), default=0.2)
     reference_width = max((c.trace_width_mm for c in classes), default=0.25)
@@ -301,7 +319,10 @@ def route_board(
         explicit.add((route.net, route.from_, route.to))
         explicit.add((route.net, route.to, route.from_))
 
-    pairs = find_pairs(netlist, base, report)
+    pairs = [
+        *transitions.pairs,
+        *find_pairs(netlist, base, report, skip=transitions.handled),
+    ]
     paired_nets = {n for pair in pairs for n in (pair.positive, pair.negative)}
 
     sketched = _route_sketches(
@@ -744,12 +765,17 @@ def _pair_connection(
     net_class = class_for(netlist, pair.positive)
     name = class_name_for(netlist, pair.positive)
     layers = _net_layers(stack, net_class, allowed)
-    source = _pair_terminal(field_, base, pair.starts, layers, f"{pair.key()}<")
-    target = _pair_terminal(field_, base, pair.ends, layers, f"{pair.key()}>")
+    if pair.layer is not None and pair.layer in stack.layers_for(net_class):
+        # A transition put this segment on one layer and the vias at its ends are
+        # what let it change; letting the search pick another layer would be
+        # letting it ignore the transition.
+        layers = (pair.layer,)
+    source = _pair_terminal(field_, base, pair.starts, layers, f"{pair.label()}<")
+    target = _pair_terminal(field_, base, pair.ends, layers, f"{pair.label()}>")
     if source is None or target is None:
         return None
     return Connection(
-        key=f"pair:{pair.key()}",
+        key=f"pair:{pair.label()}",
         net=pair.positive,
         net_class_name=name,
         net_class=net_class,

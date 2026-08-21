@@ -113,6 +113,7 @@ def _index_pours(index: UuidIndex, netlist: Netlist) -> None:
     """
     from aipcb.compile.zones import keepout_uuid, zone_uuid
     from aipcb.route.stitch import MAX_STITCH_VIAS, stitch_uuid
+    from aipcb.route.transition import MAX_TRANSITION_VIAS, transition_uuid
 
     for position, pour in enumerate(netlist.pours):
         index.add(
@@ -145,6 +146,17 @@ def _index_pours(index: UuidIndex, netlist: Netlist) -> None:
         )
         for ordinal in range(MAX_STITCH_VIAS):
             index.add(stitch_uuid(position, ordinal), ref)
+
+    for position, transition in enumerate(netlist.transitions):
+        ref = SourceRef(
+            "pair via transition",
+            transition.reason or transition.label,
+            path=("transitions", position),
+            loc=netlist.locs.get(("transitions", position)),
+            net=transition.pair[0],
+        )
+        for ordinal in range(MAX_TRANSITION_VIAS):
+            index.add(transition_uuid(position, ordinal), ref)
 
 
 #: How many outline and cutout graphics to index. A DRC violation names a UUID, and

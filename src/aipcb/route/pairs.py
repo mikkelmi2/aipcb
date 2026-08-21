@@ -185,14 +185,19 @@ def measure_skew(
     """
     skew: dict[str, float] = {}
     for pair in pairs:
-        halves = [
-            connection
-            for connection in connections
-            if connection.net in (pair.positive, pair.negative)
-        ]
+        if pair.key() in skew:
+            # A pair split by a via transition arrives here once per segment. The
+            # skew that matters is the whole conductor's, which the sum below
+            # already is, so the second segment has nothing left to say.
+            continue
+        halves: dict[str, float] = {}
+        for connection in connections:
+            if connection.net in (pair.positive, pair.negative):
+                halves[connection.net] = halves.get(connection.net, 0.0) + connection.length
         if len(halves) != 2:
             continue
-        out_of_length = abs(halves[0].length - halves[1].length)
+        first, second = (halves[net] for net in (pair.positive, pair.negative))
+        out_of_length = abs(first - second)
         skew[pair.key()] = out_of_length
         if pair.max_skew is not None and out_of_length > pair.max_skew:
             report.warning(

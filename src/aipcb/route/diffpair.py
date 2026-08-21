@@ -58,6 +58,10 @@ class DiffPair:
     """M11d rule 1: the clearance multiplier this pair is tightened against."""
     target_ohm: float | None = None
     """The differential impedance the geometry was derived for, if any."""
+    layer: str | None = None
+    """The one layer this pair may use, when a transition put it on one (M11c)."""
+    segment: str = ""
+    """Which piece of a transitioning pair this is. Empty for an ordinary pair."""
 
     @property
     def pitch(self) -> float:
@@ -72,9 +76,16 @@ class DiffPair:
     def key(self) -> str:
         return f"{self.positive}+{self.negative}"
 
+    def label(self) -> str:
+        """The key, plus which segment of a transitioning pair this is."""
+        return self.key() if not self.segment else f"{self.key()}/{self.segment}"
+
 
 def find_pairs(
-    netlist: Netlist, environment: RoutingEnvironment, report: Report
+    netlist: Netlist,
+    environment: RoutingEnvironment,
+    report: Report,
+    skip: set[str] | None = None,
 ) -> list[DiffPair]:
     """Find the differential pairs that can be routed as pairs.
 
@@ -84,7 +95,10 @@ def find_pairs(
     produce a pair coupled to the wrong thing.
     """
     pairs: list[DiffPair] = []
-    seen: set[str] = set()
+    # A net a generator already owns is not looked at again: the transition
+    # generator has published two coupled segments for it, and finding a third
+    # pair over the same pads would route it twice.
+    seen: set[str] = set(skip or ())
 
     for name in sorted(netlist.nets):
         net = netlist.nets[name]
