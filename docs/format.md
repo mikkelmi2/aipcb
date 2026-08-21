@@ -26,6 +26,7 @@ key must be reported, never silently ignored.
 - [Card-edge connectors](#card-edge-connectors)
 - [Pair via transitions](#pair-via-transitions)
 - [Layout intent](#layout-intent)
+- [Signal-integrity simulation](#signal-integrity-simulation)
 - [Part libraries](#part-libraries)
 - [Elaboration](#elaboration)
 - [Diagnostics](#diagnostics)
@@ -1009,6 +1010,83 @@ it connects — so an inner-layer track never runs through a drill.
 
 `preferred_direction` is the classic H/V hint. It is soft: going against the grain
 costs 25% more per millimetre, which biases without producing staircases.
+
+## Signal-integrity simulation
+
+`aipcb simulate` solves each differential pair with openEMS and reports what it
+measures against what the net class declared. It is a separate command, not part of
+`check`: a pair costs a minute or two, and what comes back is engineering judgement
+rather than a correctness gate.
+
+Everything it needs is derived from the design already — the pairs from `diff_pair:`,
+the stackup from `layout.stackup`, the impedance target from `impedance_diff_ohm`,
+and which series parts are shorts from `role: ac_coupling`. The optional
+`simulation:` block exists for the handful of numbers the board itself does not
+carry:
+
+```yaml
+simulation:
+  stop_ghz: 8.0            # top of the swept band
+  start_mhz: 100.0
+  margin_mm: 1.5           # how much board to keep around the pair
+  launch_mm: 1.5           # the straight run each port feeds through
+  grid_optimal_um: 50.0    # target mesh cell size near copper
+  grid_inter_layers: 8     # mesh cells through each dielectric
+  max_steps: 40000
+  impedance_tolerance: 0.10   # +/- this against the class target still passes
+  return_loss_db: -10.0
+  insertion_loss_db: -3.0
+  classes:
+    sata:
+      stop_ghz: 6.0
+      reason: SATA III is 6 Gbit/s, so the third harmonic is where the eye stops
+        caring.
+```
+
+Every field is optional and every per-class field falls back to the global one. A
+design that omits the block entirely simulates on the defaults above.
+
+**The thresholds are engineering defaults, not standards compliance.** Ten percent
+on impedance and −10 dB of return loss are what most controlled-impedance
+fabrication notes ask for; a link with a real budget should state its own. Nothing
+here certifies a design against PCIe or SATA.
+
+### What a run produces
+
+One directory per pair under `out/si/`, each holding the *slice* — a small,
+self-contained `.kicad_pcb` carrying that pair, the copper near it, the planes it is
+referenced to and four simulation ports — its Gerbers, the solver's inputs and
+outputs, and the raw S-parameters as a Touchstone `.s4p` for scikit-rf or anything
+else. A `manifest.json` beside them records what ran, what was reused from cache and
+how long each pair took.
+
+Slices are deterministic: the same routed board produces byte-identical slices. The
+solver's own numerics are not bit-reproducible, but they are stable enough that the
+pass/warn verdicts repeat.
+
+### What it cannot tell you
+
+The stackup it solves is the one the *source* declares. A fabricator who presses
+different material builds a different impedance, and no simulation here will know.
+This validates the layout; it does not replace an impedance coupon or a hardware
+measurement.
+
+Three approximations are deliberate and worth knowing about:
+
+* Each end of a pair grows a short straight **launch**, because a microstrip port
+  has to run along an axis and a trace that ends on a diagonal has nowhere to be fed
+  from. The port occupies exactly that launch, so it does not lengthen the link — but
+  the pad and antipad that were really there are not modelled.
+* **Footprints are dropped** from the slice. The interior of a run, which is what an
+  impedance target is about, is unaffected; the last few tenths of a millimetre at
+  each end are not.
+* Series parts marked `role: ac_coupling` become **copper bridges**, which is what
+  they are at signal frequencies. This is the part a geometric slicer cannot do,
+  because only the source knows the capacitor is not a component under test.
+
+Running it needs a container runtime and a locally built gerber2ems image; see
+[ADR 0011](decisions/0011-si-simulation.md), which records the pinned commits. It is
+the only part of aipcb that needs either.
 
 ## Part libraries
 

@@ -159,12 +159,51 @@ as tests in `tests/test_highspeed.py`.
 
 ## High speed
 
-**Electromagnetic simulation.** M11e is rule-based geometry and says so in its
-own first line, in the `--json` report's `method` field and in the README: it
-checks that the return path has somewhere to go, not that it goes there. Actual
-field solving — and eye-diagram prediction with it — is a different tool.
-Exporting this toolchain's geometry to one is M12's subject and is measured in
-[ADR 0011](decisions/0011-si-simulation.md).
+**Electromagnetic simulation** landed in M12 as `aipcb simulate`, so what is left
+here is what it deliberately does not do.
+
+**Crosstalk between pairs, eye diagrams, IBIS driver models.** A slice carries its
+neighbours' copper, so their loading is in the answer, but nothing excites them and
+nothing reports coupling between two pairs. An eye needs a driver model and a
+channel; M12 produces the channel. All three are the obvious next stage.
+
+**Automatic fixes from simulation results.** Deliberately absent: the JSON exists so
+that an agent loop can read a finding and change the source, which is where a fix
+belongs. `aipcb simulate` will never edit a design.
+
+**Thermal and power-integrity simulation.** Not attempted. The same toolchain can do
+plane resonance and PDN impedance; nothing in aipcb asks it to.
+
+**Simulation inside `check`.** It stays a separate command. A pair costs a minute or
+two against seconds for the whole of `check`, and its output is engineering judgement
+rather than a gate.
+
+**The `.kicad_pcb` stackup disagrees with the source stackup.** Found by M12 and
+*not* fixed, because fixing it changes every existing board.
+`compile/board.py::_stackup` splits the board thickness evenly between the copper
+layers and applies the first declared core's material to all of them, while
+`Stackup.dielectric_between` — which is what impedance is derived from — honours the
+`layers:` block. On `examples/pcie-sata` the prepreg under F.Cu is 0.2104 mm in the
+source and 0.48 mm in the board file. Simulation uses the source; KiCad is told
+something else. See [ADR 0011](decisions/0011-si-simulation.md), Decision 2.
+
+**Per-dielectric material, and `epsilon_r` that is actually used.** The same
+function takes the *first* core or prepreg entry's `material` and `epsilon_r` and
+writes them into every dielectric, and types all of them `core` even on a four-layer
+stack that alternates core and prepreg. `loss_tangent` became reachable from source
+in M12; these two did not, for the same byte-stability reason.
+
+**Impedance formulas that know about coplanar ground.** Both closed forms aipcb
+carries are bare microstrip. Every bundled example pours ground up to its pairs at
+the class clearance, and M12 measured what that does: the simulated impedance lands
+well below what the formula derived the width for. The width a design is built with
+is therefore systematically narrow. Fixing it means a coplanar-waveguide-with-ground
+model and regenerating every controlled-impedance example.
+
+**A digest-pinned Containerfile.** Antmicro's Dockerfile pins its base image by tag
+and installs from moving apt archives, so `aipcb simulate` is pinned by *image*, not
+reproducibly rebuildable. Carrying our own Containerfile is the only fix and means
+maintaining a fork of their build.
 
 **A second impedance formula.** `estimate_gap`, the M8 path that guesses a gap
 from `impedance_ohm`, still uses Hammerstad while the controlled-impedance path
