@@ -1,0 +1,27 @@
+# Milestones
+
+The milestone specifications this project is built from, in execution order, each
+paired with its delivery report in [`docs/reports/`](../reports/). A milestone file
+is the *prompt* — what was asked for; the report is what was actually delivered,
+with the numbers.
+
+> **These files describe planned or historical work.** They are only relevant when a
+> milestone is explicitly being executed. If you are doing ordinary development
+> work, do not read a future milestone file as a description of existing
+> functionality — nothing in `m10`–`m12` is built. For what the project *does*
+> today, read [`README.md`](../../README.md), [`docs/format.md`](../format.md) and
+> the ADRs in [`docs/decisions/`](../decisions/).
+
+| File | Milestones | Status |
+|---|---|---|
+| [`m1-m7-base.md`](m1-m7-base.md) | M1–M7 — source format, KiCad emission, check loop, query layer, incremental builds, topological routing | executed |
+| [`m8-multilayer.md`](m8-multilayer.md) | M8 — layered triangulations, negotiated congestion, differential pairs | executed |
+| [`m9-mech-placement.md`](m9-mech-placement.md) | M9 — board outline, mechanical placement, fanout, honest failure | executed |
+| [`m10-pours.md`](m10-pours.md) | M10 — copper pours, stitching vias, plane integrity | pending |
+| [`m11-highspeed.md`](m11-highspeed.md) | M11 — controlled impedance, edge connectors, via transitions | pending |
+| [`m12-simulation.md`](m12-simulation.md) | M12 — SI simulation integration (openEMS/gerber2ems) | pending |
+| [`orchestrator-m10-m12.md`](orchestrator-m10-m12.md) | runs M10 → M11 → M12 unattended, with gates between them | pending |
+
+The delivery report requirement was introduced with M10. The reports for M8 and M9
+were reconstructed after the fact from the repository's own history and are marked
+as such; there is no report for M1–M7.
