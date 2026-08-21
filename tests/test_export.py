@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from aipcb.compile.build import build_design
-from aipcb.compile.export import export_board, gerber_layers
+from aipcb.compile.export import export_board, gerber_layers, position_file_name
 from aipcb.diagnostics import Report
 from aipcb.kicad.sexpr import parse
 
@@ -97,9 +97,27 @@ class TestExport:
 
     def test_placement_file_lists_every_part(self, tmp_path: Path) -> None:
         result, _ = self._export("usb-port", tmp_path)
-        positions = next(p for p in result.files if p.name == "positions.csv")
+        positions = next(
+            p for p in result.files if p.name == position_file_name(Path("usb-port"))
+        )
         rows = list(csv.DictReader(positions.read_text(encoding="utf-8").splitlines()))
         assert len(rows) >= 7
+
+    def test_the_placement_file_is_where_a_consumer_looks_for_it(
+        self, tmp_path: Path
+    ) -> None:
+        """The name has to match the glob, not merely be a name we like.
+
+        A placement file nobody can find is worse than a missing one: the tool that
+        wanted it carries on with no ports, no error and no warning. So the test
+        expresses the discovery rule as a consumer writes it -- gerber2ems does
+        `(cwd / "fab").glob("*pos.csv")`, and KiCad's own file dialog filters on
+        `*.pos` / `*pos.csv` -- and asks whether what we emitted is in the result.
+        """
+        result, _ = self._export("usb-port", tmp_path)
+        found = sorted(p.name for p in result.directory.glob("*pos.csv"))
+        assert len(found) == 1, f"the *pos.csv glob found {found}"
+        assert found[0] in {p.name for p in result.files}
 
 
 @needs_kicad_libraries

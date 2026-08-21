@@ -17,12 +17,31 @@ from aipcb.diagnostics import Report
 from aipcb.kicad.cli import KicadCliMissing, run_kicad
 from aipcb.netlist import Netlist
 
-__all__ = ["ExportResult", "export_board", "gerber_layers"]
+__all__ = ["ExportResult", "export_board", "gerber_layers", "position_file_name"]
 
 #: Technical layers every board needs plotted, whatever its copper count.
 _TECHNICAL = (
     "F.SilkS", "B.SilkS", "F.Mask", "B.Mask", "F.Paste", "B.Paste", "Edge.Cuts",
 )
+
+
+def position_file_name(board: Path) -> str:
+    """What KiCad itself calls a both-sides placement file.
+
+    KiCad 9 builds this name in ``DIALOG_GEN_FOOTPRINT_POSITION``: the board name,
+    then ``PLACE_FILE_EXPORTER::DecorateFilename`` appends ``-all`` when one file
+    carries both sides (``-top`` / ``-bottom`` otherwise), then the CSV branch
+    appends ``-`` and ``FILEEXT::FootprintPlaceFileExtension`` -- which is ``pos``
+    -- and sets the extension to ``csv``.
+
+    ``kicad-cli pcb export pos`` has no such convention of its own: with no
+    ``--output`` it writes plain ``<board>.csv``, because it just swaps the
+    extension. So the name is ours to choose, and the ecosystem convention is the
+    one worth matching -- every tool that consumes a KiCad placement file looks for
+    ``*pos.csv``, and a name outside that pattern is not rejected, it is simply
+    never found.
+    """
+    return f"{board.stem}-all-pos.csv"
 
 
 def gerber_layers(copper_layers: int) -> list[str]:
@@ -95,7 +114,7 @@ def export_board(
                 (
                     "pcb", "export", "pos",
                     "--format", "csv", "--units", "mm", "--side", "both",
-                    "-o", str(out_dir / "positions.csv"), str(board),
+                    "-o", str(out_dir / position_file_name(board)), str(board),
                 ),
             )
         )
