@@ -32,7 +32,7 @@ them to fail the check says ``verify: error``.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from aipcb.checks.planes import filled_copper
@@ -105,6 +105,16 @@ class ViaStub:
     span: tuple[str, str]
     used: tuple[str, str]
     stub_mm: float
+    diameter_mm: float = 0.6
+
+    @property
+    def stub_diameter_mm(self) -> float:
+        """How far from the barrel a plane's antipad reaches, near enough.
+
+        One via diameter: a plane clears a via by its own clearance, which on every
+        geometry this toolchain writes is smaller than the via itself.
+        """
+        return self.diameter_mm
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -224,12 +234,18 @@ def analyse_highspeed(
         for name, net in netlist.nets.items()
         if net.net_class in targets
     }
+    result.stubs = _stubs(board, controlled, stackup)
     if filled:
         copper = filled_copper(board)
         for name in sorted(controlled):
-            _project(name, controlled[name], tracks.get(name, []), copper, result)
-
-    result.stubs = _stubs(board, controlled, stackup)
+            own = tuple(
+                (stub.at, stub.stub_diameter_mm)
+                for stub in result.stubs
+                if stub.net == name
+            )
+            _project(
+                name, controlled[name], tracks.get(name, []), copper, own, result
+            )
     result.pairs = _pairs(audits, targets, tracks, skew, netlist)
     return result
 
@@ -265,6 +281,7 @@ def _project(
     target: ImpedanceTarget,
     segments: list[tuple[str, float, Point, Point]],
     copper: dict[str, dict[str, BaseGeometry]],
+    own_vias: tuple[tuple[Point, float], ...],
     result: HighSpeedReport,
 ) -> None:
     """Walk a net's tracks and ask, every 50 um, what is underneath.
@@ -306,11 +323,11 @@ def _project(
             step = length / steps
             result.projected_mm += step
             if under == home:
-                _flush(net, layer, target.reference, run, result)
+                _flush(net, layer, target.reference, run, own_vias, result)
                 run = []
             else:
                 run.append(("void" if under is None else "split", under, here, step))
-        _flush(net, layer, target.reference, run, result)
+        _flush(net, layer, target.reference, run, own_vias, result)
         run = []
 
 
@@ -319,12 +336,24 @@ def _flush(
     layer: str,
     reference: str,
     run: list[tuple[str, str | None, Point, float]],
+    own_vias: tuple[tuple[Point, float], ...],
     result: HighSpeedReport,
 ) -> None:
     if not run:
         return
     length = sum(step for _, _, _, step in run)
     if length < _MIN_FINDING_MM:
+        return
+    # A via punches its own antipad through every plane it passes, and the track
+    # that ends at it necessarily crosses that hole. Reporting it as a break in the
+    # reference would be reporting the transition against itself: what the plane
+    # loses there is the transition's own doing, and the return vias beside it are
+    # the mitigation the generator already measures. A break anywhere *else* is
+    # exactly what this check is for, and is still reported.
+    if own_vias and all(
+        any(math.dist(point, centre) <= radius for centre, radius in own_vias)
+        for _, _, point, _ in run
+    ):
         return
     kind = "split" if any(k == "split" for k, _, _, _ in run) else "void"
     other = next((name for k, name, _, _ in run if k == "split"), None)
@@ -389,6 +418,11 @@ def _stubs(
                 span=span,
                 used=used,
                 stub_mm=stub,
+                diameter_mm=float(
+                    size.value(0) or 0.6
+                    if (size := item.child("size")) is not None
+                    else 0.6
+                ),
             )
         )
     return sorted(out, key=lambda v: (-v.stub_mm, v.net, v.at))
@@ -402,7 +436,7 @@ def _pairs(
     netlist: Netlist,
 ) -> list[PairGeometry]:
     out: list[PairGeometry] = []
-    for audit in audits:
+    for audit in _merge(audits):
         target = targets.get(audit.net_class)
         if target is None:
             continue
@@ -445,6 +479,44 @@ def _pairs(
             )
         )
     return out
+
+
+def _merge(audits: list[PairAudit]) -> list[PairAudit]:
+    """One entry per pair, not one per segment.
+
+    A pair split by a via transition is routed as two coupled segments and audited
+    as two. To the verification report it is one pair: its skew is the whole
+    conductor's, its uncoupled length is the sum of both ends' fan-out plus the
+    splay at the transition, and reporting it twice would say the same thing twice
+    with two different halves of the number.
+    """
+    merged: dict[str, PairAudit] = {}
+    for audit in audits:
+        first = merged.get(audit.key)
+        if first is None:
+            merged[audit.key] = audit
+            continue
+        halves = max(len(first.uncoupled_mm), len(audit.uncoupled_mm))
+        total = tuple(
+            (first.uncoupled_mm[i] if i < len(first.uncoupled_mm) else 0.0)
+            + (audit.uncoupled_mm[i] if i < len(audit.uncoupled_mm) else 0.0)
+            for i in range(halves)
+        )
+        layers = (
+            first.layer
+            if audit.layer in first.layer.split("+")
+            else f"{first.layer}+{audit.layer}"
+        )
+        merged[audit.key] = replace(
+            first,
+            layer=layers,
+            coupled=first.coupled and audit.coupled,
+            reason=first.reason or audit.reason,
+            uncoupled_mm=total,
+            wall_hugs=(*first.wall_hugs, *audit.wall_hugs),
+            retightened=first.retightened or audit.retightened,
+        )
+    return list(merged.values())
 
 
 def _measure_gap(

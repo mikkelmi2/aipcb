@@ -102,6 +102,7 @@ class _Elaborator:
             fanout=fanout,
             pours=design.pours,
             stitching=design.stitching,
+            transitions=design.transitions,
             unknown_mech_refs=(*unplaced, *unfanned),
             mech_names=mech_names,
             locs=self._mech_locs(),
@@ -121,6 +122,7 @@ class _Elaborator:
         paths.extend(("fanout", name) for name in design.fanout)
         paths.extend(("pours", i) for i in range(len(design.pours)))
         paths.extend(("stitching", i) for i in range(len(design.stitching)))
+        paths.extend(("transitions", i) for i in range(len(design.transitions)))
         paths.extend(("net_classes", name) for name in design.net_classes)
         paths.extend(
             ("net_classes", name, field)

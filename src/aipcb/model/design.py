@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from aipcb.model.board import Board
 from aipcb.model.common import NET_NAME_PATTERN
+from aipcb.model.highspeed import PairTransition
 from aipcb.model.layout import Layout, NetClass
 from aipcb.model.mech import Fanout, MechPlacement
 from aipcb.model.pours import Pour, Stitching
@@ -295,6 +296,11 @@ class Design(Strict):
         default=(),
         description="Copper pours: which net owns the free copper of which layer. "
         "Emitted as KiCad zones and filled by KiCad's own engine.",
+    )
+    transitions: tuple[PairTransition, ...] = Field(
+        default=(),
+        description="Differential-pair layer changes, each generated as one "
+        "validated pattern with its return vias (M11c).",
     )
     stitching: tuple[Stitching, ...] = Field(
         default=(),

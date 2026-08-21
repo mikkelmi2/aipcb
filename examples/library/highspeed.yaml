@@ -128,10 +128,10 @@ parts:
       "18": { type: output, name: PETP }
       "19": { type: output, name: PETN }
       "20": { type: power_in, name: GND_S3 }
-      "21": { type: input, name: PERP }
-      "22": { type: input, name: PERN }
-      "23": { type: power_in, name: GND_S4 }
-      "24": { type: passive, name: RSVD24 }
+      "21": { type: passive, name: RSVD21 }
+      "22": { type: power_in, name: GND_S4 }
+      "23": { type: input, name: PERP }
+      "24": { type: input, name: PERN }
       # East side, south to north. Ports 0 and 1. The order is the mirror of the
       # west side's, because an east-edge connector's contacts run the other way up:
       # what matters is that the pin order down the package matches the pad order

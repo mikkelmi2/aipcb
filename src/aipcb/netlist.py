@@ -18,6 +18,7 @@ from typing import Any
 from aipcb.ids import element_uuid
 from aipcb.model.board import Board
 from aipcb.model.design import Constraint, Net
+from aipcb.model.highspeed import PairTransition
 from aipcb.model.layout import Layout, NetClass
 from aipcb.model.mech import Fanout, MechPlacement
 from aipcb.model.parts import Part
@@ -135,6 +136,8 @@ class Netlist:
     """Fanout intent, keyed by reference designator."""
     pours: tuple[Pour, ...] = ()
     """Copper pours, in source order. The index is their identity."""
+    transitions: tuple[PairTransition, ...] = ()
+    """Declared differential-pair layer changes, in source order."""
     stitching: tuple[Stitching, ...] = ()
     """Stitching-via patterns, in source order."""
     unknown_mech_refs: tuple[tuple[str, str], ...] = ()

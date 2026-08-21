@@ -104,6 +104,7 @@ def route_all(
     from aipcb.route.emit import attach_copper, drop_generated, generated_uuids
     from aipcb.route.plan import RoutedBoard, route_board
     from aipcb.route.stitch import stitch_board, stitch_uuids
+    from aipcb.route.transition import transition_uuids
 
     report = Report()
     target = out or design.parent
@@ -139,6 +140,7 @@ def route_all(
         # routing depend on the previous run's stitching, which is the end of
         # byte-stability.
         drop_generated(board, stitch_uuids(result.netlist))
+        drop_generated(board, transition_uuids(result.netlist))
         if list(board.children("segment")) or list(board.children("via")):
             owned = generated_uuids(run(False).connections)
             drop_generated(board, owned)
