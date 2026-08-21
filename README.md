@@ -52,7 +52,8 @@ working on without paying for the whole thing in context.
 | Layer | What it holds | Where it lives |
 |---|---|---|
 | 1. Semantic schematic | components, nets, intent, hierarchical parameterised modules | `design.yaml`, [`aipcb.model.design`](src/aipcb/model/design.py) |
-| 2. Layout intent | board outline, stackup, placement rules, per-class routing rules | `layout:`, [`aipcb.model.layout`](src/aipcb/model/layout.py) |
+| 2. Layout intent | stackup, placement rules, per-class routing rules, routing sketches | `layout:`, [`aipcb.model.layout`](src/aipcb/model/layout.py) |
+| 2. Mechanical | board outline, cutouts, edge clearance, fixed placement, fanout | `board:`, `placement:`, `fanout:`, [`aipcb.model.board`](src/aipcb/model/board.py) |
 | 3. Compiler / sync | elaboration, KiCad emission, check-loop feedback | [`aipcb.elaborate`](src/aipcb/elaborate.py), `aipcb.kicad` |
 | 4. Component database | parts, pinouts, limits, KiCad symbol/footprint bindings | `library/*.yaml`, [`aipcb.model.parts`](src/aipcb/model/parts.py) |
 
@@ -108,10 +109,11 @@ The build writes a `.kicad_sch`, a `.kicad_pcb`, a `.kicad_pro` carrying the net
 classes as KiCad design rules, and project-local `sym-lib-table` / `fp-lib-table`
 files. Open either file in KiCad and it renders, checks, and plots like any other.
 
-The unconnected items are the ratlines: nothing is routed yet, which is what M7 is
-for. Everything else is clean — in particular *schematic parity*, which is KiCad
-checking that every footprint is tied to its symbol and every pad sits on the net
-the source says it does.
+The unconnected items are the ratlines: `aipcb build` stops at footprints and an
+outline, and `aipcb route all` is what turns those into copper. Everything else is
+clean — in particular *schematic parity*, which is KiCad checking that every
+footprint is tied to its symbol and every pad sits on the net the source says it
+does.
 
 Footprint placement comes from the design's intent rather than from a layout file.
 Components joined by a `group` or `max_distance` constraint, or by a `for:`
@@ -134,8 +136,8 @@ not even rewritten.
 
 ### The check loop
 
-`aipcb check` builds the design, runs KiCad's ERC and DRC, and reports what they
-found *against the source*:
+`aipcb check` builds the design, routes it, runs KiCad's ERC and DRC, and reports
+what they found *against the source*:
 
 ```bash
 .venv/bin/aipcb check examples/usb-port/design.yaml
@@ -161,6 +163,12 @@ index cannot silently fall behind the emitters.
 A UUID that does not map is reported too, and says what it means: the board
 contains something `aipcb` did not generate, so a human added it in KiCad and that
 is where the fix belongs. That case becomes load-bearing in M6.
+
+Routing before checking is deliberate: a DRC pass over a board with no copper on it
+has checked almost nothing. Connections the router will not deliver legally are
+handed over rather than squeezed in, so `--json` carries both a DRC result that means
+something and an explicit list of what is not routed. `--no-route` gets the old
+behaviour where only the build matters.
 
 ### Your edits survive a rebuild
 
@@ -237,37 +245,181 @@ class, and the funnel algorithm pulls the wire taut inside it. Because the obsta
 were inflated *first*, the shortest path through what is left is automatically a
 legal one — clearance holds by construction rather than being checked and patched.
 
-Connections without a sketch get a topology derived automatically, weighing
-corridor width as well as length — because the shortest route happily takes the one
-gap a later net had no alternative to. Congestion needs no separate bookkeeping:
-free space is what obstacles and already-laid tracks leave behind, so a gate that
-has been used is literally narrower on the next net's triangulation. On the
-examples that is worth one more connection *and* 4 mm less copper than routing for
-length alone; `--congestion 0` turns it off.
-Every routed board in `examples/` passes `kicad-cli pcb drc` with **zero
-violations**, and `ldo-supply` routes completely — 13 of 13 connections, nothing
-left unconnected. Where a connection cannot be made on one layer, it is reported
-with a reason rather than silently skipped.
+Connections without a sketch are routed automatically, across every signal layer
+the stackup allows. Layer, via position and corridor come out of one search rather
+than three sequential decisions, and the corridors are settled by **negotiation**:
+every net is routed as though it had the board to itself, the corridors that end up
+over-subscribed get more expensive, the nets that lost the argument are ripped up
+and re-routed, and it repeats until every cut across the free space carries no more
+copper than it has room for. Ripping up costs nothing, because a route at that stage
+is a set of subscriptions rather than a piece of copper.
+
+```bash
+.venv/bin/aipcb route all examples/mcu-4layer/design.yaml
+```
+
+```
+routed 36 connections (0 unrouted) on B.Cu, F.Cu, 140 track segments and 5 vias,
+547.86 mm of copper
+```
+
+The source gets a say in the outcome. A net class can state a `priority` and a
+`rip_up` policy, and on each contested corridor the net that is hardest to rip up
+keeps its place while the rest go round:
+
+```yaml
+net_classes:
+  clk_sys:
+    priority: 90
+    rip_up: protected
+```
+
+The stackup gets a say too. A layer listed under `stackup.planes` is closed to
+signal routing — enforced, not advisory — and a via is modelled as a *column*, so it
+blocks every layer its barrel passes through and not only the two it connects. What
+each of those choices costs is one file: [`docs/routing-costs.md`](docs/routing-costs.md).
+
+Every routed board in `examples/` passes `kicad-cli pcb drc`, and **all seven route
+completely** — including `led-blinker` and `usb-port`, which cannot be routed on one
+layer at all: a DIP-8's pin rows and a Micro-B receptacle's 0.65 mm pitch leave no
+corridor at 0.25 mm tracks and 0.2 mm clearance. The second layer is the answer, and
+the router finds it. Where a connection genuinely cannot be made, it is reported with
+a reason rather than silently skipped.
 
 A differential pair is tightened *once*, as a single centre-line wide enough for
 both traces and the gap, then offset to either side — so the gap is right
-everywhere by construction and the halves come out the same length. Where a pair
-cannot honestly be coupled, it says so and routes the halves separately rather than
-shipping something that only looks like a pair:
+everywhere by construction and the halves come out the same length. Where they do
+not, the shorter half is meandered in its own corridor until they do:
 
 ```
-info[diff-pair-coupled]: DIFF_N+DIFF_P routed as a coupled pair with a 0.2 mm gap;
-0% of each half is fan-out at the ends
+info[diff-pair-length-matched]: USB_DM+USB_DP: 1.591 mm of meander added to USB_DM
+to meet its 0.150 mm skew budget
 ```
 
+Where a pair cannot honestly be coupled, it says so and routes the halves separately
+rather than shipping something that only looks like a pair:
+
 ```
-warning[diff-pair-not-coupled]: DEV_DM+DEV_DP would have to cross over between its
-two ends, which coupled routing does not build yet
+warning[diff-pair-not-coupled]: DEV_DM+DEV_DP could not be fanned out to its pads:
+pair fan-out DEV_DP: the end is not in the routable area
 ```
 
 The algorithm, the prior work behind it, and the several ways it can be got subtly
-wrong are in [`docs/topology.md`](docs/topology.md) and
-[ADR 0006](docs/decisions/0006-routing-approach.md).
+wrong are in [`docs/topology.md`](docs/topology.md),
+[ADR 0006](docs/decisions/0006-routing-approach.md) (one layer) and
+[ADR 0007](docs/decisions/0007-multilayer.md) (all of them).
+
+### The board is a shape, not a rectangle
+
+Real boards go inside things. `board:` is where the mechanical boundary lives — an
+outline that may have arcs, cutouts that pierce every layer, and the edge clearance
+copper must keep:
+
+```yaml
+board:
+  origin: bottom_left          # the source frame is Y up
+  outline:
+    polygon:
+      - [0, 0]
+      - [42, 0]
+      - { arc_to: [48, 6], center: [42, 6] }
+      - [48, 26]
+      - [36, 26]
+      - [36, 34]
+      - [0, 34]
+  cutouts:
+    - rect: [[16, 10], [22, 18]]
+      reason: The display's flex tail passes through here.
+  edge_clearance: 0.3
+```
+
+That is not just an `Edge.Cuts` export. The placer packs into the real polygon, so
+nothing lands in the missing corner or over the hole; the validator checks
+courtyards against it; and the router sees the outline and every cutout as
+obstacles in each layer's triangulation, so two points either side of a slot are
+genuinely in different homotopy classes.
+
+`placement:` says where the enclosure puts a part, in three levels:
+
+```yaml
+placement:
+  J1:
+    fixed: { x: 4.0, y: 17.0, rot: 270 }
+    reason: The receptacle lines up with the port in the enclosure's west wall.
+  H1:
+    fixed: { x: 4.0, y: 28.5 }
+    role: mounting_hole
+  SW1:
+    edge: { side: north, offset_range: [12, 30] }
+    reason: Under the moulded cap in the lid.
+  D1:
+    region: { rect: [[28, 27], [34, 32]] }
+    reason: Under the light pipe.
+```
+
+`fixed` outranks everything: a group that names a fixed part deforms around it, and
+the anchor does not move. Conflicts are caught by `aipcb validate` against geometry
+alone — two fixed courtyards overlapping, a part off the polygon, a courtyard over a
+cutout, an `edge` span with nowhere to go, a `max_distance` the anchors already make
+impossible.
+
+If somebody nudges a fixed part in KiCad, `aipcb build` puts it back and says so.
+When the board is right and the source is stale, `aipcb sync-placement` goes the
+other way and rewrites the YAML in place, comments and all.
+
+[`examples/enclosure`](examples/enclosure/design.yaml) is the worked example: a
+shaped board with an arc and a cutout, a fixed connector and two fixed mounting
+holes, an edge-constrained button and a region-constrained LED. It builds, places,
+routes completely, and passes KiCad's DRC with zero violations.
+
+### Escaping a fine-pitch package
+
+A QFN-32 on a 0.5 mm pitch leaves nothing to route out through. That is not a
+routing problem, it is a pattern, and `fanout:` asks for it:
+
+```yaml
+fanout:
+  U1:
+    style: auto
+    escape_layers: [B.Cu]
+    via: { drill: 0.2, diameter: 0.4 }
+```
+
+A deterministic generator runs *before* routing, lays a stub from each pad to a via
+just clear of the part — staggered into two rows, because a single row at pad pitch
+would be one piece of copper — and publishes those vias as the terminals the router
+sees in place of the package's pads. The rubber-band router that follows has no idea
+a fanout happened.
+
+[`examples/qfn-fanout`](examples/qfn-fanout/design.yaml) routes an ATmega328P in a
+32-pin QFN to completion, with zero DRC violations.
+
+### When the board cannot be routed
+
+The router does not deliver marginal geometry. When a connection cannot be made
+DRC-clean, it is *handed over*: everything else is routed, and the refusal comes back
+machine-readable.
+
+```console
+$ aipcb route all examples/overconstrained/design.yaml --json | jq '.routing.handed_over[0]'
+{
+  "net": "SWAP_B",
+  "from": "J1.2",
+  "to": "J2.3",
+  "unrouted": "over_complexity",
+  "reason": "the free area is split in two by other parts' clearances",
+  "blocked_at": [
+    { "layer": "F.Cu", "at": [108.075, 110.0], "width_mm": 4.15,
+      "demand_mm": 1.8, "over_subscribed": false,
+      "nets": ["SWAP_A", "SWAP_B", "SWAP_C", "SWAP_D"] }
+  ]
+}
+```
+
+An agent can act on that — add a layer, move a part, drop a priority. A human can
+route those nets by hand in KiCad, and the incremental build then preserves that
+copper and treats it as law. What the toolchain will never do is ship a board with
+DRC violations and call it routed.
 
 ### Reading part of a design
 
@@ -351,6 +503,12 @@ The three bundled examples build up from there:
   routing: a signal crossing the board past an MCU that is squarely in the way.
 * [`examples/diff-pair`](examples/diff-pair/design.yaml) — a 100 Ω pair carried
   across a board, routed as a coupled pair with zero skew.
+* [`examples/mcu-4layer`](examples/mcu-4layer/design.yaml) — signal / ground /
+  power / signal, with a DIP-8 the ISP bus has to get *under* and two planes the
+  router will not put a signal on.
+* [`examples/congestion`](examples/congestion/design.yaml) — four wires reversed
+  across a channel. Not routable on one layer; routable on two, and the negotiation
+  works out which ones dive.
 
 ## Commands
 
@@ -358,10 +516,11 @@ The three bundled examples build up from there:
 |---|---|
 | `aipcb validate DESIGN` | schema and semantic checks, with source-referenced diagnostics |
 | `aipcb build DESIGN` | compile to `.kicad_sch`, `.kicad_pcb`, `.kicad_pro` and the project library tables |
-| `aipcb check DESIGN` | build, run KiCad's ERC and DRC, report violations against the source |
+| `aipcb check DESIGN` | build, route, run KiCad's ERC and DRC, report violations against the source |
+| `aipcb sync-placement DESIGN` | report parts moved in KiCad, and write their positions back into the source |
 | `aipcb export DESIGN` | Gerbers, drill files, BOM and placement file into `out/` |
-| `aipcb route check DESIGN` | verify route topologies are realizable on this placement |
-| `aipcb route all DESIGN` | route the board and write tracks |
+| `aipcb route check DESIGN` | verify route topologies are realizable, and that they fit alongside each other |
+| `aipcb route all DESIGN` | route the board across every signal layer and write tracks and vias |
 | `aipcb summary DESIGN` | one-line-per-block overview |
 | `aipcb query ...` | read one module, component, net, net class or role |
 | `aipcb parts DESIGN` | list the parts the design's libraries provide |
@@ -384,11 +543,26 @@ unreadable.
 | M7a — topology model and validation | **done** |
 | M7b — rubber-band stretcher, DRC-clean tracks | **done** |
 | M7c — congestion-aware auto-topology | **done** |
-| M7d — differential pairs, impedance and skew | **partly**: coupled routing and skew reporting done; meander length-matching not built |
+| M7d — differential pairs, impedance and skew | **done** (meander length-matching landed with M8c) |
+| M8a — layered triangulations, via columns, cut capacity | **done** |
+| M8b — multilayer search with negotiated congestion, priority and rip-up | **done** |
+| M8c — pairs as one object, meander length-matching, layer preference | **partly**: coupled pairs, meanders and layer rules done; crossovers and pairs changing layer are refused with a reason, for the reasons in [ADR 0007](docs/decisions/0007-multilayer.md) |
+| M8d — stretcher integration and acceptance | **done**: all seven examples route completely, and pass DRC with one warning ([`diff-pair`](examples/diff-pair/design.yaml) keeps a copper sliver where a ground track threads between a header's two pads) |
+| M9-outline — the board boundary as a source object | **done**: arcs, cutouts and edge clearance, propagated into the placer, the validator and every layer's free space |
+| M9a/M9b — three-level placement, fixed parts as anchors | **done** |
+| M9c — mechanical conflict validation | **done**: eleven checks, all before anything is built |
+| M9d — drift reporting and `aipcb sync-placement` | **done** |
+| M9e — pattern-based fanout | **done**: perimeter and dog-bone escapes, thermal vias in an exposed pad; via-in-pad only when asked for |
+| M9f — honest failure | **done**: what the router will not deliver legally is handed over, with the corridor that blocked it |
 
 ## Documentation
 
 * [`docs/format.md`](docs/format.md) — the source-format reference.
+* [`docs/topology.md`](docs/topology.md) — how a route is stored, and how it becomes
+  copper on however many layers it takes.
+* [`docs/routing-costs.md`](docs/routing-costs.md) — every number the router weighs,
+  with its default and why.
+* [`docs/roadmap.md`](docs/roadmap.md) — what is deliberately not built, and why.
 * [`docs/decisions/`](docs/decisions/) — architecture decision records. Start with
   [0001 (KiCad I/O)](docs/decisions/0001-kicad-io.md), which explains why this
   project writes its own S-expression layer instead of using `kiutils`.
@@ -396,7 +570,7 @@ unreadable.
 ## Development
 
 ```bash
-.venv/bin/pytest          # 504 tests, about 3½ minutes (it runs KiCad for real)
+.venv/bin/pytest          # 726 tests, about 6 minutes (it runs KiCad for real)
 .venv/bin/ruff check .
 .venv/bin/mypy
 ```

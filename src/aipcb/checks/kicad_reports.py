@@ -43,13 +43,14 @@ SEVERITY_MAP = {
     "ignore": Severity.INFO,
 }
 
-#: Violation kinds that simply mean "not routed yet". They are expected until M7
-#: and are reported as notes so they do not drown the real findings.
+#: Violation kinds that simply mean "not routed yet". `aipcb build` stops at
+#: footprints and an outline, so they are expected on a board nobody has routed and
+#: are reported as notes rather than drowning the real findings.
 UNROUTED_TYPES = frozenset({"unconnected_items"})
 
 _HINTS = {
-    "unconnected_items": "this net has no copper joining its pads yet; routing "
-    "arrives in M7",
+    "unconnected_items": "this net has no copper joining its pads yet; run "
+    "`aipcb route all` to lay it",
     "clearance": "widen the clearance for this net class under `net_classes:`, or "
     "move the parts apart with a `keep_apart` constraint",
     "copper_edge_clearance": "the part is too close to the board edge; enlarge "

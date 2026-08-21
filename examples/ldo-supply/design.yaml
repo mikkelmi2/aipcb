@@ -130,11 +130,14 @@ instances:
       VOUT: VOUT
       GND: GND
 
-layout:
+board:
+  # The mechanical boundary, in the board's own frame: millimetres, Y up,
+  # origin at the bottom-left corner. See docs/format.md.
+  origin: bottom_left
   outline:
-    shape: rect
-    width_mm: 40.0
-    height_mm: 36.0
+    rect: [40.0, 36.0]
+
+layout:
   stackup:
     copper_layers: 2
     thickness_mm: 1.6

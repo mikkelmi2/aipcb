@@ -42,3 +42,47 @@ parts:
     supplier:
       manufacturer: Advanced Monolithic Systems
       mpn: AMS1117-3.3
+
+  ATMEGA328P_QFN32:
+    description: Microchip ATmega328P, 8-bit AVR MCU, 32-pin QFN (MLF), 0.5 mm pitch
+    symbol: MCU_Microchip_ATmega:ATmega328P-M
+    refdes_prefix: U
+    footprint: Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.1x3.1mm
+    value: ATmega328P-MU
+    keywords: [mcu, avr, qfn]
+    pins:
+      "1": { type: bidirectional, name: PD3 }
+      "2": { type: bidirectional, name: PD4 }
+      "3": { type: power_in, name: GND }
+      "4": { type: power_in, name: VCC }
+      "5": { type: passive, name: GND }
+      "6": { type: passive, name: VCC }
+      "7": { type: bidirectional, name: XTAL1/PB6 }
+      "8": { type: bidirectional, name: XTAL2/PB7 }
+      "9": { type: bidirectional, name: PD5 }
+      "10": { type: bidirectional, name: PD6 }
+      "11": { type: bidirectional, name: PD7 }
+      "12": { type: bidirectional, name: PB0 }
+      "13": { type: bidirectional, name: PB1 }
+      "14": { type: bidirectional, name: PB2 }
+      "15": { type: bidirectional, name: PB3 }
+      "16": { type: bidirectional, name: PB4 }
+      "17": { type: bidirectional, name: PB5 }
+      "18": { type: power_in, name: AVCC }
+      "19": { type: input, name: ADC6 }
+      "20": { type: passive, name: AREF }
+      "21": { type: passive, name: GND }
+      "22": { type: input, name: ADC7 }
+      "23": { type: bidirectional, name: PC0 }
+      "24": { type: bidirectional, name: PC1 }
+      "25": { type: bidirectional, name: PC2 }
+      "26": { type: bidirectional, name: PC3 }
+      "27": { type: bidirectional, name: PC4 }
+      "28": { type: bidirectional, name: PC5 }
+      "29": { type: bidirectional, name: "~{RESET}/PC6" }
+      "30": { type: bidirectional, name: PD0 }
+      "31": { type: bidirectional, name: PD1 }
+      "32": { type: bidirectional, name: PD2 }
+      "33": { type: passive, name: GND, description: "Exposed thermal pad, tied to ground" }
+    limits:
+      voltage_max_v: 5.5

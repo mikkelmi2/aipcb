@@ -29,7 +29,7 @@ from aipcb.kicad.sexpr import SExprError, SNode, dump, parse
 from aipcb.loader import load_design
 from aipcb.netlist import Netlist
 
-__all__ = ["BuildResult", "build_design", "compile_netlist"]
+__all__ = ["BuildResult", "build_design", "compile_netlist", "project_name"]
 
 
 @dataclass(slots=True)
@@ -80,7 +80,7 @@ def build_design(
 
     target = out_dir or design_path.parent
     target.mkdir(parents=True, exist_ok=True)
-    project = _project_name(netlist.name)
+    project = project_name(netlist.name)
 
     written: list[Path] = []
 
@@ -94,6 +94,7 @@ def build_design(
                 sheet_uuid,
                 netlist.net_classes,
                 {n.name: n.net_class for n in netlist.nets.values()},
+                edge_clearance=netlist.board.edge_clearance if netlist.board else None,
             )
         ),
     )
@@ -164,7 +165,7 @@ def _read_board(path: Path, report: Report) -> SNode | None:
     return None
 
 
-def _project_name(design_name: str) -> str:
+def project_name(design_name: str) -> str:
     """A filesystem-safe project name. KiCad expects the files to share a stem."""
     return "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in design_name)
 

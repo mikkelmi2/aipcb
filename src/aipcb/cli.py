@@ -216,6 +216,130 @@ def export(
     raise typer.Exit(EXIT_ERRORS if not (report.ok and exported.ok) else EXIT_OK)
 
 
+@app.command("sync-placement")
+def sync_placement(
+    design: DesignArg,
+    board: Annotated[
+        Path | None,
+        typer.Option(
+            "--board",
+            help="The board to read positions from. Defaults to the one beside the "
+            "design file.",
+        ),
+    ] = None,
+    apply: Annotated[
+        bool,
+        typer.Option("--apply", help="Write the board's positions into the design file."),
+    ] = False,
+    assume_yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Accept every change without asking.")
+    ] = False,
+    as_json: JsonOpt = False,
+) -> None:
+    """Report parts that have been moved in KiCad, and offer to update the source.
+
+    A `fixed:` placement is mechanical law, so `aipcb build` puts a hand-moved part
+    back where the source says and says that it did. This is the other direction:
+    when the board is right and the YAML is stale, it writes the board's position
+    into the YAML -- in place, keeping every comment and every `reason:`.
+
+    Without `--apply` nothing is written; the drift is only listed.
+    """
+    from aipcb.compile.build import compile_netlist, project_name
+    from aipcb.compile.frame import frame_for
+    from aipcb.compile.place import component_extents, plan_placement
+    from aipcb.compile.sync import apply_drift, find_drift, read_board
+    from aipcb.kicad.sexpr import SExprError
+
+    report = Report()
+    try:
+        netlist = compile_netlist(design, report)
+    except SourceError as exc:
+        _err(f"error: {exc}")
+        raise typer.Exit(EXIT_UNREADABLE) from exc
+    except AipcbError as exc:
+        _emit(exc.report, as_json)
+        raise typer.Exit(EXIT_ERRORS) from exc
+
+    board_path = board or (design.parent / f"{project_name(netlist.name)}.kicad_pcb")
+    frame = frame_for(netlist)
+    if frame is None or not netlist.placement:
+        message = (
+            "this design declares no `placement:` block, so there is nothing to sync"
+        )
+        typer.echo(json.dumps({"ok": True, "drift": [], "note": message}, indent=2)
+                   if as_json else message)
+        raise typer.Exit(EXIT_OK)
+    if not board_path.exists():
+        _err(f"error: no board at {board_path}; run `aipcb build` first")
+        raise typer.Exit(EXIT_UNREADABLE)
+
+    try:
+        tree = read_board(board_path)
+    except (OSError, UnicodeDecodeError, SExprError) as exc:
+        _err(f"error: cannot read {board_path}: {exc}")
+        raise typer.Exit(EXIT_UNREADABLE) from exc
+
+    extents, _ = component_extents(netlist)
+    placement = plan_placement(netlist, extents=extents, frame=frame)
+    generated = {
+        refdes: (placed.x, placed.y, placed.rotation)
+        for refdes, placed in placement.positions.items()
+    }
+    drifts = find_drift(netlist, tree, frame, generated)
+
+    written: list[str] = []
+    if apply and drifts:
+        accepted = [
+            d
+            for d in drifts
+            if assume_yes
+            or as_json
+            or typer.confirm(f"{d.describe()}\n  write this into the source?", default=True)
+        ]
+        if accepted:
+            text, written = apply_drift(
+                design.read_text(encoding="utf-8"), netlist, accepted
+            )
+            design.write_text(text, encoding="utf-8")
+        missed = sorted({d.refdes for d in accepted} - set(written))
+        if missed and not as_json:
+            # The rewriter edits the `fixed:`/`edge:`/`region:` key in place, and
+            # needs to find it on its own line. An entry written as a one-line flow
+            # mapping is legal YAML and not something to rewrite blindly.
+            _err(
+                f"could not update {', '.join(missed)} in {design}: expand the entry "
+                "so its key is on its own line, or edit it by hand"
+            )
+
+    if as_json:
+        typer.echo(
+            json.dumps(
+                {
+                    "ok": True,
+                    "board": str(board_path),
+                    "drift": [d.to_dict() for d in drifts],
+                    "written": written,
+                },
+                indent=2,
+            )
+        )
+    elif not drifts:
+        typer.echo(f"every fixed and constrained part is where {design.name} says")
+    else:
+        for drift in drifts:
+            typer.echo(drift.describe())
+        if written:
+            typer.echo(f"wrote {', '.join(written)} into {design}")
+        elif not apply:
+            typer.echo(
+                f"\n{len(drifts)} part{'s' if len(drifts) != 1 else ''} moved. "
+                "Re-run with --apply to write these positions into the source, or "
+                "run `aipcb build` to put them back where the source says."
+            )
+    raise typer.Exit(EXIT_OK)
+
+
 @app.command()
 def summary(design: DesignArg, as_json: JsonOpt = False) -> None:
     """A one-line-per-block overview of a design.
@@ -243,11 +367,22 @@ def check(
     as_json: JsonOpt = False,
     skip_erc: Annotated[bool, typer.Option("--no-erc", help="Skip the ERC run.")] = False,
     skip_drc: Annotated[bool, typer.Option("--no-drc", help="Skip the DRC run.")] = False,
+    skip_route: Annotated[
+        bool,
+        typer.Option(
+            "--no-route", help="Check the board as built, without routing it first."
+        ),
+    ] = False,
 ) -> None:
-    """Build a design and run KiCad's ERC and DRC against it.
+    """Build a design, route it, and run KiCad's ERC and DRC against the result.
 
     Violations are reported against the source that produced them, not against
     coordinates on a sheet.
+
+    Routing runs first, because a DRC pass over a board with no copper on it has
+    checked almost nothing. Connections the router will not deliver legally are
+    handed over instead: `--json` lists them under `summary.routing.handed_over`,
+    with the corridor that ran out of room and the nets contesting it.
     """
     from aipcb.checks.loop import check_design
 
@@ -259,6 +394,7 @@ def check(
             report=report,
             schematic=not skip_erc,
             board=not skip_drc,
+            route=not skip_route,
         )
     except SourceError as exc:
         _err(f"error: {exc}")
@@ -280,6 +416,11 @@ def check(
             f"[erc {'ran' if result.erc.ran else 'skipped'}, "
             f"drc {'ran' if result.drc.ran else 'skipped'}]"
         )
+        for handed in result.handed_over:
+            typer.echo(
+                f"  unrouted ({handed['unrouted']}): {handed['net']} "
+                f"{handed['from']} -> {handed['to']}"
+            )
     raise typer.Exit(EXIT_ERRORS if not report.ok else EXIT_OK)
 
 

@@ -12,6 +12,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 EXAMPLES = REPO_ROOT / "examples"
 EXAMPLE_DESIGNS = sorted(EXAMPLES.glob("*/design.yaml"))
 
+#: Examples whose whole point is that they cannot be finished. `overconstrained`
+#: is four wires that have to cross in one channel on one layer, which no router
+#: can do; it exists to exercise the hand-over path, so "some nets are unrouted" is
+#: the expected result rather than a failure. Everything it *does* route still has
+#: to be DRC-clean.
+UNROUTABLE_EXAMPLES = frozenset({"overconstrained"})
+
 
 def kicad_libraries_present() -> bool:
     from aipcb.checks.kicad_bindings import libraries_available

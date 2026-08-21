@@ -1,0 +1,311 @@
+# A four-layer board: signal / ground / power / signal, the classic sandwich.
+#
+# Four layers, and only two of them route. In1 is a ground plane and In2 a power
+# plane, and here that is not a convention but a rule the router obeys:
+# `layout.stackup.planes` is routing law, and `aipcb route all` will not put a
+# signal on either of them whatever it costs. What the planes buy is what planes
+# always buy -- a return path directly under every track on F.Cu, and a supply that
+# does not have to be threaded between the signals.
+#
+# The signals still need both outer layers. An ATtiny85 in a DIP-8 sits between a
+# USB receptacle at the top and a programming header away to the left, and the ISP
+# signals have to get from one side of the part to the other. A DIP's two rows are
+# 7.62 mm apart with 2.54 mm between pins: room for one track between adjacent pins
+# and no more, which is not enough for six connections. They go under the part
+# instead, on B.Cu, and the router decides which ones and where the vias land.
+#
+# The differential pair does not go anywhere near B.Cu. It is declared with
+# `prefer_layers: [F.Cu]` and an impedance target that assumes the ground plane
+# directly below it, and a pair that changed layer would leave that reference
+# behind. It stays on top, `rip_up: protected` keeps it there, and everything else
+# routes around it.
+
+name: mcu-4layer
+revision: A
+description: An ATtiny85 between a USB receptacle and an ISP header, on a four-layer
+  stackup with ground and power planes.
+
+libraries:
+  - ../library/passives.yaml
+  - ../library/semiconductors.yaml
+  - ../library/connectors.yaml
+
+net_classes:
+  usb:
+    trace_width_mm: 0.25
+    clearance_mm: 0.2
+    diff_pair_width_mm: 0.25
+    diff_pair_gap_mm: 0.2
+    max_skew_mm: 5.0
+    prefer_layers: [F.Cu]
+    priority: 90
+    rip_up: protected
+    description: The pair is referenced to the ground plane on In1, so it stays on
+      F.Cu. Protected from rip-up because everything else on this board has more
+      freedom than it does, and the negotiation should spend that freedom rather
+      than this. The skew budget is deliberately loose - this is a software USB
+      device running at 1.5 Mbit/s, where a couple of millimetres of mismatch is
+      tens of picoseconds against a bit time of 666 nanoseconds. A high-speed link
+      would say 0.15 mm here, and would then need a placement that does not make the
+      pair turn back on itself at the connector.
+  isp:
+    trace_width_mm: 0.25
+    clearance_mm: 0.2
+    via_diameter_mm: 0.6
+    via_drill_mm: 0.3
+    priority: 50
+    description: Six ordinary signals that have to cross the MCU. They are the ones
+      that use the second layer, because they are the ones that can.
+  power:
+    trace_width_mm: 0.3
+    clearance_mm: 0.25
+    layer_forbid: [B.Cu]
+    description: Kept off the back so the back stays free for the ISP bus to cross
+      under the MCU. Power on this board is short enough not to need it.
+
+nets:
+  VBUS:
+    class: power
+    voltage: 5.0
+    max_current_a: 0.1
+    reason: Bus power, in from the cable and straight into the regulator. Nothing
+      else on the board sees 5 V.
+  VCC:
+    class: power
+    voltage: 3.3
+    max_current_a: 0.05
+    reason: The regulated rail everything else runs from, and the net the In2 plane
+      carries.
+  GND:
+    class: ground
+    reason: Also the net of the In1 plane, which is why nothing else may route there.
+
+  USB_DP:
+    class: usb
+    impedance_ohm: 90.0
+    diff_pair: USB_DM
+    description: Connector side of the pair.
+  USB_DM:
+    class: usb
+    impedance_ohm: 90.0
+    diff_pair: USB_DP
+    description: Connector side of the pair.
+
+  DEV_DP:
+    class: usb
+    impedance_ohm: 90.0
+    diff_pair: DEV_DM
+    description: MCU side, after the series resistors.
+  DEV_DM:
+    class: usb
+    impedance_ohm: 90.0
+    diff_pair: DEV_DP
+    description: MCU side, after the series resistors.
+
+  RESET:
+    class: isp
+    description: Held high by R3; pulled low by the programmer.
+  PB0:
+    class: isp
+    description: ISP MOSI, and USB D- in software.
+  PB1:
+    class: isp
+    description: ISP MISO.
+  PB2:
+    class: isp
+    description: ISP SCK.
+
+components:
+  J1:
+    part: USB_MICRO_B
+    role: connector
+    reason: The board's only power source and its only data connection.
+    pins:
+      VBUS: VBUS
+      D+: USB_DP
+      D-: USB_DM
+      ID: GND
+      GND: GND
+      Shield: GND
+
+  R1:
+    part: R_22R_0603
+    role: series
+    for: J1
+    reason: Series termination on D+, sized for the 90 ohm differential line.
+    pins:
+      "1": USB_DP
+      "2": DEV_DP
+
+  R2:
+    part: R_22R_0603
+    role: series
+    for: J1
+    reason: Partner of R1. Both must be the same value or the pair goes asymmetric.
+    pins:
+      "1": USB_DM
+      "2": DEV_DM
+
+  U1:
+    part: ATTINY85_DIP8
+    role: mcu
+    reason: Through-hole on purpose. A DIP-8's two rows of pins are the obstacle
+      this board exists to route around, and they block both outer layers, so the
+      bus really has to go under the part rather than beside it.
+    pins:
+      VCC: VCC
+      GND: GND
+      RESET: RESET
+      PB0: PB0
+      PB1: PB1
+      PB2: PB2
+      PB3: DEV_DP
+      PB4: DEV_DM
+
+  R3:
+    part: R_10K_0603
+    role: pull_up
+    for: U1
+    reason: RESET must not float, or the MCU resets on noise from the USB cable.
+    pins:
+      "1": VCC
+      "2": RESET
+
+  C1:
+    part: C_100N_0603
+    role: decoupling
+    for: U1
+    reason: Local charge reservoir for the MCU's supply pin.
+    pins:
+      "1": VCC
+      "2": GND
+
+  C2:
+    part: C_10U_0805
+    role: bulk
+    for: J1
+    reason: Rides out the inrush when the cable is plugged in.
+    pins:
+      "1": VBUS
+      "2": GND
+
+  U2:
+    part: AMS1117_3V3
+    role: regulator
+    reason: The ATtiny85 is a 6 V part and USB is 5 V nominal, which leaves almost
+      no margin. Regulating to 3.3 V buys the margin and gives the board a rail the
+      In2 plane can carry.
+    pins:
+      VI: VBUS
+      VO: VCC
+      GND: GND
+
+  C3:
+    part: C_10U_0805
+    role: bulk
+    for: U2
+    reason: The regulator's output reservoir; an LDO without one oscillates.
+    pins:
+      "1": VCC
+      "2": GND
+
+  J2:
+    part: CONN_ISP_1X06
+    role: connector
+    reason: The programming header, deliberately on the far side of the MCU from the
+      USB connector. Everything it carries has to cross the part.
+    pins:
+      MISO: PB1
+      VCC: VCC
+      SCK: PB2
+      MOSI: PB0
+      RESET: RESET
+      GND: GND
+
+constraints:
+  - kind: group
+    name: usb_series
+    members: [R1, R2]
+    reason: The series resistors belong side by side, or the two halves of the pair
+      take different-length detours around them.
+
+  - kind: max_distance
+    between: [C1, U1]
+    mm: 5.0
+    reason: A decoupling capacitor works through its loop inductance.
+
+board:
+  # The mechanical boundary, in the board's own frame: millimetres, Y up,
+  # origin at the bottom-left corner. See docs/format.md.
+  origin: bottom_left
+  outline:
+    rect: [56.0, 44.0]
+
+layout:
+  stackup:
+    copper_layers: 4
+    thickness_mm: 1.6
+    finish: ENIG
+    planes:
+      - layer: In1.Cu
+        net: GND
+        reason: The reference the pair on F.Cu is designed against. A signal cut
+          through it would be a slot in the return path of every track above it,
+          which is the classic way to turn a working board into a radiating one.
+      - layer: In2.Cu
+        net: VCC
+        reason: Supply distribution, so the outer layers carry signals and only
+          signals.
+    via_types: [through]
+    preferred_direction:
+      F.Cu: horizontal
+      B.Cu: vertical
+  placement:
+    margin_mm: 2.0
+    rules:
+      # Every part is pinned. On a board whose whole point is that the middle of it
+      # is impassable, where the parts sit *is* the example -- leaving it to the
+      # packer would make the demonstration depend on a heuristic rather than on the
+      # geometry it is meant to show.
+      - members: [J1]
+        region_mm: [30, 4, 42, 14]
+        orientation_deg: 0
+        reason: The receptacle overhangs the top edge on the right, so the pair has
+          a short straight run down to the series resistors.
+      - members: [R2]
+        region_mm: [33.5, 15.5, 39.5, 20]
+        orientation_deg: 270
+        reason: D- side. The two series resistors sit side by side across the pair's
+          direction of travel, in the same order as the receptacle's pins, so the
+          pair passes through them without either half crossing the other.
+      - members: [R1]
+        region_mm: [29, 15.5, 35, 20]
+        orientation_deg: 270
+        reason: D+ side, matching the pin order of the receptacle above it.
+      - members: [U1]
+        region_mm: [28, 22, 42, 37]
+        reason: Between the pair coming down from the receptacle and the ISP header
+          away to the left. Its two rows of through-hole pins block both outer
+          layers, which is what the bus has to get past.
+      - members: [J2]
+        region_mm: [2, 4, 9, 24]
+        reason: The programming header, on the far side of the MCU from everything
+          it talks to. MOSI, MISO and SCK land on the MCU's right-hand row, so all
+          three have to cross the part to get there.
+      - members: [U2]
+        region_mm: [2, 27, 14, 38]
+        reason: The regulator takes the top-left corner, where the bus power comes
+          in and nothing else needs the room.
+      - members: [C2]
+        region_mm: [16, 3, 23, 9]
+        reason: Bulk capacitance between the connector and the regulator, on the
+          cable side.
+      - members: [C3]
+        region_mm: [16, 30, 23, 36]
+        reason: The regulator's output reservoir, close enough to be one.
+      - members: [C1]
+        region_mm: [44, 22, 50, 27]
+        reason: The MCU's own decoupling, beside its supply pin.
+      - members: [R3]
+        region_mm: [44, 29, 50, 34]
+        reason: The reset pull-up, beside the pin it holds up.

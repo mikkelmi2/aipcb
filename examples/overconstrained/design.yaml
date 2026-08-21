@@ -1,0 +1,124 @@
+# A board the router refuses to finish, on purpose.
+#
+# The geometry is `examples/congestion` again -- two four-pin headers facing each
+# other, wired in reverse, with a single channel between them -- but two things are
+# different, and both of them are the source's doing:
+#
+#   * the channel is cut by real board *cutouts* rather than by keepouts, so the
+#     free space is broken by holes that pierce every layer; and
+#   * the net class forbids B.Cu, so there is no second layer to escape to.
+#
+# Four wires entering a channel in one order and leaving it in the reverse order
+# have to cross each other inside it, and two wires that cross on one layer are a
+# short. So this board cannot be finished, and the point of the example is what
+# happens next.
+#
+# The router does not squeeze them in. It lays every connection it can lay
+# DRC-clean, and *hands over* the ones it cannot:
+#
+#     aipcb route all examples/overconstrained/design.yaml --json
+#
+# gives, under `routing.handed_over`, each refused connection with
+# `"unrouted": "over_complexity"`, the corridor that ran out of room -- its layer,
+# its position, how wide it is and how much copper wants to cross it -- and the nets
+# contesting it. An agent can act on that: raise the layer count, move a part, drop
+# a priority. A human can open the board and route those nets by hand, and the
+# incremental build then preserves that copper and treats it as law.
+#
+# What the router will never do is deliver a board with DRC violations and call it
+# routed.
+
+name: overconstrained
+revision: A
+description: Two headers wired in reverse with one channel between them and one
+  layer to do it on, so the router hands over what it cannot route legally.
+
+libraries:
+  - ../library/connectors.yaml
+
+net_classes:
+  crossing:
+    trace_width_mm: 0.25
+    clearance_mm: 0.2
+    via_diameter_mm: 0.6
+    via_drill_mm: 0.3
+    layer_forbid: [B.Cu]
+    priority: 50
+    description: Single-layer by decree. The back of this board is given over to a
+      shield that must not be cut, so nothing may via through to it -- which is what
+      turns an awkward permutation into an impossible one.
+
+nets:
+  SWAP_A:
+    class: crossing
+    description: J1 pin 1 to J2 pin 4, the longest diagonal.
+  SWAP_B:
+    class: crossing
+    description: J1 pin 2 to J2 pin 3.
+  SWAP_C:
+    class: crossing
+    description: J1 pin 3 to J2 pin 2.
+  SWAP_D:
+    class: crossing
+    description: J1 pin 4 to J2 pin 1.
+
+components:
+  J1:
+    part: CONN_BRK_1X04
+    role: connector
+    reason: The left-hand side of the reversal.
+    pins:
+      P1: SWAP_A
+      P2: SWAP_B
+      P3: SWAP_C
+      P4: SWAP_D
+
+  J2:
+    part: CONN_BRK_1X04
+    role: connector
+    reason: The right-hand side, with its pin order reversed. That is what makes the
+      four connections a permutation no single plane can hold.
+    pins:
+      P1: SWAP_D
+      P2: SWAP_C
+      P3: SWAP_B
+      P4: SWAP_A
+
+board:
+  origin: bottom_left
+  outline:
+    rect: [26.0, 20.0]
+  cutouts:
+    # Real holes, not keepouts. They pierce every layer, they separate the free
+    # space either side of them, and the router sees them because the outline and
+    # its cutouts are obstacles in every layer's triangulation.
+    - rect: [[8.5, 12.4], [17.5, 16.6]]
+      reason: Clearance hole for the mounting rail's fixing, above the corridor.
+        Milled, so nothing can be reclaimed here -- not copper, not a via.
+    - rect: [[8.5, 3.4], [17.5, 7.6]]
+      reason: The fixing's other side, below the corridor. Together with the hole
+        above it, this leaves a single channel between the two headers.
+  edge_clearance: 0.3
+
+layout:
+  stackup:
+    copper_layers: 2
+    thickness_mm: 1.6
+  placement:
+    margin_mm: 2.0
+    keepouts:
+      - region_mm: [0, 0, 26, 3.4]
+        reason: A mounting rail runs along the top of this board. Nothing may go
+          there, on any layer, which is what confines the four crossings to the
+          band between the two headers rather than letting them loop round the
+          outside.
+      - region_mm: [0, 16.6, 26, 20]
+        reason: The same rail along the bottom.
+    rules:
+      - members: [J1]
+        region_mm: [2, 4, 8.2, 18]
+        reason: Left edge, close enough that the four crossings have to happen in a
+          few millimetres.
+      - members: [J2]
+        region_mm: [19, 4, 25.2, 18]
+        reason: Right edge, directly opposite, with its pins in the opposite order.

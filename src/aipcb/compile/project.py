@@ -30,6 +30,19 @@ FOOTPRINT_DIR_VAR = "${KICAD9_FOOTPRINT_DIR}"
 
 _TABLE_VERSION = "7"
 
+#: KiCad's own default board constraints, as it writes them into a fresh project.
+#: A design whose net classes ask for something *tighter* than one of these has to
+#: say so here, or KiCad checks the board against a rule the source never agreed to
+#: and reports every fine-pitch via as a violation. A design that stays inside the
+#: defaults leaves them alone, so its project file is byte-for-byte what it always
+#: was.
+KICAD_DEFAULT_CONSTRAINTS = {
+    "min_track_width": 0.0,
+    "min_via_diameter": 0.5,
+    "min_through_hole_diameter": 0.3,
+    "min_copper_edge_clearance": 0.5,
+}
+
 
 def _entry(name: str, uri: str) -> SNode:
     return SNode("lib").add(
@@ -71,6 +84,7 @@ def build_project(
     sheet_uuid: str,
     net_classes: Mapping[str, NetClass],
     net_assignments: Mapping[str, str],
+    edge_clearance: float | None = None,
 ) -> dict[str, Any]:
     """Build the ``.kicad_pro`` contents.
 
@@ -79,6 +93,11 @@ def build_project(
     widths, clearances, differential-pair geometry -- live in the project rather
     than in the board file. So this is where layer 2's ``net_classes:`` actually
     lands, and what DRC will later check against.
+
+    ``edge_clearance`` is the other half of ``board.edge_clearance``: the router
+    keeps copper that far from the outline and from every cutout, and this is what
+    makes KiCad check the same figure. A design that states nothing leaves the rule
+    alone, so KiCad uses its own default and the two tools still agree.
     """
     classes = [_default_net_class()]
     for name in sorted(net_classes):
@@ -90,8 +109,18 @@ def build_project(
         if net_classes_name in net_classes
     ]
 
+    rules: dict[str, Any] = {}
+    if edge_clearance is not None:
+        rules["min_copper_edge_clearance"] = edge_clearance
+    rules.update(_tighter_than_default(net_classes))
+    settings: dict[str, Any] = {"rules": dict(sorted(rules.items()))} if rules else {}
+
     return {
-        "board": {"design_settings": {}, "layer_presets": [], "viewports": []},
+        "board": {
+            "design_settings": settings,
+            "layer_presets": [],
+            "viewports": [],
+        },
         "boards": [],
         "cvpcb": {"equivalence_files": []},
         "erc": {"erc_exclusions": [], "meta": {"version": 0}, "rule_severities": {}},
@@ -119,6 +148,28 @@ def build_project(
         },
         "sheets": [[sheet_uuid, "Root"]],
         "text_variables": {},
+    }
+
+
+def _tighter_than_default(net_classes: Mapping[str, NetClass]) -> dict[str, float]:
+    """Board constraints the design needs relaxed below KiCad's defaults.
+
+    A 0.5 mm-pitch package cannot be escaped with 0.5 mm vias, so a design that says
+    ``via_diameter_mm: 0.4`` means it -- and KiCad has to be told, or its own
+    minimum-via rule reports every one of them. Only the values that are actually
+    tighter are written, so nothing changes for a board built to comfortable rules.
+    """
+    if not net_classes:
+        return {}
+    smallest = {
+        "min_track_width": min(c.trace_width_mm for c in net_classes.values()),
+        "min_via_diameter": min(c.via_diameter_mm for c in net_classes.values()),
+        "min_through_hole_diameter": min(c.via_drill_mm for c in net_classes.values()),
+    }
+    return {
+        rule: round(value, 4)
+        for rule, value in smallest.items()
+        if value < KICAD_DEFAULT_CONSTRAINTS[rule] - 1e-9
     }
 
 

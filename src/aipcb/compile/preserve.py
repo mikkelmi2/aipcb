@@ -62,6 +62,8 @@ class MergeStats:
 
     kept_positions: list[str] = field(default_factory=list)
     moved_by_source: list[str] = field(default_factory=list)
+    drifted: dict[str, float] = field(default_factory=dict)
+    """Fixed parts a human moved in KiCad, and how far, in millimetres."""
     kept_items: dict[str, int] = field(default_factory=dict)
     dropped_items: dict[str, int] = field(default_factory=dict)
     removed_components: list[str] = field(default_factory=list)
@@ -75,6 +77,7 @@ class MergeStats:
         return {
             "kept_positions": sorted(self.kept_positions),
             "moved_by_source": sorted(self.moved_by_source),
+            "drifted": {k: round(v, 4) for k, v in sorted(self.drifted.items())},
             "kept_items": dict(sorted(self.kept_items.items())),
             "dropped_items": dict(sorted(self.dropped_items.items())),
             "removed_components": sorted(self.removed_components),
@@ -106,6 +109,12 @@ def component_fingerprint(component: ElabComponent, netlist: Netlist) -> str:
         for rule in (netlist.layout.placement.rules if netlist.layout else ())
         if component.refdes in rule.members or component.path_text in rule.members
     )
+    # A mechanical placement is the strongest thing the source can say about where a
+    # part goes, so a change to it has to outrank a hand-nudge in KiCad -- otherwise
+    # moving a connector in the enclosure would silently fail to move it on the
+    # board. `sync-placement` is the other half of that bargain: it moves the source.
+    mechanical = netlist.placement.get(component.refdes)
+    fanout = netlist.fanout.get(component.refdes)
     parts = [
         component.path_text,
         component.part_name,
@@ -115,6 +124,14 @@ def component_fingerprint(component: ElabComponent, netlist: Netlist) -> str:
         ";".join(rules),
         "dnp" if component.dnp else "",
     ]
+    # Appended rather than always present, and tagged so the two can never be
+    # confused for each other. A design that says nothing mechanical hashes to
+    # exactly what it hashed to before M9, so migrating one does not move every
+    # hand-placed part on the board as a side effect.
+    if mechanical is not None:
+        parts.append(f"mech={mechanical.key()}")
+    if fanout is not None:
+        parts.append(f"fanout={fanout.style}:{','.join(fanout.escape_layers)}")
     digest = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
     return digest[:16]
 
@@ -175,7 +192,9 @@ def merge_board(
     _carry_over_items(generated, existing, live_nets, stats)
     _carry_over_outline(generated, existing, netlist, stats)
 
-    if report is not None and (stats.preserved_count or stats.kept_positions):
+    if report is not None and (
+        stats.preserved_count or stats.kept_positions or stats.drifted
+    ):
         _report(stats, report)
     return generated, stats
 
@@ -196,6 +215,18 @@ def _merge_footprints(
         if previous is None:
             continue
 
+        entry = netlist.placement.get(component.refdes)
+        if entry is not None and entry.level == "fixed":
+            # `fixed` means mechanical law, so the source keeps the position even
+            # when somebody has nudged it in KiCad -- otherwise the enclosure
+            # drawing and the board would disagree with nothing on record saying
+            # so. The disagreement is reported instead, and `aipcb sync-placement`
+            # is how the source is brought to the board rather than the reverse.
+            drift = _drift(fresh, previous)
+            if drift is not None:
+                stats.drifted[component.refdes] = drift
+            continue
+
         if _read_fingerprint(previous) != fingerprint:
             # The source changed something that determines this footprint, so the
             # source wins and the freshly computed placement stands.
@@ -204,6 +235,28 @@ def _merge_footprints(
 
         _adopt_placement(fresh, previous)
         stats.kept_positions.append(component.refdes)
+
+
+#: How far a footprint has to have moved before it counts as moved. KiCad writes
+#: positions to four decimal places, so anything smaller is the file, not a person.
+DRIFT_EPSILON = 1e-4
+
+
+def _drift(fresh: SNode, previous: SNode) -> float | None:
+    """How far the board's copy of a footprint sits from the source's, in mm."""
+    import math
+
+    a, b = fresh.child("at"), previous.child("at")
+    if a is None or b is None:
+        return None
+    moved = math.dist(
+        (float(a.value(0) or 0), float(a.value(1) or 0)),
+        (float(b.value(0) or 0), float(b.value(1) or 0)),
+    )
+    turned = abs(float(a.value(2) or 0) - float(b.value(2) or 0)) % 360
+    if moved < DRIFT_EPSILON and min(turned, 360 - turned) < DRIFT_EPSILON:
+        return None
+    return moved
 
 
 def _adopt_placement(fresh: SNode, previous: SNode) -> None:
@@ -269,7 +322,9 @@ def _carry_over_outline(
     constraints are visible. A design that says nothing about its outline has not
     claimed ownership of it, so whatever is already there stays.
     """
-    declares_outline = netlist.layout is not None and netlist.layout.outline is not None
+    declares_outline = netlist.board is not None or (
+        netlist.layout is not None and netlist.layout.outline is not None
+    )
     if declares_outline:
         return
 
@@ -320,6 +375,19 @@ def _report(stats: MergeStats, report: Report) -> None:
             f"{'s' if len(stats.moved_by_source) != 1 else ''} moved because the "
             f"source changed: {', '.join(sorted(stats.moved_by_source))}",
             hint="the source owns what it declares; their positions were recomputed",
+        )
+    if stats.drifted:
+        moved = ", ".join(
+            f"{refdes} by {distance:.2f} mm"
+            for refdes, distance in sorted(stats.drifted.items())
+        )
+        report.warning(
+            "fixed-placement-drift",
+            "moved back to where the source fixes "
+            f"{'them' if len(stats.drifted) != 1 else 'it'}: {moved}",
+            hint="a `fixed:` placement is mechanical law, so the source wins. If the "
+            "board is right and the source is stale, run `aipcb sync-placement` to "
+            "write the new position into the YAML",
         )
     if stats.dropped_items:
         dropped = ", ".join(f"{n} {name}" for name, n in sorted(stats.dropped_items.items()))
