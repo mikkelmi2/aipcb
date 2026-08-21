@@ -27,9 +27,13 @@ version` → `9.0.8`, Debian package `kicad 9.0.8+dfsg-1`).
 `kicad-cli` exposes six top-level commands (`fp`, `jobset`, `pcb`, `sch`, `sym`,
 `version`). Under `pcb` there are exactly three: `drc`, `export`, `render`. There
 is **no fill or refill subcommand, and no fill flag on any of them**. The jobset
-runner does not add one: enumerating the job types compiled into the 9.0.8
-libraries yields `pcb_drc`, `pcb_render`, `pcb_netlist` and eleven `pcb_export_*`
-jobs, and nothing that fills.
+runner does not add one: the complete set of job-type identifiers compiled into the
+9.0.8 libraries is `pcb_drc`, `pcb_render`, `pcb_netlist`, ten `pcb_export_*` jobs,
+`sch_erc` and six `sch_export_*` jobs. Nothing that fills.
+
+The one place `ZONE_FILLER` appears anywhere in the shipped libraries is as its
+SWIG binding (`delete_ZONE_FILLER`, …) — that is, the Python API is the only
+surface KiCad 9.0.8 exposes it through at all.
 
 That is an absence, so it was tested positively rather than inferred from `--help`.
 
