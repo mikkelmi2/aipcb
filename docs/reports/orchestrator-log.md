@@ -93,3 +93,68 @@ Notable, and carried into the final report:
 reference-plane check over a board with no plane copper checks nothing. Starting it
 would produce work that cannot be verified.
 
+## M12 — SI simulation
+
+**Phase 0 only: PASS.** Dispatched in parallel at the start, as the orchestrator
+prompt permits, and finished after the chain had already halted. M12 proper was
+never dispatched — it depends on M11's routed pairs, which depend on M10.
+
+Phase 0 was scoped to environment verification and honoured that scope: the only
+repo file it created is `docs/decisions/0011-si-simulation.md` (351 lines), it ran
+no git commands, and it installed nothing into `.venv` or `pyproject.toml`. The
+orchestrator verified the artifacts it claimed: `podman` present at
+`/usr/bin/podman`, image `localhost/gerber2ems:phase0` = `e1921ec2b3fc`, matching
+the digest recorded in the ADR. Committed as `307d2e4` and pushed.
+
+The verdict is genuinely useful even with the chain stopped, because it retires the
+milestone's biggest unknown:
+
+- The toolchain builds and reproduces Antmicro's own VNA-validated `stub_short`
+  case to within **−1.1 % at 500 MHz** and **−1.7 % at the 5 GHz stub resonance**
+  (332.0 vs 337.7 Ω). The solver is sound.
+- **One pair simulates in 30 s – 2 min** (105 k–653 k cells, 16 cores), against the
+  milestone's own "minutes to hours" assumption. M12 is a CI stage, not an
+  overnight batch — that reshapes the design M12b was told to build around.
+- Antmicro publishes **no prebuilt image**; the "container route" is a from-source
+  build inside a Dockerfile (~7 min).
+
+Two findings that should change M12's plan when it eventually runs, both flagged
+rather than worked around:
+
+- **Impedance numbers are not yet trustworthy.** Three port/mesh configurations of
+  the *same* geometry produced ≈26 Ω, ≈340 Ω and ≈950 Ω, and the coarse run gave a
+  non-physical |Sdd21| > 1. The cause is the structure, not the solver: every
+  gerber2ems example sits 0.12 mm above its plane, while `diff-pair`'s nearest
+  copper is 1.51 mm away. M12a should calibrate on `examples/mcu-4layer` (GND
+  0.48 mm below F.Cu).
+- **`examples/diff-pair` cannot reach its declared 100 Ω.** Hammerstad puts it at
+  Z₀ ≈ 135 Ω single-ended, ~270 Ω differential. M12's acceptance criterion
+  "diff-pair results within plausible range of its design target" **is not
+  satisfiable as written** — the example's target is wrong, and reporting that is
+  the correct outcome rather than a failure to engineer around.
+
+Export-format gaps found (the make-or-break compatibility test), of which **two
+fail silently** — M12 must assert that gerber2ems saw what it was handed:
+
+| # | Gap | Severity |
+|---|---|---|
+| 1 | `stackup.json` not emitted — but fully derivable, aipcb already writes `epsilon_r`/`loss_tangent` into the `.kicad_pcb` | ~30 lines, no information loss |
+| 2 | Drill filename: one `MixedPlating` `.drl` vs gerber2ems's `-PTH.drl` glob → `sys.exit(1)` | loud; fix is `--excellon-separate-th` |
+| 3 | **No `(aux_axis_origin)`, so drill lands in absolute page coords with negative Y; gerber2ems's regex cannot match negatives** | **silent — every via dropped** |
+| 4 | `positions.csv` does not match the `*pos.csv` glob | **silent — never seen** |
+| 5 | Simulation ports (`SP<n>`/`Simulation_Port`) have no concept in aipcb | design work for M12a |
+| 6 | `netinfo.json` missing | optional, nearly free |
+| 7 | `aipcb export` does not route — `F_Cu.gbr` had 16 pad flashes and zero track draws | needs `route all -o DIR` then `export --build-dir DIR` |
+
+Not done in Phase 0, and correctly so: `examples/pcie-sata` was never exercised (it
+is an M11 deliverable that does not exist), and Antmicro's
+`kicad-si-simulation-wrapper` was not evaluated, so M12a's reuse-vs-reimplement
+call stays open. The guardrail's "lockfile the repo carries" is satisfied only by
+the ADR today; a real lockfile is M12-proper work.
+
+Note a system-level side effect: Phase 0 installed `podman` system-wide via apt
+(rootless, no daemon). Nothing in the project environment was touched.
+
+## Chain end
+
+Halted after M10. Final report: [`chain-m10-m12.md`](chain-m10-m12.md).
