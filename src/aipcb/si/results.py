@@ -142,8 +142,11 @@ class Metrics:
     insertion_loss_db: dict[str, float]
     """Differential insertion loss at the class's key frequencies, keyed by label."""
     delay_ns: float | None
+    usable: bool = True
+    """False when the extraction is not physical, whatever the numbers say."""
     verdicts: dict[str, str] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    """Caveats a reader needs, in the order they were found. Plain prose."""
 
     @property
     def deviation(self) -> float | None:
@@ -167,6 +170,7 @@ class Metrics:
                 k: round(v, 2) for k, v in sorted(self.insertion_loss_db.items())
             },
             "delay_ns": None if self.delay_ns is None else round(self.delay_ns, 4),
+            "usable": self.usable,
             "verdicts": dict(sorted(self.verdicts.items())),
             "notes": list(self.notes),
         }
@@ -259,7 +263,8 @@ def analyse(
     # much swing was there rather than trusting a single number.
     impedance = statistics.median(impedances)
     peak = max(abs(sdd21[i]) for i in wide)
-    if peak > _GAIN_UNUSABLE:
+    usable = peak <= _GAIN_UNUSABLE
+    if not usable:
         notes.append(
             f"|Sdd21| reaches {peak:.2f}, which is more energy than went in; the "
             "extraction is not physical and the numbers below are not usable"
@@ -305,6 +310,7 @@ def analyse(
         worst_return_loss_hz=sp.frequencies[worst_rl_index],
         insertion_loss_db=insertion,
         delay_ns=delay,
+        usable=usable,
         notes=notes,
     )
     _verdicts(metrics, settings)
@@ -368,7 +374,7 @@ def _group_delay(
 
 
 def _verdicts(metrics: Metrics, settings: ResolvedSimulation) -> None:
-    if any("not physical" in note for note in metrics.notes):
+    if not metrics.usable:
         metrics.verdicts["impedance"] = "unusable"
     elif metrics.target_ohm and metrics.deviation is not None:
         metrics.verdicts["impedance"] = (
