@@ -41,7 +41,10 @@ names 'USB_DM' as its differential partner, but 'USB_DM' names USB_DPP
 **Output is deterministic.** Every element's UUID is a hash of its path in the
 source, never of generation order or time. The same source produces byte-identical
 files, so `git diff` shows only what actually changed — and a violation reported by
-`kicad-cli` against a UUID maps straight back to the line that owns it.
+`kicad-cli` against a UUID maps straight back to the line that owns it. The
+guarantee is about **build output**: copper pours are emitted unfilled, and the
+fill is a derived artefact regenerated at check and export time by KiCad's own
+engine ([the stability policy](docs/format.md#the-stability-policy)).
 
 **Reads can be partial.** `aipcb query` extracts one module, one net class, or a
 one-line status per block, so an agent can look at the part of a design it is
@@ -394,6 +397,58 @@ a fanout happened.
 [`examples/qfn-fanout`](examples/qfn-fanout/design.yaml) routes an ATmega328P in a
 32-pin QFN to completion, with zero DRC violations.
 
+### Copper pours, and who fills them
+
+Nearly every real board wants ground on its outer layers, and many want a plane
+split between two supplies. `pours:` says which net owns which copper:
+
+```yaml
+pours:
+  - net: VCC
+    layer: In2.Cu
+    scope: board
+  - net: GND
+    layer: In2.Cu        # a split plane: ground takes this corner back
+    region: { rect: [[42, 2], [54, 16]] }
+    priority: 1          # higher priority keeps the copper where zones overlap
+
+stitching:
+  - net: GND
+    between: [F.Cu, B.Cu]
+    pattern: grid        # grid | edge | ring
+    pitch: 5.0
+```
+
+`aipcb` emits the zone — its boundary and its rules — and **never a filled
+polygon**. KiCad's own filler produces the copper, because KiCad's fill is what DRC
+checks against; a second implementation would differ, and the difference would be a
+bug on every board ([ADR 0009](docs/decisions/0009-pours.md)). `aipcb build` stays a
+byte-stable pure function of the source with its zones unfilled; `aipcb check` and
+`aipcb export` fill a staged copy first, because KiCad plots whatever fill data is
+in the file and an unfilled pour exports as *no copper at all*, silently.
+
+Stitching vias are generated the same way fanout escapes are: a deterministic
+pattern, laid after routing and before the fill, dropping positions that would foul
+a track, a pad, another hole or the board edge — silently, but with the counts in
+the report.
+
+After the fill, `aipcb check` reads the filled polygons back and says what the
+copper actually came out as:
+
+```
+examples/qfn-fanout/design.yaml:243:5: warning[plane-fragmented]: the GND pour on
+B.Cu is in 5 pieces; its largest holds 86.2% of the copper, below the 90.0% this
+pour asks for
+  hint: a track crossing the plane is the usual cause; move it, give it a layer of
+  its own, or stitch the pieces together
+```
+
+That is feedback, not a gate — fragmented-but-functional is common, and the warning
+only fires when the source sets `min_contiguous:`.
+
+Filling needs KiCad's Python module (the `kicad` package, not only `kicad-cli`), and
+only for designs that declare `pours:`.
+
 ### When the board cannot be routed
 
 The router does not deliver marginal geometry. When a connection cannot be made
@@ -554,6 +609,10 @@ unreadable.
 | M9d — drift reporting and `aipcb sync-placement` | **done** |
 | M9e — pattern-based fanout | **done**: perimeter and dog-bone escapes, thermal vias in an exposed pad; via-in-pad only when asked for |
 | M9f — honest failure | **done**: what the router will not deliver legally is handed over, with the corridor that blocked it |
+| M10a — pours as source intent | **done**: layers or region, priorities, thermal or solid, per-pad-instance overrides |
+| M10b — fill integration and the stability policy | **done**: KiCad's own filler in a `pcbnew` subprocess with a version lock ([ADR 0009](docs/decisions/0009-pours.md)); build stays byte-stable and unfilled |
+| M10c — stitching vias | **done**: `grid`, `edge` and `ring` patterns, deterministic, with skip counts reported |
+| M10d — plane-integrity report | **done**: islands, largest-island fraction and bounding boxes read back off the filled board |
 
 ## Documentation
 

@@ -20,6 +20,8 @@ key must be reported, never silently ignored.
 - [The board](#the-board)
 - [Mechanical placement](#mechanical-placement)
 - [Fanout](#fanout)
+- [Copper pours](#copper-pours)
+- [Stitching vias](#stitching-vias)
 - [Layout intent](#layout-intent)
 - [Part libraries](#part-libraries)
 - [Elaboration](#elaboration)
@@ -46,6 +48,8 @@ constraints: []         # placement intent            (layer 1)
 board: {}               # outline, cutouts, edge      (layer 2)
 placement: {}           # mechanical placement        (layer 2)
 fanout: {}              # escape patterns             (layer 2)
+pours: []               # copper pours                (layer 2)
+stitching: []           # stitching-via patterns      (layer 2)
 layout: {}              # stackup, packing, routes    (layer 2)
 ```
 
@@ -527,6 +531,187 @@ Details that matter:
   per pad before anything is routed; where the router reached a pad without ever
   using the far layer, the via would join copper to nothing, so it is removed.
 
+## Copper pours
+
+Nearly every real board wants the leftover copper on its outer layers given to
+ground, and many want a plane split between two supplies. `pours:` says which net
+owns which copper, and under what rules:
+
+```yaml
+pours:
+  - net: GND
+    layers: [F.Cu, B.Cu]     # or `layer: In1.Cu` for one
+    scope: board             # the whole board, minus cutouts and edge clearance
+    priority: 0
+    connect: thermal         # thermal | solid  (default thermal)
+    reason: The return path everything above it needs.
+
+  - net: VDD_3V3
+    layer: In2.Cu
+    region:                  # a split plane: this rectangle, not the whole layer
+      rect: [[10, 10], [60, 40]]
+    priority: 1              # higher priority keeps the copper where zones overlap
+    clearance: 0.3           # to copper of other nets; defaults to the net class
+    min_width: 0.25          # thinnest sliver of poured copper to keep
+    remove_islands: always   # always | never | below_area
+    min_contiguous: 0.7      # warn if the plane comes back in pieces
+```
+
+| Field | Meaning |
+|---|---|
+| `net` | The net the copper belongs to. Must exist. |
+| `layer` / `layers` | One copper layer, or several. Must be in the stackup. |
+| `scope` | `board` pours everything. Mutually exclusive with `region:`; omitting both means `board`. |
+| `region` | A `rect: [[x1, y1], [x2, y2]]` or a `polygon:` of vertices, in the board frame — the same Y-up frame `placement:` uses. |
+| `priority` | Where two zones overlap on one layer, the higher priority is poured first and keeps the copper. Equal priorities over an overlap are an **error**: which one won would depend on file order. |
+| `connect` | How the zone attaches to pads of its own net. `thermal` gives relief spokes; `solid` floods. |
+| `pad_connect` | Per-pad-instance overrides of `connect`. See below. |
+| `clearance`, `min_width`, `thermal_gap`, `thermal_bridge_width` | KiCad's zone parameters. Defaults come from the net class and from the note on thermal relief below. |
+| `remove_islands` | What to do with poured copper that reaches no pad. `below_area` needs `island_area_min` in mm². |
+| `min_contiguous` | Fragmentation threshold, 0–1. See *plane integrity*. |
+| `hatch` | KiCad's hatched-fill parameters, passed through unchanged. |
+| `name`, `reason` | A label KiCad shows, and why the pour exists. |
+
+A pour respects the board it is on: KiCad clips it to the outline and to every
+cutout, less the edge clearance, without being told twice. It also respects
+`layout.placement.keepouts` — each one is emitted as a KiCad keepout zone that
+excludes copper pour, because the router has always honoured those and the *filler*
+had no way to know about them. Keepout zones are emitted only for a design that
+declares a pour; without one there is nothing to keep out that the router does not
+already handle.
+
+### Who fills the copper
+
+**KiCad does.** `aipcb` emits the zone — its boundary and its rules — and never a
+single filled polygon. Reimplementing zone fill is deliberately rejected: KiCad's
+fill is what DRC checks against, so a second implementation would be checked
+against the first, would differ, and the difference would be a bug on every board
+([ADR 0009](decisions/0009-pours.md)).
+
+`kicad-cli` 9.0.8 has no way to fill a zone, measured rather than assumed, so
+`aipcb` drives KiCad's own filler through a `pcbnew` subprocess. That needs KiCad's
+Python module — the `kicad` package rather than only `kicad-cli` — and **only for
+designs that declare `pours:`**. A design without them never invokes it. The
+subprocess checks that `pcbnew` and `kicad-cli` are the same KiCad version and
+stops if they are not, because the whole point of using KiCad's filler is that it
+is the same engine DRC checks against. Set `AIPCB_PCBNEW_PYTHON` to point at the
+interpreter that can `import pcbnew` if the default search does not find it.
+
+### The stability policy
+
+**The byte-identical guarantee covers build output.** `aipcb build` is a pure
+function of the source: the same design produces the same `.kicad_pcb`, byte for
+byte, with its zones **unfilled**. That is the file `git diff` should be readable
+on, and the file every earlier guarantee in this document is about.
+
+**Fill is a derived artefact**, regenerated at check and export time into a staged
+copy, so build output stays the unfilled reference. It was measured to be
+deterministic — filling one board five times in five separate processes produced
+byte-identical fill geometry every time — but the *filled file* is not byte-stable
+and is not promised to be: KiCad's writer adds empty `Datasheet` and `Description`
+properties to footprints that lack them, each with a freshly random UUID, so twelve
+lines of a filled `usb-port` differ between two runs that produced identical
+copper. Nothing downstream depends on those bytes; everything downstream depends on
+the copper, and the copper is stable.
+
+### Thermal relief, and per-pad overrides
+
+The default is thermal relief, because a plane that floods every pad is a plane
+nobody can hand-solder to. The relief `aipcb` writes is a 0.25 mm gap with a 0.5 mm
+bridge, **not** KiCad's dialog default of 0.5 mm for both: that default was measured
+to produce boards KiCad's own DRC rejects, because on a 1.7 mm through-hole pad at
+2.54 mm pitch only one of the four spokes can reach the plane and KiCad 9 wants at
+least two. A pour that wants KiCad's figures says so with `thermal_gap:` and
+`thermal_bridge_width:`.
+
+One pad usually wants the opposite. A QFN's exposed pad or a receptacle's shield tab
+exists to move heat or current into the plane, and relief spokes there are a thermal
+decision made by accident:
+
+```yaml
+    pad_connect:
+      - pads: [J1.6#7]
+        connect: solid          # solid | thermal | none
+        reason: A shield tab wants the lowest-impedance path to ground it can get.
+```
+
+`J1.6#7` names one **pad instance**: the seventh pad numbered 6 in the footprint's
+own pad order, which is the same key the router uses for its obstacles. That matters
+more than it sounds — a Micro-B receptacle has twelve pads numbered 6, and a
+SOT-223's tab *is* pin 2, a second pad carrying the same number, so a pad number is
+not an identity.
+
+Both forms exist because both are needed:
+
+| Reference | Which pads |
+|---|---|
+| `U2.4` | **every** pad numbered 4 on `U2` — how `examples/enclosure` floods all twelve of a receptacle's shield tabs in one line |
+| `U2.4#2` | the **second** pad numbered 4, and no other — how `examples/usb-port` floods one tab and leaves eleven thermal |
+
+The suffixed form wins where both name the same pad.
+
+### Plane integrity
+
+After the fill, `aipcb check` reads the filled polygons back and reports what the
+copper actually came out as — per pour, per layer: how many disconnected islands,
+how much of the copper is in the largest one, how much of the pour's scope it
+covers, and the bounding box of each island. It is feedback, not a gate; the
+numbers are in `aipcb check --json` under `summary.planes` and in the text output as
+`plane-integrity` notes.
+
+Two things it will tell you unprompted:
+
+* **island removal deleted copper** — the pour's outline suggests more plane than
+  the board has, because pieces that reached no pad were dropped;
+* **fragmentation past `min_contiguous`** — a *warning*, never an error, pointing at
+  the pour's own line. Fragmented-but-functional is common, and only the designer
+  knows whether this plane is. `examples/qfn-fanout` ships with the warning firing
+  on purpose: a 0.5 mm-pitch escape field really does cut the back plane into
+  pieces.
+
+## Stitching vias
+
+Two pours on two layers are two sheets of copper until something joins them.
+`stitching:` generates the vias that join them — a pattern, never a route:
+
+```yaml
+stitching:
+  - net: GND
+    between: [F.Cu, B.Cu]    # defaults to the outer pair
+    pattern: grid            # grid | edge | ring
+    pitch: 5.0
+    via: { drill: 0.3, diameter: 0.6 }   # defaults from the net class
+
+  - net: GND
+    pattern: edge            # a row following the board outline
+    pitch: 3.0
+    inset: 1.0
+
+  - net: GND
+    pattern: ring            # a fence around a noise source
+    around: U3
+    pitch: 2.0
+    radius: 6.0              # defaults to just clear of the part
+```
+
+| `pattern` | Where the vias go |
+|---|---|
+| `grid` | A lattice over the area the net's pours share on both layers. Anchored to multiples of the pitch in board coordinates, so two patterns at one pitch interlock. |
+| `edge` | A row following the outline polygon — arcs included — at `inset` millimetres inside it. |
+| `ring` | A circle around the component named by `around:`, or around a `region:`. |
+
+Every candidate has to sit inside the net's pours on **both** layers it joins. That
+is not fussiness: a stitching via outside the pour is an isolated piece of copper,
+which KiCad reports as an unconnected item. Candidates that would break clearance to
+a track, a pad, another hole, a cutout or the board edge are dropped **silently** —
+that is what a pattern generator is for — but the counts come back in the check
+report (`stitching: 69 vias placed, 17 positions skipped`) and under
+`summary.stitching` in `--json`.
+
+Stitching runs after routing and before the fill, and its output is ordinary vias:
+obstacles to any later routing run, preserved like everything else, and given
+derived UUIDs so a second run replaces its own work rather than piling more on top.
+
 ## Layout intent
 
 Everything the compiler is free to interpret: how thick the stack is, how tightly
@@ -592,7 +777,9 @@ A keepout is a region nothing may enter, given relative to the board origin like
 every other region. The router honours it: no track, no via barrel, on the layers it
 names or on all of them when it names none. `examples/congestion` uses a pair of
 them to cut the board down to a single channel, which is what makes that board
-unroutable on one layer.
+unroutable on one layer. A design that also declares [`pours:`](#copper-pours) gets
+each keepout emitted as a KiCad keepout zone as well, so the fill stays out of it
+too.
 
 ### Routing sketches
 
