@@ -21,6 +21,7 @@ from aipcb.route.stretch import RoutedConnection, StretchResult, Via
 Point = tuple[float, float]
 
 __all__ = [
+    "HOLE_TO_HOLE_MM",
     "attach_copper",
     "drop_generated",
     "generated_uuids",
@@ -30,6 +31,12 @@ __all__ = [
     "via_nodes",
     "via_uuid",
 ]
+
+
+#: The web a fabricator needs between two drilled holes, in millimetres. KiCad's
+#: own board-setup default, and the number its ``hole_to_hole`` rule checks against
+#: unless a design asks for something tighter.
+HOLE_TO_HOLE_MM = 0.25
 
 
 def track_uuid(net: str, start: str, end: str, index: int) -> str:
@@ -83,18 +90,24 @@ def via_nodes(via: Via, net_code: int) -> SNode:
 
 
 def merge_overlapping_holes(connections: list[RoutedConnection]) -> int:
-    """Two drill hits of one net whose holes overlap are one hole. Returns how many.
+    """Two drill hits of one net too close to be drilled separately are one hole.
 
     Not a routing decision -- a manufacturing one. When two vias of the same net end
     up a fraction of a millimetre apart, the fabricator is being asked to drill twice
     through the same piece of copper, which KiCad reports as overlapping holes and a
     drill file expresses as two hits that break each other's edges.
 
+    M9 merged holes that physically overlapped. That is not the whole rule: a
+    fabricator needs *web* between two holes, not merely daylight, and KiCad's own
+    minimum is :data:`HOLE_TO_HOLE_MM`. Measured on `examples/pcie-sata`, two GND
+    vias landed 0.3250 mm apart -- not overlapping, and 0.1255 mm of web against the
+    0.2495 mm the board asked for, which DRC reported. So the test is the drill
+    plus the minimum web rather than the drill alone.
+
     The later via is moved onto the earlier one and the leg ends that met it move
     with it, after which :func:`attach_copper` emits the one hole they now share.
     Moving *onto an existing via of the same net and the same size* is what makes
-    this safe: whatever the destination clears, this via clears too, and the move is
-    never further than one drill diameter.
+    this safe: whatever the destination clears, this via clears too.
     """
     kept: list[Via] = []
     merged = 0
@@ -107,7 +120,7 @@ def merge_overlapping_holes(connections: list[RoutedConnection]) -> int:
                     if other.net == via.net
                     and other.diameter == via.diameter
                     and math.dist(other.point, via.point)
-                    < max(other.drill, via.drill)
+                    < max(other.drill, via.drill) + HOLE_TO_HOLE_MM
                 ),
                 None,
             )

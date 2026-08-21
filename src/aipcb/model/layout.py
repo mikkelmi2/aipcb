@@ -11,14 +11,17 @@ compiles -- it simply gets defaults.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
 __all__ = [
     "COPPER_THICKNESS_MM",
+    "DEFAULT_STANDOFF_K",
     "MASK_THICKNESS_MM",
     "BoardOutline",
+    "Dielectric",
     "Keepout",
     "Layer",
     "Layout",
@@ -32,8 +35,15 @@ __all__ = [
     "copper_layer_names",
 ]
 
+from aipcb.impedance import DEFAULT_EPSILON_R
 from aipcb.model.common import Layer, Strict
 from aipcb.route.model import RouteTopology
+
+#: How much room a controlled-impedance pair is tightened against, as a multiple of
+#: its class clearance. Three is enough that ordinary copper nearby stops changing
+#: the field the pair sees, and cheap enough that a board with room to spare gives
+#: it up without noticing. It is a default, not a law: `standoff_k` overrides it.
+DEFAULT_STANDOFF_K = 3.0
 
 
 class NetClass(Strict):
@@ -46,6 +56,41 @@ class NetClass(Strict):
     diff_pair_width_mm: float | None = Field(default=None, gt=0)
     diff_pair_gap_mm: float | None = Field(default=None, gt=0)
     impedance_ohm: float | None = Field(default=None, gt=0)
+    impedance_diff_ohm: float | None = Field(
+        default=None,
+        gt=0,
+        description="Target differential impedance. With the stackup this derives "
+        "the pair's width and gap, and turns on the controlled-impedance rules.",
+    )
+    coupling: Literal["loose", "tight"] | None = Field(
+        default=None,
+        description="`tight` asks the stretcher to keep the pair coupled "
+        "continuously and makes `max_uncoupled_mm` a hard budget.",
+    )
+    reference: Layer | None = Field(
+        default=None,
+        description="The plane this class's return current depends on. Read by the "
+        "high-speed checks, not by the router.",
+    )
+    max_uncoupled_mm: float | None = Field(
+        default=None,
+        ge=0,
+        description="Total uncoupled length allowed per half, in millimetres: pad "
+        "entries, fan-out and coupling-capacitor gaps together.",
+    )
+    standoff_k: float | None = Field(
+        default=None,
+        ge=1,
+        description="Tighten against `clearance_mm * k` rather than the bare "
+        "minimum, so the environment around the pair stays constant. Defaults to "
+        "3 for a class with `impedance_diff_ohm`, and is ignored without it.",
+    )
+    verify: Literal["warn", "error"] | None = Field(
+        default=None,
+        description="Severity for this class's high-speed findings. Warning by "
+        "default, because they are engineering judgement rather than rule "
+        "violations; `error` makes them fail the check.",
+    )
     max_skew_mm: float | None = Field(
         default=None, ge=0, description="Length-match tolerance within the class.",
     )
@@ -66,6 +111,18 @@ class NetClass(Strict):
         description="How readily the negotiating router may rip this class up.",
     )
     description: str | None = None
+
+    @property
+    def controlled_impedance(self) -> bool:
+        """Whether this class asks for a derived, checked differential geometry."""
+        return self.impedance_diff_ohm is not None
+
+    @property
+    def standoff(self) -> float:
+        """The clearance multiplier the stretcher tightens against (M11d rule 1)."""
+        if self.impedance_diff_ohm is None:
+            return 1.0
+        return DEFAULT_STANDOFF_K if self.standoff_k is None else self.standoff_k
 
     @model_validator(mode="after")
     def _preference_is_not_self_contradictory(self) -> NetClass:
@@ -109,6 +166,14 @@ COPPER_THICKNESS_MM = 0.035
 MASK_THICKNESS_MM = 0.01
 
 
+@dataclass(frozen=True, slots=True)
+class Dielectric:
+    """How much laminate sits between two copper layers, and what it is made of."""
+
+    thickness_mm: float
+    epsilon_r: float
+
+
 class PlaneLayer(Strict):
     """A copper layer given over to a plane, and so closed to signal routing.
 
@@ -128,6 +193,12 @@ class Stackup(Strict):
     layers: tuple[StackupLayer, ...] = ()
     copper_layers: int = Field(default=2, ge=2, le=32)
     thickness_mm: float = Field(default=1.6, gt=0)
+    epsilon_r: float | None = Field(
+        default=None,
+        gt=0,
+        description="Relative permittivity of the laminate, where `layers:` gives "
+        "none per dielectric.",
+    )
     finish: str | None = None
     planes: tuple[PlaneLayer, ...] = Field(
         default=(),
@@ -208,6 +279,96 @@ class Stackup(Strict):
         except ValueError:
             return 0.0
         return round(span * (self.dielectric_thickness_mm + COPPER_THICKNESS_MM), 4)
+
+    @property
+    def declared_stack(self) -> tuple[StackupLayer, ...] | None:
+        """The declared physical stack, when it describes the whole board.
+
+        ``layers:`` has been in the schema since M1 and was decorative: nothing
+        derived geometry from it. It becomes load-bearing here, because an
+        impedance derived from a uniform dielectric is an impedance for a board
+        nobody is going to fabricate. It is honoured only when its copper entries
+        are exactly this board's copper layers, in order -- a partial declaration
+        is worse than none, because it looks authoritative.
+        """
+        if not self.layers:
+            return None
+        copper = tuple(layer.name for layer in self.layers if layer.type == "copper")
+        if copper != copper_layer_names(self.copper_layers):
+            return None
+        return self.layers
+
+    def copper_thickness_mm(self, layer: str) -> float:
+        """Finished copper on one layer. One ounce unless the stack says otherwise."""
+        for declared in self.declared_stack or ():
+            if declared.type == "copper" and declared.name == layer:
+                return declared.thickness_mm
+        return COPPER_THICKNESS_MM
+
+    @property
+    def epsilon_r_default(self) -> float:
+        """Relative permittivity to assume where the stack does not name one."""
+        if self.epsilon_r is not None:
+            return self.epsilon_r
+        for entry in self.layers:
+            if entry.type in ("core", "prepreg") and entry.epsilon_r is not None:
+                return entry.epsilon_r
+        return DEFAULT_EPSILON_R
+
+    def dielectric_between(self, a: str, b: str) -> Dielectric:
+        """The laminate between two copper layers: how much, and what it is.
+
+        Where several dielectrics sit between the two -- an outer layer referenced
+        to the far side of a four-layer board -- the thicknesses add and the
+        permittivity is averaged by thickness, which is the usual way to reduce a
+        mixed stack to one number.
+        """
+        names = copper_layer_names(self.copper_layers)
+        if a not in names or b not in names:
+            return Dielectric(self.dielectric_thickness_mm, self.epsilon_r_default)
+        low, high = sorted((names.index(a), names.index(b)))
+        span = high - low
+        if span == 0:
+            return Dielectric(0.0, self.epsilon_r_default)
+
+        declared = self.declared_stack
+        uniform = Dielectric(
+            round(span * self.dielectric_thickness_mm, 4), self.epsilon_r_default
+        )
+        if declared is None:
+            return uniform
+
+        seen = -1
+        thickness = 0.0
+        weighted = 0.0
+        for entry in declared:
+            if entry.type == "copper":
+                seen += 1
+                continue
+            if low <= seen < high:
+                thickness += entry.thickness_mm
+                weighted += entry.thickness_mm * (
+                    entry.epsilon_r or self.epsilon_r_default
+                )
+        if thickness <= 0:
+            return uniform
+        return Dielectric(round(thickness, 4), round(weighted / thickness, 4))
+
+    def reference_below(self, layer: str) -> str | None:
+        """The nearest declared plane a track on ``layer`` is referenced to.
+
+        ``None`` when the board declares no plane at all, which is the honest
+        answer for a two-layer board with a pour on the far side: the pour is
+        copper, but nothing declared it a reference.
+        """
+        names = copper_layer_names(self.copper_layers)
+        if layer not in names:
+            return None
+        here = names.index(layer)
+        planes = [names.index(p.layer) for p in self.planes if p.layer in names]
+        if not planes:
+            return None
+        return names[min(planes, key=lambda i: (abs(i - here), i))]
 
     @property
     def signal_layers(self) -> tuple[str, ...]:

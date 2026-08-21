@@ -115,6 +115,13 @@ class MechPlacement(Strict):
         description="What the position is for, e.g. `mounting_hole`. Free text, but "
         "a role explains a position that would otherwise need a `reason`.",
     )
+    pour_keepout_mm: float | None = Field(
+        default=None,
+        ge=0,
+        description="Clear space kept free of copper pour around this part's pads. "
+        "Honoured for `role: edge_connector` components, where plating and a pour "
+        "must not meet at the card edge.",
+    )
     reason: str | None = Field(
         default=None,
         description="Why the part cannot move. Strongly encouraged on `fixed`: point "

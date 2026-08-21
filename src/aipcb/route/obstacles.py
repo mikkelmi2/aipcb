@@ -17,8 +17,9 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
+from aipcb.compile.geometry import rotate_kicad
 from aipcb.kicad.sexpr import SNode
-from aipcb.model.board import Arc
+from aipcb.model.board import Arc, arc_centre
 
 __all__ = [
     "EDGE_CLEARANCE",
@@ -26,6 +27,7 @@ __all__ = [
     "Obstacle",
     "Polygon",
     "RoutingEnvironment",
+    "arc_slack",
     "board_outline",
     "board_rings",
     "extract_obstacles",
@@ -103,7 +105,25 @@ class RoutingEnvironment:
     than merely stated.
     """
     edge_clearance: float = EDGE_CLEARANCE
-    """How far copper must stay from the outline and from every cutout."""
+    """How far copper must stay from the outline and from every cutout.
+
+    This is the source's ``edge_clearance`` **plus** :attr:`arc_slack`, because it
+    is measured against the polygon this environment holds rather than against the
+    curve that polygon approximates.
+    """
+    arc_slack: float = 0.0
+    """How far this outline's chords cut inside the arcs they stand in for.
+
+    An ``Edge.Cuts`` arc is approximated by chords, and a chord runs *inside* its
+    arc by the sagitta -- 8 um on the 0.95 mm keying notch of a PCIe card edge, at
+    the 24-chords-per-circle this toolchain samples at. Where the board is on the
+    outside of the arc, as it is at a notch, that makes the free area larger than
+    the board and the router spends the difference as clearance: measured on
+    `examples/pcie-sata`, ten tracks came 0.0081 mm closer to the notch than the
+    0.15 mm the source asked for, and KiCad's DRC said so. Adding the worst
+    sagitta on the board to the edge keep-out costs microns of routable area and
+    makes the approximation safe in both directions.
+    """
     obstacles: dict[str, Obstacle] = field(default_factory=dict)
     pad_centres: dict[str, Point] = field(default_factory=dict)
     pad_nets: dict[str, str] = field(default_factory=dict)
@@ -173,16 +193,10 @@ def _rotate(point: Point, degrees: float) -> Point:
 
     KiCad's rotation is counter-clockwise *as drawn*, and its files have Y pointing
     down, so the transform is the mirror of the textbook one. Getting it backwards
-    puts every pad of a rotated footprint on the wrong side of its part -- pin 1
-    above where KiCad draws it below -- and the router then lands its copper on the
-    neighbouring pad, which DRC reports as a short between two nets that never
-    touched in the schematic.
+    The transform itself lives in :func:`aipcb.compile.geometry.rotate_kicad`, so
+    the board writer and the obstacle extractor cannot disagree about it.
     """
-    if not degrees:
-        return point
-    theta = math.radians(degrees)
-    cos, sin = math.cos(theta), math.sin(theta)
-    return (point[0] * cos + point[1] * sin, -point[0] * sin + point[1] * cos)
+    return rotate_kicad(point, degrees)
 
 
 def _rect(width: float, height: float) -> Polygon:
@@ -447,13 +461,59 @@ def _pad_polygon(pad: SNode, rotation: float) -> Polygon:
     return tuple((x + ox, y + oy) for x, y in spun)
 
 
+def arc_slack(board: SNode) -> float:
+    """The worst distance any ``Edge.Cuts`` chord cuts inside its own arc.
+
+    Zero for a board whose edge is all straight lines, which is most of them.
+    """
+    worst = 0.0
+    for item in board.children():
+        if not isinstance(item, SNode) or item.name not in ("gr_arc", "arc"):
+            continue
+        if item.get("layer") != "Edge.Cuts":
+            continue
+        points = [item.child(t) for t in ("start", "mid", "end")]
+        if any(p is None for p in points):
+            continue
+        a, mid, b = (
+            (float(p.value(0) or 0), float(p.value(1) or 0))
+            for p in points
+            if p is not None
+        )
+        arc = Arc(a, mid, b)
+        centre = arc_centre(a, mid, b)
+        if centre is None:
+            continue
+        radius = math.dist(centre, a)
+        chords = max(1, len(arc.points()) - 1)
+        sweep = abs(_arc_sweep(centre, a, mid, b))
+        worst = max(worst, radius * (1 - math.cos(sweep / chords / 2)))
+    return round(worst, 6)
+
+
+def _arc_sweep(centre: Point, a: Point, mid: Point, b: Point) -> float:
+    """The angle the arc turns through, signed, the same way ``Arc.points`` reads it."""
+    cx, cy = centre
+    start = math.atan2(a[1] - cy, a[0] - cx)
+    through = math.atan2(mid[1] - cy, mid[0] - cx)
+    finish = math.atan2(b[1] - cy, b[0] - cx)
+    first = (through - start) % math.tau
+    second = (finish - through) % math.tau
+    total = first + second
+    return total if total <= math.tau else total - math.tau
+
+
 def extract_obstacles(
     board: SNode, *, edge_clearance: float = EDGE_CLEARANCE
 ) -> RoutingEnvironment:
     """Build the routing environment from a board, in physical dimensions."""
     outline, cutouts = board_rings(board)
+    slack = arc_slack(board)
     environment = RoutingEnvironment(
-        outline=outline, cutouts=cutouts, edge_clearance=edge_clearance
+        outline=outline,
+        cutouts=cutouts,
+        edge_clearance=edge_clearance + slack,
+        arc_slack=slack,
     )
 
     for footprint in board.children("footprint"):

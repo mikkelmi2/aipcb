@@ -1,0 +1,538 @@
+# A PCI Express x1 card carrying a four-port SATA controller.
+#
+# This is M11's reference board: the one that decides whether "high-speed capable"
+# means anything. Eleven controlled-impedance pairs -- one PCIe Gen3 lane, its
+# reference clock, and eight SATA III pairs -- on a four-layer sandwich, entering
+# the world through gold fingers that are part of the board outline.
+#
+# Four things here are new, and each one is a milestone piece:
+#
+# * **The net classes carry an impedance, not a width.** `impedance_diff_ohm` and
+#   the declared stackup derive the trace geometry; the numbers below are what the
+#   IPC-2141 approximation gives on 0.2104 mm of 7628 prepreg. Write a width in by
+#   hand and `aipcb validate` tells you how far from the target it lands.
+# * **The card edge is a footprint, and the outline agrees with it.** The KiCad
+#   `Connector_PCBEdge:BUS_PCIexpress_x1` footprint draws its own `Edge.Cuts`: the
+#   tongue, the chamfered tip and the keying notch. aipcb does not emit that
+#   geometry -- an outline with two authors is an outline waiting to disagree --
+#   it checks that the `board:` block below reproduces it, to a hundredth of a
+#   millimetre. Delete the notch from the polygon and the error message hands the
+#   vertices back.
+# * **The transmit pair is AC-coupled.** PCIe requires series capacitors on the
+#   transmitting end, which is a discontinuity in the middle of a pair. C_AC_P and
+#   C_AC_N sit side by side across the pair's direction of travel, and the pair is
+#   routed as one object through them.
+# * **The reference plane is declared, and checked.** Each high-speed class names
+#   the plane its return current uses, and the M11e report projects every pair onto
+#   that plane after the fill and reports what it finds. It is a rule-based check
+#   and not a field solve; a Gen3 board still wants a human and an SI tool before
+#   it is signed off.
+#
+# What is honest about this board and what is not: the footprints are real, the
+# geometry is real, and the impedance derivation is a documented approximation. The
+# schematic *symbols* for the controller and the SATA ports are stand-ins, because
+# KiCad ships none for either -- see `../library/highspeed.yaml`.
+
+name: pcie-sata
+revision: A
+description: A PCI Express x1 to four-port SATA controller card. Eleven
+  controlled-impedance pairs on a four-layer stackup, with a card-edge connector and
+  AC-coupled transmit.
+
+libraries:
+  - ../library/passives.yaml
+  - ../library/highspeed.yaml
+
+net_classes:
+  # Every number below that is not written is derived. `impedance_diff_ohm` plus the
+  # declared stackup gives the pair its width; `diff_pair_gap_mm` is the input to
+  # that derivation rather than an output, because a gap is a manufacturing choice
+  # and solving for width and gap together has no unique answer.
+  #
+  # `trace_width_mm` is the *single-ended* width, and it is deliberately narrower
+  # than the pair's: it is what the fan-out at the controller's 0.5 mm pitch is
+  # drawn with. Half of 0.2 mm, plus a 0.2 mm via radius, plus 0.15 mm of clearance
+  # comes to 0.45 mm and the escape fits; at the pair's own 0.32 mm it does not.
+  # Necking a pair down into a fine-pitch pad is what a layout engineer does, and
+  # M11d's coupling budget is what says how much of it is affordable.
+  pcie_tx:
+    trace_width_mm: 0.2
+    clearance_mm: 0.15
+    via_diameter_mm: 0.4
+    via_drill_mm: 0.2
+    diff_pair_gap_mm: 0.15
+    impedance_diff_ohm: 85
+    max_skew_mm: 0.125
+    coupling: tight
+    reference: In1.Cu
+    max_uncoupled_mm: 6.0
+    prefer_layers: [F.Cu]
+    priority: 95
+    rip_up: protected
+    description: PCIe Gen3 transmit, 85 ohm differential, which on 0.2104 mm of 7628
+      prepreg works out at a 0.289 mm trace beside a 0.15 mm gap. The gap is 0.15 and
+      not 0.2 for a mechanical reason - 0.289 + 0.15 is a 0.439 mm pitch, and a pair
+      that starts between two pads 0.5 mm apart cannot be wider than the pads it
+      starts from. At a 0.2 mm gap the pitch comes to 0.522 mm and the coupled
+      router refuses the pair, correctly. The uncoupled budget
+      is the largest on the board because this pair leaves a 0.5 mm pitch at both the
+      controller and the coupling capacitors.
+
+  pcie_rx:
+    trace_width_mm: 0.2
+    clearance_mm: 0.15
+    via_diameter_mm: 0.4
+    via_drill_mm: 0.2
+    diff_pair_gap_mm: 0.15
+    impedance_diff_ohm: 85
+    max_skew_mm: 0.125
+    coupling: tight
+    reference: In2.Cu
+    max_uncoupled_mm: 6.0
+    prefer_layers: [B.Cu]
+    priority: 95
+    rip_up: protected
+    description: PCIe Gen3 receive and the 100 MHz reference clock. Both land on the
+      A-side fingers, which are on B.Cu, so they run on B.Cu and are referenced to
+      In2 - the supply plane, which is an AC ground for a decoupled rail and, more to
+      the point, a continuous one. Whether it really is continuous under these two
+      pairs is what the M11e report measures rather than assumes.
+
+  sata:
+    trace_width_mm: 0.2
+    clearance_mm: 0.15
+    via_diameter_mm: 0.4
+    via_drill_mm: 0.2
+    diff_pair_gap_mm: 0.2
+    impedance_diff_ohm: 100
+    max_skew_mm: 0.15
+    coupling: tight
+    reference: In1.Cu
+    max_uncoupled_mm: 5.0
+    prefer_layers: [F.Cu]
+    priority: 90
+    rip_up: protected
+    description: SATA III, 100 ohm differential, which on this stackup is a 0.239 mm
+      trace at the same 0.2 mm gap. Eight of these, four ports, all on the front layer
+      over the ground plane.
+
+  power:
+    trace_width_mm: 0.25
+    clearance_mm: 0.15
+    via_diameter_mm: 0.4
+    via_drill_mm: 0.2
+    priority: 60
+    description: The supply rails, on the same tight geometry as everything else so
+      they can leave the controller's pad field with the rest.
+
+  ground:
+    trace_width_mm: 0.25
+    clearance_mm: 0.15
+    via_diameter_mm: 0.4
+    via_drill_mm: 0.2
+    priority: 55
+    description: Ground is poured on three layers and stitched; these tracks are the
+      part the router still has to draw between the pads and the plane.
+
+  signal:
+    trace_width_mm: 0.2
+    clearance_mm: 0.15
+    via_diameter_mm: 0.4
+    via_drill_mm: 0.2
+    description: Presence detect and reset - slow, and routed wherever there is room.
+
+nets:
+  GND:
+    class: ground
+    reason: The reference for every pair on F.Cu, poured on In1 and on both outer
+      layers.
+  P3V3:
+    class: power
+    voltage: 3.3
+    max_current_a: 1.5
+    reason: The rail the card draws from the slot's 3.3 V supply, and the net the In2
+      plane carries.
+  P12V:
+    class: power
+    voltage: 12.0
+    max_current_a: 0.1
+    reason: Present on the connector and decoupled, but this card runs entirely from
+      3.3 V. Brought in so the fingers are not left floating.
+  PRSNT:
+    class: signal
+    reason: Presence detect. The host sees the card because A1 and B17 are tied
+      together across the full width of the fingers.
+
+  # -- the PCIe lane ---------------------------------------------------------
+  PCIE_TXP:
+    class: pcie_tx
+    diff_pair: PCIE_TXN
+    description: Controller side of the transmit pair, up to the coupling capacitor.
+  PCIE_TXN:
+    class: pcie_tx
+    diff_pair: PCIE_TXP
+  PCIE_TXP_C:
+    class: pcie_tx
+    diff_pair: PCIE_TXN_C
+    description: Connector side of the transmit pair, after the capacitor. A separate
+      net because a series part is a break in the net, and a separate pair because
+      the two sides of the capacitors are two coupled runs.
+  PCIE_TXN_C:
+    class: pcie_tx
+    diff_pair: PCIE_TXP_C
+  PCIE_RXP:
+    class: pcie_rx
+    diff_pair: PCIE_RXN
+    description: Receive pair. AC coupling for this direction lives on the host, not
+      here, which is why it runs straight through.
+  PCIE_RXN:
+    class: pcie_rx
+    diff_pair: PCIE_RXP
+  REFCLKP:
+    class: pcie_rx
+    diff_pair: REFCLKN
+    description: The 100 MHz reference clock, in from the host on the A-side fingers.
+  REFCLKN:
+    class: pcie_rx
+    diff_pair: REFCLKP
+
+  # -- the four SATA ports ---------------------------------------------------
+  SATA0_TXP: { class: sata, diff_pair: SATA0_TXN }
+  SATA0_TXN: { class: sata, diff_pair: SATA0_TXP }
+  SATA0_RXP: { class: sata, diff_pair: SATA0_RXN }
+  SATA0_RXN: { class: sata, diff_pair: SATA0_RXP }
+  SATA1_TXP: { class: sata, diff_pair: SATA1_TXN }
+  SATA1_TXN: { class: sata, diff_pair: SATA1_TXP }
+  SATA1_RXP: { class: sata, diff_pair: SATA1_RXN }
+  SATA1_RXN: { class: sata, diff_pair: SATA1_RXP }
+  SATA2_TXP: { class: sata, diff_pair: SATA2_TXN }
+  SATA2_TXN: { class: sata, diff_pair: SATA2_TXP }
+  SATA2_RXP: { class: sata, diff_pair: SATA2_RXN }
+  SATA2_RXN: { class: sata, diff_pair: SATA2_RXP }
+  SATA3_TXP: { class: sata, diff_pair: SATA3_TXN }
+  SATA3_TXN: { class: sata, diff_pair: SATA3_TXP }
+  SATA3_RXP: { class: sata, diff_pair: SATA3_RXN }
+  SATA3_RXN: { class: sata, diff_pair: SATA3_RXP }
+
+components:
+  J_PCIE:
+    part: PCIE_X1_EDGE
+    role: edge_connector
+    reason: The card's whole reason for existing, and the one component whose
+      footprint dictates the board outline rather than sitting inside it.
+    pins:
+      B1: P12V
+      B2: P12V
+      B3: P12V
+      A2: P12V
+      A3: P12V
+      B8: P3V3
+      A9: P3V3
+      A10: P3V3
+      B4: GND
+      B7: GND
+      B13: GND
+      B16: GND
+      B18: GND
+      A4: GND
+      A12: GND
+      A15: GND
+      A18: GND
+      A1: PRSNT
+      B17: PRSNT
+      B14: PCIE_TXP_C
+      B15: PCIE_TXN_C
+      A16: PCIE_RXP
+      A17: PCIE_RXN
+      A13: REFCLKP
+      A14: REFCLKN
+
+  U1:
+    part: SATA_CTRL_QFN48
+    role: mcu
+    reason: The bridge. Its south side faces the card edge so the PCIe lane runs
+      straight down to the fingers; ports 2 and 3 leave to the west and ports 0 and
+      1 to the east, in the order their connectors sit in, so no SATA pair has to
+      cross another.
+    pins:
+      "2": SATA2_TXP
+      "3": SATA2_TXN
+      "4": GND
+      "5": SATA2_RXN
+      "6": SATA2_RXP
+      "8": SATA3_TXP
+      "9": SATA3_TXN
+      "10": GND
+      "11": SATA3_RXN
+      "12": SATA3_RXP
+      "14": GND
+      "15": REFCLKP
+      "16": REFCLKN
+      "17": GND
+      "18": PCIE_TXP
+      "19": PCIE_TXN
+      "20": GND
+      "21": PCIE_RXP
+      "22": PCIE_RXN
+      "23": GND
+      "25": SATA0_TXP
+      "26": SATA0_TXN
+      "27": GND
+      "28": SATA0_RXN
+      "29": SATA0_RXP
+      "31": SATA1_TXP
+      "32": SATA1_TXN
+      "33": GND
+      "34": SATA1_RXN
+      "35": SATA1_RXP
+      "38": P3V3
+      "42": GND
+      "45": P3V3
+      "49": GND
+
+  C_AC_P:
+    part: C_100N_0402
+    role: ac_coupling
+    for: U1
+    reason: PCIe requires series capacitors on the transmitting end. This one and
+      C_AC_N are a matched pair across the route, so the two halves see the same
+      discontinuity at the same place.
+    pins:
+      # Pad 1 is the south pad at this rotation, so it faces the card edge. Wiring
+      # it the other way up makes each half of the pair cross itself inside the
+      # capacitor, which the coupled router notices and refuses.
+      "1": PCIE_TXP_C
+      "2": PCIE_TXP
+
+  C_AC_N:
+    part: C_100N_0402
+    role: ac_coupling
+    for: U1
+    reason: The other half of the same discontinuity. Placed beside C_AC_P and at
+      the same distance along the route, which is the only way the pair stays a
+      pair through it.
+    pins:
+      # Mirrored relative to C_AC_P, because the footprint is rotated the other way:
+      # at 270 degrees pad 1 is the north pad. The two capacitors mirror each other
+      # about the pair's centre-line, which is also what keeps their reference
+      # designators from landing on top of one another - KiCad's silkscreen DRC
+      # reports that, and this is the fix that does not move the copper.
+      "1": PCIE_TXN
+      "2": PCIE_TXN_C
+
+  C_D1:
+    part: C_100N_0603
+    role: decoupling
+    for: U1
+    reason: Local charge for the controller's west supply pin.
+    pins: { "1": P3V3, "2": GND }
+
+  C_D2:
+    part: C_100N_0603
+    role: decoupling
+    for: U1
+    reason: Local charge for the controller's east supply pin.
+    pins: { "1": P3V3, "2": GND }
+
+  C_BULK:
+    part: C_10U_0805
+    role: bulk
+    for: U1
+    reason: The card's reservoir on the 3.3 V rail coming in from the slot.
+    pins: { "1": P3V3, "2": GND }
+
+  C_12V:
+    part: C_100N_0603
+    role: decoupling
+    for: J_PCIE
+    reason: The 12 V rail is not used on this card, but a rail brought onto a board
+      and left undecoupled is an antenna.
+    pins: { "1": P12V, "2": GND }
+
+  J_S0:
+    part: SATA_7P_1P25
+    role: connector
+    reason: SATA port 0, nearest the controller's north-west corner.
+    pins: { "1": GND, "2": SATA0_TXP, "3": SATA0_TXN, "4": GND, "5": SATA0_RXN,
+            "6": SATA0_RXP, "7": GND, MP: GND }
+
+  J_S1:
+    part: SATA_7P_1P25
+    role: connector
+    reason: SATA port 1.
+    pins: { "1": GND, "2": SATA1_TXP, "3": SATA1_TXN, "4": GND, "5": SATA1_RXN,
+            "6": SATA1_RXP, "7": GND, MP: GND }
+
+  J_S2:
+    part: SATA_7P_1P25
+    role: connector
+    reason: SATA port 2, fed from the controller's east side.
+    pins: { "1": GND, "2": SATA2_TXP, "3": SATA2_TXN, "4": GND, "5": SATA2_RXN,
+            "6": SATA2_RXP, "7": GND, MP: GND }
+
+  J_S3:
+    part: SATA_7P_1P25
+    role: connector
+    reason: SATA port 3, fed from the controller's west side.
+    pins: { "1": GND, "2": SATA3_TXP, "3": SATA3_TXN, "4": GND, "5": SATA3_RXN,
+            "6": SATA3_RXP, "7": GND, MP: GND }
+
+constraints:
+  - kind: group
+    name: ac_coupling
+    members: [C_AC_P, C_AC_N]
+    reason: The two coupling capacitors are one object. Separating them puts a
+      different discontinuity in each half of the pair.
+
+board:
+  # Millimetres, Y up, origin at the bottom-left corner of the card's body.
+  #
+  # The south edge sits at y = 8.4 except where the card-edge tongue drops out of it
+  # to y = 0. Every vertex between (23.85, 8.4) and (44.15, 8.4) below is the
+  # footprint's own Edge.Cuts geometry, transformed by the connector's fixed
+  # placement at (24.5, 3.45) -- which is why `aipcb validate` can check the two
+  # against each other rather than taking either one's word. The arc is the rounded
+  # end of the keying notch, and it is tangent to the body edge because that is
+  # where the footprint puts it.
+  origin: bottom_left
+  edge_clearance: 0.15
+  outline:
+    polygon:
+      - [0.0, 8.4]
+      - [23.85, 8.4]
+      - [23.85, 0.5]
+      - [24.35, 0.0]
+      - [34.55, 0.0]
+      - [35.05, 0.5]
+      - [35.05, 7.45]
+      - { arc_to: [36.95, 7.45], center: [36.0, 7.45], direction: cw }
+      - [36.95, 0.5]
+      - [37.45, 0.0]
+      - [43.65, 0.0]
+      - [44.15, 0.5]
+      - [44.15, 8.4]
+      - [80.0, 8.4]
+      - [80.0, 45.0]
+      - [0.0, 45.0]
+
+placement:
+  # Everything is pinned. On a board whose whole subject is what happens to eleven
+  # pairs between two rows of pads, where the parts sit *is* the example: leaving it
+  # to the packer would make the demonstration depend on a heuristic.
+  #
+  # The floorplan is one idea repeated four times: each SATA port sits square in
+  # front of the side of the controller that feeds it, so its four contacts are
+  # across the pair's direction of travel at both ends and in the same order at
+  # both ends. A pair whose two pads are one behind the other, or reversed between
+  # its ends, is not a pair the coupled router can build -- it says so and hands it
+  # over, which is correct and is not what this board is trying to demonstrate.
+  J_PCIE:
+    fixed: { x: 24.5, y: 3.45, rot: 0 }
+    pour_keepout_mm: 0.6
+    reason: Mechanical law twice over. The fingers have to coincide with the card
+      edge, and the notch has to fall between contacts 11 and 12, or the card does
+      not fit the slot. The keepout keeps the pour off the plated finger field.
+  U1:
+    fixed: { x: 40.0, y: 26.0, rot: 0 }
+    reason: Directly above the lane's fingers, with the PCIe pins on the side facing
+      them. Every millimetre of lateral offset here is a millimetre of skew later.
+  C_AC_P:
+    fixed: { x: 39.45, y: 14.0, rot: 90 }
+    reason: In the transmit pair's path, across its direction of travel.
+  C_AC_N:
+    fixed: { x: 40.55, y: 14.0, rot: 270 }
+    reason: Beside C_AC_P and level with it, so both halves meet their capacitor at
+      the same point along the route. 1.1 mm apart, which is about as close as two
+      0402 pads may sit; the pair fans out from its own 0.52 mm pitch to reach them,
+      and that fan-out is counted against the coupling budget.
+  J_S2:
+    fixed: { x: 4.0, y: 32.0, rot: 270 }
+    reason: Port 2, on the west edge facing the controller's west side, level with
+      the northern half of it.
+  J_S3:
+    fixed: { x: 4.0, y: 18.0, rot: 270 }
+    reason: Port 3, below port 2 and fed from the southern half of the same side.
+  J_S1:
+    fixed: { x: 76.0, y: 32.0, rot: 90 }
+    reason: Port 1, the east side's mirror of port 2.
+  J_S0:
+    fixed: { x: 76.0, y: 18.0, rot: 90 }
+    reason: Port 0, the east side's mirror of port 3.
+  C_D1:
+    fixed: { x: 37.5, y: 34.0, rot: 0 }
+    reason: Beside the controller's western supply pin, in the gap directly north of
+      the package where neither SATA bundle goes.
+  C_D2:
+    fixed: { x: 42.5, y: 34.0, rot: 0 }
+    reason: Beside the controller's eastern supply pin, in the same gap.
+  C_BULK:
+    fixed: { x: 31.5, y: 11.5, rot: 0 }
+    reason: The rail's reservoir, next to the fingers the rail arrives on rather than
+      up beside the controller - a bulk capacitor belongs at the entry point.
+  C_12V:
+    fixed: { x: 26.5, y: 11.5, rot: 0 }
+    reason: On the 12 V rail, beside the fingers it arrives on. This card does not
+      use 12 V, but a rail brought aboard and left undecoupled is an antenna.
+
+layout:
+  stackup:
+    copper_layers: 4
+    thickness_mm: 1.6
+    finish: ENIG
+    epsilon_r: 4.4
+    # The declared stack is what the impedance is derived from. Until M11 this
+    # block was decorative and a uniform dielectric was assumed; a controlled-
+    # impedance board cannot afford that, because the 0.21 mm prepreg under F.Cu
+    # and the 1.07 mm core in the middle are not the same dielectric at all.
+    layers:
+      - { name: F.Cu, type: copper, thickness_mm: 0.035 }
+      - { name: prepreg_top, type: prepreg, thickness_mm: 0.2104, material: "7628",
+          epsilon_r: 4.4 }
+      - { name: In1.Cu, type: copper, thickness_mm: 0.0152 }
+      - { name: core, type: core, thickness_mm: 1.065, material: FR4, epsilon_r: 4.6 }
+      - { name: In2.Cu, type: copper, thickness_mm: 0.0152 }
+      - { name: prepreg_bottom, type: prepreg, thickness_mm: 0.2104, material: "7628",
+          epsilon_r: 4.4 }
+      - { name: B.Cu, type: copper, thickness_mm: 0.035 }
+    planes:
+      - layer: In1.Cu
+        net: GND
+        reason: The reference every pair on F.Cu is designed against. Nothing signal
+          carrying goes here, so nothing puts a slot in it.
+      - layer: In2.Cu
+        net: P3V3
+        reason: Supply distribution, and the reference for the two pairs that land on
+          the A-side fingers and therefore run on B.Cu.
+    via_types: [through]
+    preferred_direction:
+      F.Cu: vertical
+      B.Cu: horizontal
+  placement:
+    margin_mm: 1.0
+
+pours:
+  - net: GND
+    layers: [F.Cu, B.Cu, In1.Cu]
+    scope: board
+    priority: 0
+    connect: thermal
+    reason: Ground on both outer layers and on the plane the stackup reserved for
+      it. This is the copper the reference-continuity check reads back.
+  - net: P3V3
+    layer: In2.Cu
+    scope: board
+    priority: 0
+    connect: thermal
+    reason: The supply plane, and the reference for the pairs on B.Cu. Poured over
+      the whole layer deliberately, because a split under a differential pair is a
+      break in its return path and this board has no reason to have one.
+
+stitching:
+  - net: GND
+    between: [F.Cu, B.Cu]
+    pattern: grid
+    pitch: 8.0
+    via: { drill: 0.3, diameter: 0.6 }
+    reason: Through vias tie the two ground pours and the In1 plane into one
+      conductor. A high-speed board wants these near where pairs change layer; this
+      grid is the baseline the rest is judged against.

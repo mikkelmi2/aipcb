@@ -63,6 +63,10 @@ KNOWN_ROLES = frozenset({
     "snubber", "current_limit", "feedback", "divider", "filter", "crystal_load",
     "esd", "reverse_protection", "sense", "load", "indicator", "test_point",
     "mcu", "regulator", "connector", "passive", "power", "level_shifter", "oscillator",
+    # M11: two roles that are not descriptions but behaviours. `edge_connector`
+    # turns on the card-edge integration checks; `ac_coupling` binds a series
+    # capacitor to the high-speed pair it sits in.
+    "edge_connector", "ac_coupling",
 })
 
 KNOWN_NET_CLASSES = frozenset({
