@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from aipcb.checks.accouple import run_ac_coupling_checks
 from aipcb.checks.edge import run_edge_checks
 from aipcb.checks.impedance import run_impedance_checks
 from aipcb.checks.mech import run_mechanical_checks
@@ -293,6 +294,7 @@ CHECKS: tuple[Callable[[Netlist, Report], None], ...] = (
     # and the electrical problems above are the ones worth reading first.
     run_mechanical_checks,
     run_edge_checks,
+    run_ac_coupling_checks,
     run_pour_checks,
 )
 

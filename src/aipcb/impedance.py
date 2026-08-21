@@ -155,12 +155,21 @@ def solve_width(
     bracket can produce, which is a real answer: the stackup or the gap has to
     change, and silently clamping to the nearest width would hide it.
     """
-    widest = differential_impedance(_WIDTH_MAX, gap, height, copper, epsilon_r)
+    # IPC-2141's logarithm runs out of domain when the trace gets wide enough that
+    # `0.8 w + t` reaches `5.98 h`, and past that the formula returns zero rather
+    # than an impedance. Bracketing there instead of at an arbitrary five
+    # millimetres keeps the bisection between two *real* answers -- without it the
+    # bracket contains a zero and every target below the true minimum comes back
+    # "reachable" at the widest trace the bracket holds.
+    widest_valid = min(_WIDTH_MAX, 0.98 * (5.98 * max(height, 1e-6) - copper) / 0.8)
+    if widest_valid <= _WIDTH_MIN:
+        raise ImpedanceUnreachable(target_ohm, 0.0, 0.0)
+    widest = differential_impedance(widest_valid, gap, height, copper, epsilon_r)
     narrowest = differential_impedance(_WIDTH_MIN, gap, height, copper, epsilon_r)
     if not widest <= target_ohm <= narrowest:
         raise ImpedanceUnreachable(target_ohm, widest, narrowest)
 
-    low, high = _WIDTH_MIN, _WIDTH_MAX
+    low, high = _WIDTH_MIN, widest_valid
     for _ in range(200):
         middle = (low + high) / 2
         if differential_impedance(middle, gap, height, copper, epsilon_r) > target_ohm:
