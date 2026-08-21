@@ -22,6 +22,8 @@ with the numbers.
 | [`m12-simulation.md`](m12-simulation.md) | M12 — SI simulation integration (openEMS/gerber2ems) | pending |
 | [`orchestrator-m10-m12.md`](orchestrator-m10-m12.md) | runs M10 → M11 → M12 unattended, with gates between them | pending |
 
-The delivery report requirement was introduced with M10. The reports for M8 and M9
-were reconstructed after the fact from the repository's own history and are marked
-as such; there is no report for M1–M7.
+The delivery report requirement was introduced with M10, so the earlier
+milestones ran without one. [`m8.md`](../reports/m8.md) was reconstructed after the
+fact from the repository's own history and says so at the top;
+[`m9.md`](../reports/m9.md) was written from that milestone's own measurements
+immediately after it landed. There is no report for M1–M7.
