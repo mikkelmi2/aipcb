@@ -163,6 +163,7 @@ def _plot(
                 "--format", "excellon",
                 "--drill-origin", "plot",
                 "--excellon-units", "mm",
+                "--excellon-separate-th",
                 "--generate-map", "--map-format", "gerberx2",
                 "-o", str(out_dir) + "/", str(board),
             ),
@@ -175,6 +176,7 @@ def _plot(
                 (
                     "pcb", "export", "pos",
                     "--format", "csv", "--units", "mm", "--side", "both",
+                    "--use-drill-file-origin",
                     "-o", str(out_dir / position_file_name(board)), str(board),
                 ),
             )
