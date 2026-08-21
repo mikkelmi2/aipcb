@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -164,10 +165,16 @@ def run_gerber2ems(
 ) -> RunOutcome:
     """Geometry, both excitations and post-processing, in one container run."""
     started = time.monotonic()
+    # Named, so a timeout can clean up after itself. Killing the client is not the
+    # same as stopping the container, and an unattended batch that leaves a
+    # sixteen-core FDTD run behind on every timeout takes the machine down with it.
+    name = f"aipcb-si-{os.getpid()}-{abs(hash(str(work))) % 10**8:08d}"
     command = [
         runtime,
         "run",
         "--rm",
+        "--name",
+        name,
         "--userns=keep-id",
         "-v",
         f"{work.resolve()}:/work",
@@ -183,6 +190,13 @@ def run_gerber2ems(
             command, capture_output=True, text=True, check=False, timeout=timeout_s
         )
     except subprocess.TimeoutExpired:
+        subprocess.run(
+            [runtime, "rm", "-f", name],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
         return RunOutcome(
             ok=False,
             seconds=time.monotonic() - started,
