@@ -335,3 +335,104 @@ untouched** by M11. The M11d rules landed in `route/pairs.py` (+418 lines), the
 coupled-pair path. That is a more conservative reading of "M11d is the only
 permitted stretcher change" than the guardrail required.
 
+### M11 gate — PASSED, with one acceptance clause explicitly NOT met
+
+Re-run by the orchestrator. The remediation pass produced `docs/reports/m11.md`
+(722 lines, commit `e61fe00`).
+
+| Gate | Result |
+|---|---|
+| 1 — suite, ruff, mypy | `pytest` exit 0 (**1090 tests**, up from 968; 20 m 27 s); `ruff` clean; `mypy --strict` clean on **75** source files |
+| 2 — acceptance checks | passed as specified — but see the shortfall below |
+| 3 — delivery report | passes emphatically: 11 deviations in a table at the top, measured claims throughout, the performance table compared against M10's baseline |
+| 4 — commit + push | five M11 commits plus `e61fe00` — pushed |
+| 5 — this entry | written |
+
+**Gate 2, measured by the orchestrator across all eleven examples:**
+
+- **Byte-stable builds, 11/11** (built twice into separate directories and diffed),
+  `filled_polygon` = 0 in every build output.
+- **Zero DRC/ERC errors on all eleven**, `rc=0` throughout. Warnings only:
+  `pcie-sata` 10, `overconstrained` 3 (its expected hand-overs), `qfn-fanout` 1,
+  `usb-port` 1.
+- **Prior examples genuinely unaffected:** `git diff 1f637c9..HEAD -- tests/golden/`
+  adds the new `pcie-sata` golden and modifies **no** pre-M11 golden at all.
+- **The stretcher guardrail held strictly.** `route/stretch.py` is untouched. The
+  three M11d rules live in `route/pairs.py`, gated on `impedance_diff_ohm`, with
+  the docstring stating that everything else "takes exactly the path it took
+  before". Three rules, no fourth — checked in the code, not in the prose.
+
+**The shortfall, recorded rather than waved through.** The specification's
+acceptance says *"the M11e report runs clean … on everything that routed"*. It does
+not. Reference continuity and via stubs are clean — 629.3 mm projected, **0** plane
+crossings, worst stub **0.000 mm** against a 0.5 mm threshold, width/gap deviation
+0.0 on all twelve pair objects — but `REFCLKP/N` comes out **0.292 mm** and
+`PCIE_RXP/N` **0.256 mm** against the **0.125 mm** their class declares, and both
+are *delivered* rather than handed over via M9f.
+
+The orchestrator passes the gate on this, and the reasoning should be legible to
+whoever reads it later:
+
+- Gate 2 as this orchestrator defines it — 0 DRC/ERC violations and byte-stable
+  rebuilds — is met without qualification.
+- **Nothing is silent**, which is the failure mode this milestone actually exists to
+  prevent. Six warnings carry the number, the JSON carries it, and
+  `tests/test_check_loop.py` records it as a named known issue. The budget was
+  demonstrably not widened to fit: the source records that the SATA class's first
+  draft was 0.127 mm, that one pair missed it by 49 µm, and that the class was
+  rewritten with an argument rather than tuned until the warning disappeared.
+- Skew is an M11e *reporting* item, not one of the three M11d rules whose breach
+  forces a hand-over — and `verify: error` exists to promote it, unused here.
+- The report itself argues both sides and concedes the point rather than defending
+  it, including a first-principles estimate that 0.292 mm is ≈1.8 ps against a
+  125 ps Gen3 unit interval.
+
+It is an unmet acceptance clause, flagged at the top of the delivery report and
+here, and **it is the project owner's call whether that is acceptable** — the
+orchestrator's job was to make sure it could not pass unnoticed.
+
+**The diff-pair sliver expectation was not met, and the explanation outranks the
+expectation.** Measured: the routed, *unfilled* board still carries exactly one
+`copper_sliver` warning (0 once filled). M11d rule 1 could not have closed it — the
+rule applies only to classes naming an `impedance_diff_ohm`, and `diff-pair`'s
+`lvds` class names none (`standoff` 1.0, `target_ohm` null), so M11d never ran on
+that board at all. The marker was left standing rather than retired or silenced.
+Not verifiable: *which* copper the sliver lies between — KiCad 9.0.8 reports this
+violation with an empty `items` array and no position in both output formats.
+
+**Pad-UUID aliasing:** the card edge is not affected — `J1` has 36 pads, 36 numbers
+and **36 distinct UUIDs**. The defect remains live elsewhere on the same board (JST
+shells 9 pads/8 UUIDs, QFN exposed pad 65/50) and `usb-port` is unchanged at 31/20.
+Commit `d5452a6` turned out to be about something else: the *generated* card-edge
+pour keepout, the one zone nobody declares, which the UUID index did not know
+about — so a DRC violation on it reported `loc: None` and "probably added by hand
+in KiCad". Now it points at `design.yaml:451:3`.
+
+**Two open defects carried forward, neither fixed:**
+
+- **`_repair` can route across another net** (`route/plan.py`) — found by the M11
+  session on PRSNT, unexplained, recorded in `docs/roadmap.md`. It does not
+  manifest on any bundled example today. This is a correctness bug in the router
+  and the most serious open item in the milestone.
+- **The same pair is reported out of budget three times with two different
+  numbers** — 0.251 from `_match_lengths`, 0.292 from `measure_skew`, and again as
+  `hs-skew` — with nothing explaining why they differ. Found by the remediation
+  pass while measuring; reported, not fixed.
+
+**Other deviations of consequence** (all eleven are at the top of the report):
+`standoff_k`'s default of 3 refuses every pair on the milestone's own reference
+board, which sets 1.4; four spec field names were renamed and `class: diff_pair`
+was not implemented; **PERST# and the A1–B17 presence-detect strap are absent from
+the netlist**, so "90/90 routed" omits two signals a real card needs; **no pair was
+handed over at all**, so the reference board never exercises the M9f path; AC
+capacitors are validated but never placed; impedance derivation is microstrip-only
+and an inner-layer class silently gets a microstrip width back; suite runtime
+13 m 57 s → 20 m 27 s.
+
+**No regression against the M10 baseline:** validate +1.2 %, build +0.9 %, route
++0.8 %, export +1.3 %, check −1.5 %; largest per-example delta 0.14 s. `pcie-sata`
+`check` is 44.4 s, 89 % of it routing; M11d re-tightening adds **0.139 s (0.35 %)**
+and M11e analysis **0.111 s (0.28 %)**. The report notes rule 1 is not separable —
+it widens the A* corridor. It also corrects M10's "fixed ~2.5 s floor": measured
+0.88–4.17 s, tracking footprint-library count.
+
