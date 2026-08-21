@@ -189,3 +189,39 @@ defects — wrong output, no error — which is the class this project exists to
 eliminate, so they are fixed with tests before the milestone that will exercise
 them.
 
+### Prerequisite gate — PASSED
+
+Both fixes verified by the orchestrator independently, not taken on the subagent's
+word:
+
+- **Golden churn contains nothing but the intended change.** Reducing the whole
+  `tests/golden/` diff to its distinct lines yields exactly one form, ten times:
+  `+ (aux_axis_origin N N)`. No coordinate rebasing inside the board files — correct,
+  since board space is unchanged and only exported fab data is rebased — and no
+  `.kicad_sch` / `.kicad_pro` churn.
+- **Drill coordinates re-measured from a fresh route+export of `mcu-4layer`:**
+  0 negative coordinates, and **all 23 coordinate lines match gerber2ems's own
+  `X([0-9]+\.[0-9]+)Y([0-9]+\.[0-9]+)` regex** — the specific thing that was
+  silently dropping every via.
+- **Placement file:** the export now produces `mcu-4layer-all-pos.csv`, which the
+  consumer's `*pos.csv` glob finds. The subagent checked four authorities before
+  changing anything and found aipcb was the wrong one: gerber2ems's source
+  (`importer.py:295`, `config.py:339`), `kicad-cli` (which has no convention of its
+  own — not the authority), KiCad's own `place_file_exporter.cpp` (`<board>-all-pos.csv`
+  for a both-sides CSV), and Antmicro's example boards.
+- **Suite:** `pytest` exit 0, 886 tests (874 + 12 new), `ruff` clean,
+  `mypy --strict` clean on 60 files.
+
+**A third defect was found and deliberately not fixed** — the right call, recorded
+so it cannot be lost. The placement file's *coordinates* are still absolute page
+coordinates with negative Y (confirmed by the orchestrator: `"C1",…,145.500000,-122.500000`
+on `mcu-4layer`), because `export.py` does not pass `--use-drill-file-origin` to
+`pcb export pos`. It is harmless today only because aipcb emits no `SP<n>` rows for
+anything to read — but the file is now *discoverable*, so it will be read in the
+wrong frame the moment ports exist. It is ADR 0011 requirement #6 and squarely
+M12a's port work; it has been written into `docs/milestones/m12-simulation.md` as
+required work rather than fixed here, because choosing the coordinate frame of a
+fab deliverable is a real decision, not a one-flag mechanical fix.
+
+Commits `2d046be`, `8a4c4c8`, pushed.
+

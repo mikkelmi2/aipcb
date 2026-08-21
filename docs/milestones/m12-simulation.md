@@ -29,6 +29,17 @@ that instead of repeating the work. The headlines you need:
   position file matches the consumer's `*pos.csv` glob (without which it was never
   read). Remaining gaps — `stackup.json`, drill filename flag, simulation ports,
   `netinfo.json`, and the fact that `aipcb export` does not route — are M12a's work.
+- **One more silent gap, found while fixing the two above and deliberately left for
+  you:** the placement file's *coordinates* are still absolute page coordinates with
+  negative Y (`"C1",…,145.500000,-122.500000,…` on `mcu-4layer`), because
+  `export.py` does not pass `--use-drill-file-origin` to `pcb export pos` — a flag
+  `kicad-cli` does support there. gerber2ems expects port positions relative to the
+  Edge.Cuts corner (ADR 0011 requirement #6). It is harmless *today* only because
+  aipcb emits no `SP<n>`/`Simulation_Port` rows for anything to read — but the file
+  is now discoverable, so the moment you add ports it will be read in the wrong
+  frame, silently. Fix it as part of M12a's port work, with a test, and do not
+  assume the one flag is sufficient: verify the resulting coordinates the way the
+  drill fix was verified, by reading the file.
 - **Two findings that change your plan, from the ADR:** impedance numbers are not
   yet trustworthy on `examples/diff-pair` (three port/mesh configs of the same
   geometry gave ≈26 Ω, ≈340 Ω, ≈950 Ω, with a non-physical |Sdd21| > 1 on the coarse
