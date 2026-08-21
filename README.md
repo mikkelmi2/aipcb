@@ -50,6 +50,15 @@ engine ([the stability policy](docs/format.md#the-stability-policy)).
 one-line status per block, so an agent can look at the part of a design it is
 working on without paying for the whole thing in context.
 
+**What is checked is separated from what is not.** A net class can state an
+impedance and let the stackup derive the trace geometry, and `aipcb check` will
+project every controlled-impedance track onto the plane its class declares and
+report where the plane under it stops or changes net. That is **rule-based
+geometry, not electromagnetic simulation**: it says the return path has somewhere
+to go, not that it goes there. A gigabit board that passes every one of those
+checks still wants a human and an SI tool before anybody signs it off, and the
+report says so in its own output rather than leaving it to be assumed.
+
 ## The layer model
 
 | Layer | What it holds | Where it lives |
@@ -601,8 +610,8 @@ unreadable.
 | M7d — differential pairs, impedance and skew | **done** (meander length-matching landed with M8c) |
 | M8a — layered triangulations, via columns, cut capacity | **done** |
 | M8b — multilayer search with negotiated congestion, priority and rip-up | **done** |
-| M8c — pairs as one object, meander length-matching, layer preference | **partly**: coupled pairs, meanders and layer rules done; crossovers and pairs changing layer are refused with a reason, for the reasons in [ADR 0007](docs/decisions/0007-multilayer.md) |
-| M8d — stretcher integration and acceptance | **done**: all seven examples route completely, and pass DRC with one warning ([`diff-pair`](examples/diff-pair/design.yaml) keeps a copper sliver where a ground track threads between a header's two pads) |
+| M8c — pairs as one object, meander length-matching, layer preference | **done for pairs and meanders**; crossovers are still refused with a reason ([ADR 0007](docs/decisions/0007-multilayer.md)), and a pair *changing layer* is built since M11c |
+| M8d — stretcher integration and acceptance | **done**: all seven examples route completely, and pass DRC with one warning on the *unfilled* board ([`diff-pair`](examples/diff-pair/design.yaml) keeps a copper sliver where a ground track threads between a header's two pads; since M10 the ground pour fills the wedge and `aipcb check` reports zero) |
 | M9-outline — the board boundary as a source object | **done**: arcs, cutouts and edge clearance, propagated into the placer, the validator and every layer's free space |
 | M9a/M9b — three-level placement, fixed parts as anchors | **done** |
 | M9c — mechanical conflict validation | **done**: eleven checks, all before anything is built |
@@ -613,6 +622,11 @@ unreadable.
 | M10b — fill integration and the stability policy | **done**: KiCad's own filler in a `pcbnew` subprocess with a version lock ([ADR 0009](docs/decisions/0009-pours.md)); build stays byte-stable and unfilled |
 | M10c — stitching vias | **done**: `grid`, `edge` and `ring` patterns, deterministic, with skip counts reported |
 | M10d — plane-integrity report | **done**: islands, largest-island fraction and bounding boxes read back off the filled board |
+| M11a — controlled-impedance net classes | **done**: `impedance_diff_ohm` and a declared stackup derive the pair's width; an explicit width that disagrees by more than 10% is reported with the impedance it will actually produce |
+| M11b — card-edge connector integration | **done**: the footprint's own `Edge.Cuts` is a specification the `board:` block has to reproduce, checked to 0.01 mm, with the missing vertices handed back in the error; pour keepout, thickness check and the bevel fab note ([ADR 0010](docs/decisions/0010-highspeed.md)) |
+| M11c — pair via transitions and AC coupling | **done** for transitions: two signal vias at a column opened out from the pair's pitch, ground returns, the stub computed from the stackup, and two coupled segments for the router. **Partly** for AC coupling: the pairing, the symmetry and the budget are validated and measured; the capacitors are not *placed* |
+| M11d — stretcher environment discipline | **done**: the three bounded rules, and no others. The default 3x standoff is not available on a 0.5 mm pad pitch and refuses loudly there |
+| M11e — high-speed verification report | **done**: reference continuity projected onto the declared plane after the fill, geometry audit off the copper, skew, stubs and coupling budget. Rule-based, and it says so |
 
 ## Documentation
 
@@ -622,6 +636,8 @@ unreadable.
 * [`docs/routing-costs.md`](docs/routing-costs.md) — every number the router weighs,
   with its default and why.
 * [`docs/roadmap.md`](docs/roadmap.md) — what is deliberately not built, and why.
+* [`docs/reports/`](docs/reports/) — one delivery report per milestone, with the
+  numbers each one was measured against.
 * [`docs/decisions/`](docs/decisions/) — architecture decision records. Start with
   [0001 (KiCad I/O)](docs/decisions/0001-kicad-io.md), which explains why this
   project writes its own S-expression layer instead of using `kiutils`.
@@ -629,7 +645,7 @@ unreadable.
 ## Development
 
 ```bash
-.venv/bin/pytest          # 726 tests, about 6 minutes (it runs KiCad for real)
+.venv/bin/pytest          # about 1040 tests, roughly 20 minutes (it runs KiCad for real)
 .venv/bin/ruff check .
 .venv/bin/mypy
 ```

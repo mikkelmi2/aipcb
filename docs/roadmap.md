@@ -46,8 +46,9 @@ generator that runs before routing, whose output is fixed obstacles plus termina
 and which the rubber-band router then never has to know about. The obvious next
 tenants:
 
-* differential-pair via transitions, with the return via that keeps the reference
-  continuous across the layer change;
+* ~~differential-pair via transitions, with the return via that keeps the reference
+  continuous across the layer change~~ — **built in M11c**, and the third tenant
+  after fanout and stitching. `route/transition.py`;
 * crystal and oscillator routing, where the guard ring and the short symmetric
   load-capacitor loops are a fixed shape rather than a search;
 * antenna feeds, where the geometry *is* the specification.
@@ -91,8 +92,51 @@ run but not the divergence. `examples/diff-pair` has one, and
 `tests/test_check_loop.py` records it as a named known issue rather than silencing
 the rule.
 
+**M11 did not resolve it, and it is worth saying which of the two claims about it
+is true.** The sliver is on the *unfilled* board -- `kicad-cli pcb drc` on
+`aipcb build`'s output reports exactly one `copper_sliver` warning on
+`examples/diff-pair`, and has since M8. On the *filled* board it is gone, because
+the ground pour that M10 added fills the wedge with copper of the same net; the
+`aipcb check` that runs DRC against the filled board has reported zero violations
+on that example since M10 landed. The track geometry has not changed. M11d rule 1
+does not touch it either way: the sliver is between two **GND** tracks, `ground`
+is not a controlled-impedance class, and the standoff corridor applies to nothing
+but pairs whose class names an `impedance_diff_ohm`.
+
 **Length matching beyond a pair.** Skew is measured and reported within a
 differential pair; matching a whole bus to a target length, with meanders, is not.
+
+**Full environment-controlled tightening.** M11d bounded it to three rules on
+purpose — a standoff corridor, a wall-hugging flag with one re-tighten, and a hard
+coupling budget. Tightening that actually held a pair's *environment* constant
+would mean optimising something other than length, which is the stretcher's whole
+premise; recorded in [ADR 0010](decisions/0010-highspeed.md).
+
+**Placing AC-coupling capacitors.** `role: ac_coupling` validates that the two
+capacitors are level across the pair's direction of travel and measures how far
+out they are; it does not move them. The placer is M9's, and a routing-side
+generator that moved parts would be a larger change than M11 sanctioned.
+
+**Back-drilling, and blind or buried vias chosen to shorten a stub.** M11e
+measures the stub a through via leaves below the layers the signal uses and
+reports it against a threshold. Removing it is a fabrication process nobody should
+be committed to by a default.
+
+**A route that crosses a differential lane.** `examples/pcie-sata` leaves two
+contacts unconnected — PERST# and the A1-to-B17 presence-detect strap — because
+both have to cross all three lane pairs and a four-layer sig/gnd/pwr/sig stackup
+has no signal layer left to cross on. A real card uses an inner signal layer or a
+wire link. Worth recording because it is the first board in this repository where
+the honest answer to "route this net" is "not on this stackup".
+
+**`_repair` can produce a route that crosses another net.** Found on that same
+net before it was dropped: the second-pass repair (`route/plan.py::_repair`)
+routed PRSNT across two already-placed `REFCLK` tracks, and KiCad reported two
+`tracks_crossing` errors. The repair builds its private field from the base
+environment *plus* everything placed so far, so the copper it crossed was in the
+obstacle set; something between that field and the realized geometry is not
+honouring it. Not chased to the bottom, because it is router work rather than
+M11's, and recorded here rather than left as a surprise.
 
 ## Generated files
 
@@ -104,6 +148,40 @@ a file format should contain, and a DRC violation on one of them cannot say whic
 fix is to key the UUID on the pad instance, as the router already keys its obstacles;
 it changes the UUID of every affected pad, so it wants a milestone of its own rather
 than a quiet rewrite of every golden file.
+
+M11 measured how far it reaches, because a card-edge connector looked like the
+place it would bite hardest. It depends entirely on the footprint:
+`Connector_PCBEdge:BUS_PCIexpress_x1` numbers all 36 contacts distinctly and is
+untouched by it, while the JST connector on the same board has two shell tabs both
+numbered `MP` that share one UUID -- and `Connector_PCBEdge:BUS_PCI` has 240 pads
+over 120 numbers, which is squarely in the defect's path. Both cases are asserted
+as tests in `tests/test_highspeed.py`.
+
+## High speed
+
+**Electromagnetic simulation.** M11e is rule-based geometry and says so in its
+own first line, in the `--json` report's `method` field and in the README: it
+checks that the return path has somewhere to go, not that it goes there. Actual
+field solving — and eye-diagram prediction with it — is a different tool.
+Exporting this toolchain's geometry to one is M12's subject and is measured in
+[ADR 0011](decisions/0011-si-simulation.md).
+
+**A second impedance formula.** `estimate_gap`, the M8 path that guesses a gap
+from `impedance_ohm`, still uses Hammerstad while the controlled-impedance path
+uses IPC-2141. On the M11 reference stackup the two disagree by 8%. They are kept
+apart deliberately -- changing the old one would move the geometry of boards built
+before M11 -- but a project with one impedance model would be better than one with
+two, and unifying them means regenerating goldens.
+
+**Impedance on an inner layer.** The derivation assumes surface microstrip, which
+is what an outer layer is. A pair on an inner layer between two planes is
+stripline, a different formula, and nothing stops a design asking for one today
+except that the number it gets back will be wrong. There is no check for it.
+
+**Copper roughness, solder mask and etch taper.** None of them is modelled. On a
+0.24 mm trace over 0.21 mm of prepreg they are worth a few percent each, which is
+the same order as the formula's own error -- which is why M11e reports geometry
+rather than an impedance it does not have.
 
 ## Pours
 

@@ -17,11 +17,14 @@ key must be reported, never silently ignored.
 - [Modules and instances](#modules-and-instances)
 - [Constraints](#constraints)
 - [Net classes](#net-classes)
+- [Controlled impedance](#controlled-impedance)
 - [The board](#the-board)
 - [Mechanical placement](#mechanical-placement)
 - [Fanout](#fanout)
 - [Copper pours](#copper-pours)
 - [Stitching vias](#stitching-vias)
+- [Card-edge connectors](#card-edge-connectors)
+- [Pair via transitions](#pair-via-transitions)
 - [Layout intent](#layout-intent)
 - [Part libraries](#part-libraries)
 - [Elaboration](#elaboration)
@@ -128,6 +131,11 @@ Known roles are `decoupling`, `bulk`, `bypass`, `pull_up`, `pull_down`, `series`
 An unknown role is a warning, not an error: the vocabulary is meant to grow. But
 the warning is worth heeding, because a typo'd role silently switches off the
 checks that depend on it.
+
+Two roles are *behaviours* rather than descriptions, and both arrived with M11.
+`edge_connector` turns on the [card-edge integration](#card-edge-connectors);
+`ac_coupling` marks a series capacitor as part of a high-speed pair, and the pair
+it sits in is worked out from the capacitor's own nets rather than named again.
 
 ## Modules and instances
 
@@ -274,6 +282,85 @@ resistance by about a dozen ordinary nets; `rip_up: never` means the net is move
 only as the last thing tried before the board is declared unroutable — and if that
 happens, the failure report names it. The numbers are in
 [`routing-costs.md`](routing-costs.md).
+
+## Controlled impedance
+
+A net class can state an *impedance* instead of a width, and let the stackup work
+out the geometry:
+
+```yaml
+net_classes:
+  pcie:
+    trace_width_mm: 0.2          # the single-ended width, for the fan-out
+    clearance_mm: 0.15
+    diff_pair_gap_mm: 0.15       # an input to the derivation, not an output
+    impedance_diff_ohm: 85       # with the stackup, this gives the pair's width
+    max_skew_mm: 0.125
+    coupling: tight
+    standoff_k: 1.4
+    reference: In1.Cu
+    max_uncoupled_mm: 6.0
+    verify: warn
+    priority: 95
+    rip_up: protected
+```
+
+| Field | Meaning |
+|---|---|
+| `impedance_diff_ohm` | Target differential impedance. Turns on everything else here. |
+| `diff_pair_gap_mm` | The gap the pair is built at. The *input* to the width solve: a gap is a manufacturing choice, and solving for width and gap together has no unique answer. Defaults to `clearance_mm`. |
+| `diff_pair_width_mm` | An override. The board is built from it, and `aipcb validate` says how far it is from what the target implies once that exceeds 10%. |
+| `reference` | The plane this class's return current depends on. Read by the high-speed checks; the router never sees it. |
+| `coupling` | `tight` makes `max_uncoupled_mm` a hard budget rather than advice. |
+| `max_uncoupled_mm` | How much of each half may run uncoupled: fan-out at the ends, the splay at a via transition, the reach to a coupling capacitor. Exceeding it hands the pair over. |
+| `standoff_k` | Tighten against `clearance_mm x k` rather than the bare minimum. Defaults to 3 where an impedance is declared, and is ignored where one is not. |
+| `verify` | `warn` (the default) or `error`, for this class's high-speed findings. |
+
+The width comes from IPC-2141's surface-microstrip approximation and the standard
+coupling factor, against the dielectric between the class's layer and its
+reference. That means the stackup has to be real:
+
+```yaml
+layout:
+  stackup:
+    copper_layers: 4
+    thickness_mm: 1.6
+    epsilon_r: 4.4
+    layers:
+      - { name: F.Cu, type: copper, thickness_mm: 0.035 }
+      - { name: prepreg_top, type: prepreg, thickness_mm: 0.2104, epsilon_r: 4.4 }
+      - { name: In1.Cu, type: copper, thickness_mm: 0.0152 }
+      - { name: core, type: core, thickness_mm: 1.065, epsilon_r: 4.6 }
+      - { name: In2.Cu, type: copper, thickness_mm: 0.0152 }
+      - { name: prepreg_bottom, type: prepreg, thickness_mm: 0.2104, epsilon_r: 4.4 }
+      - { name: B.Cu, type: copper, thickness_mm: 0.035 }
+```
+
+`layers:` has been in the schema since M1 and was decorative until M11: the
+dielectric was assumed to be the leftover board thickness divided evenly. On the
+stack above that would be 0.48 mm where the prepreg under `F.Cu` is 0.2104 mm,
+which is a 40% error in the derived width. A declared stack is honoured **only if
+it is complete** — its copper entries must be exactly the board's copper layers,
+in order — because a partial declaration is worse than none.
+
+Without one, the old uniform arithmetic still applies, so every design written
+before M11 derives what it always did.
+
+### What is checked, and what is not
+
+`aipcb check` projects every controlled-impedance track onto the plane its class
+declares, on the same filled board KiCad's own DRC ran against, and reports every
+stretch with no plane under it and every stretch where the plane changes net. It
+also reports the width and gap the copper actually holds against the derived
+target, the skew after meanders, the uncoupled length against the budget, and each
+via's stub computed from the stackup.
+
+**This is rule-based geometry, not electromagnetic simulation.** It says the
+return path has somewhere to go, not that it goes there; it says the trace is the
+width the arithmetic asked for, not what a field solver would measure. A Gen3
+board that passes every check here still wants a human and an SI tool before
+anybody signs it off. The `--json` report says the same thing in a `method` field,
+on purpose.
 
 ## The board
 
@@ -712,6 +799,92 @@ Stitching runs after routing and before the fill, and its output is ordinary via
 obstacles to any later routing run, preserved like everything else, and given
 derived UUIDs so a second run replaces its own work rather than piling more on top.
 
+## Card-edge connectors
+
+Gold fingers are a footprint, not a generator. KiCad ships them —
+`Connector_PCBEdge:BUS_PCIexpress_x1` and its wider relatives — and what a design
+has to do is *integrate* one:
+
+```yaml
+components:
+  J_PCIE:
+    part: PCIE_X1_EDGE
+    role: edge_connector
+placement:
+  J_PCIE:
+    fixed: { x: 24.5, y: 3.45, rot: 0 }
+    pour_keepout_mm: 0.6
+    reason: the fingers have to coincide with the card edge
+```
+
+`role: edge_connector` turns on four behaviours:
+
+* **the placement must be `fixed`.** A card edge is mechanical law, not a
+  preference, so the placer must not be free to move it.
+* **the outline has to agree with the footprint.** A card-edge footprint draws its
+  own `Edge.Cuts`: the tongue, the chamfered leading edge, the keying notch.
+  aipcb does **not** emit that geometry — an outline with two authors is an
+  outline waiting to disagree, and KiCad reports the result as a self-intersecting
+  board — so the `board:` block reproduces it and validation checks the two match
+  to within 0.01 mm. Where they do not, the error hands the missing vertices back
+  in the source's own frame, ready to paste.
+* **the finger field gets a pour keepout**, on the outer layers only:
+  `pour_keepout_mm` on the placement entry, half a millimetre by default. Plating
+  and pour copper must not meet at the card edge; an inner plane under the fingers
+  is not plated and is the reference the pairs entering them are designed against.
+* **the board thickness is checked against the slot**, and a note goes into the
+  report for the leading-edge bevel, measured from the footprint: it is a process
+  step rather than geometry any Gerber can carry, and a card that arrives without
+  it does not go into a slot.
+
+Nets connect to the footprint's pads the ordinary way. There is no special pad-map
+syntax and there does not need to be.
+
+**One consequence, stated because it is visible.** Because the footprint is placed
+without its own `Edge.Cuts`, KiCad's `lib_footprint_mismatch` rule reports that it
+is not byte-identical to its library copy. It is right, and there is no way to
+have both. See [ADR 0010](decisions/0010-highspeed.md).
+
+## Pair via transitions
+
+A differential pair changing layer is a pattern, not two vias, and the source
+names where it happens:
+
+```yaml
+transitions:
+  - pair: [PCIE_RXP, PCIE_RXN]
+    at: [42.4, 20.0]
+    between: [F.Cu, B.Cu]
+    return_vias: 2
+    return_within_mm: 1.2
+    return_net: GND
+    via: { drill: 0.2, diameter: 0.4 }
+    reason: the receive pair arrives on the A-side fingers, which are on the back
+```
+
+The generator lays two signal vias symmetric about `at`, on the line
+perpendicular to the pair's direction of travel, and the return vias on that same
+line — the only direction the pair does not occupy, since it arrives along the
+travel axis on one layer and leaves along it on the other. It then publishes two
+coupled segments, one per layer, and the router routes them as pairs in the
+ordinary way.
+
+**The column is wider than the pair.** Two 0.4 mm vias at a 0.44 mm pair pitch
+would leave 0.04 mm of laminate between two nets that want 0.15 mm, so the column
+opens out to `via diameter + clearance` and the halves splay to reach it. That
+splay is uncoupled length and is counted against `max_uncoupled_mm` like any
+other: the discontinuity is real, and the point is that it is measured rather than
+avoided by refusing the pair.
+
+`return_within_mm` is a limit, not a target. A return via that cannot sit inside
+it is not placed, and the report says two-of-two or one-of-two rather than
+claiming both. Per transition it also reports the **stub**: the barrel left below
+the layers the signal uses, computed from the stackup. An outer-to-outer through
+via has none; a transition that stops on an inner layer abandons the rest.
+
+Where a pair transitions, `aipcb check` measures the whole conductor's skew across
+both segments rather than each segment's own.
+
 ## Layout intent
 
 Everything the compiler is free to interpret: how thick the stack is, how tightly
@@ -945,6 +1118,33 @@ Selected checks:
 | `fanout-via-in-pad` | warning | Via-in-pad was asked for, and costs money at the fabricator. |
 | `diff-pair-not-coupled` | warning | A pair was routed as two ordinary nets, with the measurement that decided it. |
 | `diff-pair-skew` | warning | A pair misses its `max_skew_mm` and could not be meandered into it. |
+| `diff-pair-wall-hugging` | warning | A controlled-impedance run stayed within 3x its gap of another copper feature for longer than 5x it, and re-tightening did not move it. |
+| `impedance-geometry-override` | warning | An explicit width more than 10% from what the impedance target implies, with the impedance it will actually produce. |
+| `impedance-unreachable` | warning | The target is outside what this gap and stackup can reach. |
+| `impedance-reference-missing` | error | `reference:` names a layer the board does not have. |
+| `impedance-reference-is-signal-layer` | error | A pair cannot be its own return path. |
+| `impedance-reference-not-a-plane` | warning | The reference layer is not declared a plane, so the router may put signals on it. |
+| `impedance-reference-not-poured` | warning | A reserved layer with no copper on it is not a reference. |
+| `impedance-no-uncoupled-budget` | warning | `coupling: tight` with no `max_uncoupled_mm` to enforce. |
+| `impedance-rules-inert` | warning | High-speed fields on a class with no `impedance_diff_ohm`. |
+| `edge-connector-notch-missing` | error | The outline does not reproduce the footprint's edge geometry. The hint carries the vertices. |
+| `edge-connector-off-edge` | error | None of the footprint's edge geometry is on the board boundary. |
+| `edge-connector-not-fixed` | error | A card edge without a `fixed:` placement. |
+| `edge-connector-thickness` | warning | The board is not the thickness the slot expects. |
+| `ac-coupling-asymmetric` | warning | The two coupling capacitors are out of line along the route, which is skew built into the placement. |
+| `ac-coupling-unpaired` | warning | One capacitor marked `ac_coupling` with no partner in the other half. |
+| `transition-unknown-net` / `transition-not-a-pair` / `transition-unknown-layer` | error | A `transitions:` entry that does not describe anything on this board. |
+| `transition-return-vias` | warning | Fewer return vias than asked for fitted inside `return_within_mm`. |
+| `hs-reference-broken` | warning | A controlled-impedance track crosses a void or a net change in its declared reference plane, with the length and the position. |
+| `hs-width-deviation` / `hs-gap-deviation` | warning | The copper is more than 10% from the impedance-derived geometry. |
+| `hs-skew` | warning | A pair misses its budget after meanders, measured across every segment. |
+| `hs-via-stub` | warning | A through via leaves more stub than the threshold, with the barrel and the layers the signal used. |
+| `edge-connector-outline-matches` | info | The outline reproduces the footprint's edge geometry. |
+| `edge-connector-fab-note` | info | The finger set-back, and what the fabricator has to be told about plating and the bevel. |
+| `ac-coupling` | info | The two capacitors, the pairs they join, and how level they are. |
+| `transition-generated` | info | How many transitions were laid, the return vias placed, and the worst stub. |
+| `hs-reference-continuous` | info | How much controlled-impedance track was projected, and that nothing broke under it. |
+| `hs-pair-geometry` / `hs-coupling` / `hs-via-stubs` | info | The measurements, whether or not anything is wrong. |
 | `diff-pair-coupled` | info | A pair was routed as a pair, with its gap and fan-out. |
 | `diff-pair-length-matched` | info | Meander added to close a pair's skew. |
 | `route-repaired` | info | A connection was re-routed against the board as it stood. |
