@@ -29,6 +29,7 @@ from aipcb.kicad.symbols import SymbolNotFound, resolve_symbol
 from aipcb.model.board import Arc, Segment
 from aipcb.model.layout import (
     COPPER_THICKNESS_MM,
+    DEFAULT_LOSS_TANGENT,
     Layout,
     Stackup,
     StackupLayer,
@@ -170,10 +171,13 @@ def _stackup(layout: Layout | None) -> SNode:
 def _dielectric(index: int, thickness: float, declared: list[StackupLayer]) -> SNode:
     material = "FR4"
     epsilon = 4.5
+    loss = DEFAULT_LOSS_TANGENT
     for layer in declared:
         if layer.type in ("core", "prepreg"):
             material = layer.material or material
             epsilon = layer.epsilon_r or epsilon
+            if layer.loss_tangent is not None:
+                loss = layer.loss_tangent
             break
     return SNode("layer").add(
         quoted(f"dielectric {index}"),
@@ -181,7 +185,7 @@ def _dielectric(index: int, thickness: float, declared: list[StackupLayer]) -> S
         SNode("thickness").add(num(thickness)),
         SNode("material").add(quoted(material)),
         SNode("epsilon_r").add(num(epsilon)),
-        SNode("loss_tangent").add(num(0.02)),
+        SNode("loss_tangent").add(num(loss)),
     )
 
 

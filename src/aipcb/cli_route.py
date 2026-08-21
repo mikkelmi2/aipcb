@@ -33,12 +33,9 @@ def _build(
     design: Path, out: Path, report: Report
 ) -> tuple[BuildResult, Path, SNode]:
     """Build a design and hand back the parsed board alongside it."""
-    from aipcb.compile.build import build_design
-    from aipcb.kicad.sexpr import parse
+    from aipcb.route.pipeline import build_and_parse
 
-    result = build_design(design, out_dir=out, report=report)
-    board_path = next(p for p in result.written if p.suffix == ".kicad_pcb")
-    return result, board_path, parse(board_path.read_text(encoding="utf-8"))
+    return build_and_parse(design, out, report)
 
 
 @route_app.command("check")
@@ -100,56 +97,21 @@ def route_all(
     as_json: JsonOpt = False,
 ) -> None:
     """Build a design and route it, writing tracks into the board."""
-    from aipcb.kicad.sexpr import dump
-    from aipcb.route.emit import attach_copper, drop_generated, generated_uuids
-    from aipcb.route.plan import RoutedBoard, route_board
-    from aipcb.route.stitch import stitch_board, stitch_uuids
-    from aipcb.route.transition import transition_uuids
+    from aipcb.route.pipeline import route_design
 
     report = Report()
     target = out or design.parent
     try:
-        result, board_path, board = _build(design, target, report)
-        topologies = tuple(result.netlist.layout.routes) if result.netlist.layout else ()
         chosen = (
             tuple(part.strip() for part in layers.split(",") if part.strip())
             if layers
             else None
         )
-
-        def run(manual_copper: bool) -> RoutedBoard:
-            return route_board(
-                board,
-                result.netlist,
-                report,
-                layers=chosen,
-                topologies=topologies,
-                congestion=congestion,
-                manual_copper=manual_copper,
-            )
-
-        # Copper already in the board is either somebody's hand routing, which must
-        # be preserved and routed around, or this command's own output from a
-        # previous run, which must be replaced rather than duplicated. Routing once
-        # while ignoring all of it says which UUIDs *we* would produce, and anything
-        # in the board carrying one of those is ours. Only run when there is copper
-        # to sort out, which on a first build there is not.
-        #
-        # Last run's stitching vias go first, and before the router looks at the
-        # board at all: they are ours too, and leaving them in would make this run's
-        # routing depend on the previous run's stitching, which is the end of
-        # byte-stability.
-        drop_generated(board, stitch_uuids(result.netlist))
-        drop_generated(board, transition_uuids(result.netlist))
-        if list(board.children("segment")) or list(board.children("via")):
-            owned = generated_uuids(run(False).connections)
-            drop_generated(board, owned)
-        routed = run(True)
-        count, via_count = attach_copper(
-            board, routed.connections, sorted(result.netlist.nets)
+        done = route_design(
+            design, target, report, layers=chosen, congestion=congestion
         )
-        stitched = stitch_board(board, result.netlist, report)
-        board_path.write_text(dump(board), encoding="utf-8")
+        routed, board_path = done.routed, done.board_path
+        count, via_count, stitched = done.segments, done.vias, done.stitched
     except SourceError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2) from exc
