@@ -131,6 +131,32 @@ class BoardFrame:
     def cutout_polygons(self) -> tuple[tuple[Point, ...], ...]:
         return tuple(tessellate(ring) for ring in self.cutouts)
 
+    def kicad_bounds(self) -> tuple[Point, Point]:
+        """The outline's bounding box in KiCad coordinates, as (min, max)."""
+        points = self.polygon()
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        return (min(xs), min(ys)), (max(xs), max(ys))
+
+    @property
+    def aux_origin(self) -> Point:
+        """The board's bottom-left corner, in KiCad coordinates.
+
+        This is what KiCad calls the drill/place file origin, and it is the frame
+        fabrication output is written in. The bottom-left corner is the deliberate
+        choice: KiCad negates Y when it plots, so an origin at the *lowest* edge of
+        the board -- the largest KiCad Y -- is the only corner that makes every
+        exported coordinate non-negative. Anything above it plots as a negative
+        number, which consumers that parse unsigned coordinates drop silently.
+
+        It is also the corner the rest of the world already agrees on: the source
+        frame's own origin (:mod:`aipcb.compile.frame` maps source (0, 0) here) and
+        the corner Gerber consumers measure from. And it is a pure function of the
+        outline, so it moves only when the board does.
+        """
+        (min_x, _), (_, max_y) = self.kicad_bounds()
+        return (min_x, max_y)
+
     def shape(self) -> Any:
         """The board as a Shapely polygon with a hole per cutout."""
         from shapely.geometry import Polygon as ShapelyPolygon

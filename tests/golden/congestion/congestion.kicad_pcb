@@ -76,6 +76,7 @@
 		(pad_to_mask_clearance 0)
 		(allow_soldermask_bridges_in_footprints no)
 		(tenting front back)
+		(aux_axis_origin 100 120)
 	)
 	(net 0 "")
 	(net 1 "SWAP_A")
