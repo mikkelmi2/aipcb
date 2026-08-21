@@ -25,8 +25,14 @@ net_classes:
     prefer_layers: [F.Cu]
     description: 90 ohm differential on 1.6 mm FR4 with a solid ground plane below.
   power:
-    trace_width_mm: 0.6
+    trace_width_mm: 0.3
     clearance_mm: 0.25
+    description: Narrow for a power rail, and deliberately so. VBUS lands on a
+      0.65 mm-pitch Micro-B pin, and a track wider than about 0.4 mm cannot reach
+      that pad without breaking clearance to its neighbours. Real designs neck the
+      trace down at the connector and widen it afterwards; aipcb routes one width
+      per net, so the width is the one that fits. 0.3 mm carries well over the
+      0.5 A this port is specified for.
 
 nets:
   VBUS:
@@ -155,11 +161,14 @@ constraints:
     mm: 3.0
     reason: The bulk capacitor is tall enough to foul the connector's shell.
 
-layout:
+board:
+  # The mechanical boundary, in the board's own frame: millimetres, Y up,
+  # origin at the bottom-left corner. See docs/format.md.
+  origin: bottom_left
   outline:
-    shape: rect
-    width_mm: 38.0
-    height_mm: 40.0
+    rect: [38.0, 40.0]
+
+layout:
   stackup:
     copper_layers: 2
     thickness_mm: 1.6

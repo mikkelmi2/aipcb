@@ -17,6 +17,9 @@ key must be reported, never silently ignored.
 - [Modules and instances](#modules-and-instances)
 - [Constraints](#constraints)
 - [Net classes](#net-classes)
+- [The board](#the-board)
+- [Mechanical placement](#mechanical-placement)
+- [Fanout](#fanout)
 - [Layout intent](#layout-intent)
 - [Part libraries](#part-libraries)
 - [Elaboration](#elaboration)
@@ -40,7 +43,10 @@ components: {}          # flat components             (layer 1)
 modules: {}             # reusable subcircuits        (layer 1)
 instances: {}           # module instantiations       (layer 1)
 constraints: []         # placement intent            (layer 1)
-layout: {}              # board, stackup, placement   (layer 2)
+board: {}               # outline, cutouts, edge      (layer 2)
+placement: {}           # mechanical placement        (layer 2)
+fanout: {}              # escape patterns             (layer 2)
+layout: {}              # stackup, packing, routes    (layer 2)
 ```
 
 Only `name` and at least one of `components` / `instances` are required.
@@ -232,25 +238,314 @@ net_classes:
     impedance_ohm: 90.0
     max_skew_mm: 0.15
     prefer_layers: [F.Cu]
+    layer_forbid: [In1.Cu]
+    priority: 90
+    rip_up: protected
     description: 90 ohm differential on 1.6 mm FR4 with a solid plane below.
 ```
 
 Also accepted: `via_diameter_mm`, `via_drill_mm` (the drill must be smaller than
 the diameter — this is checked).
 
+### Layers and priority
+
+Four fields tell the router what a class is worth and where it may go.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `prefer_layers` | all signal layers | Layers this class should use if it can. Naming a **plane** here is how a class opts in to one; it is the only way anything reaches a plane. Other layers stay available at a penalty. |
+| `layer_forbid` | none | Layers this class may never use. Outranks `prefer_layers`, and naming a layer in both is an error. |
+| `priority` | see below | 0–100. Higher routes first and is harder to push aside. |
+| `rip_up` | `normal` | `never`, `protected` or `normal`: how readily the negotiating router may move this class out of a contested corridor. |
+
+An unset `priority` is filled in from the class name — `diff_pair` and `usb` 80,
+`high_speed` and `clock` 75, `analog` 65, `power` 60, `ground` 55, everything else
+50, and any differential pair 80 whatever its class says. Those are the router's own
+ordering heuristic expressed as defaults, so there is one mechanism rather than two.
+
+Priority does two things. It orders the first routing pass, and it decides who keeps
+a corridor when two nets want the same one: on each contested cut the net that is
+hardest to rip up stays and the rest re-route. `rip_up: protected` multiplies that
+resistance by about a dozen ordinary nets; `rip_up: never` means the net is moved
+only as the last thing tried before the board is declared unroutable — and if that
+happens, the failure report names it. The numbers are in
+[`routing-costs.md`](routing-costs.md).
+
+## The board
+
+The board's mechanical boundary is its own top-level block, because it is
+mechanical *law* rather than intent the compiler may interpret — and because
+changing it should be a big diff.
+
+```yaml
+board:
+  origin: bottom_left        # the source frame's origin. Y is up.
+  outline:
+    rect: [80, 50]           # shorthand for the common case
+    corner_radius: 2         # optional fillet on a rect's corners
+    # or the full form:
+    # polygon:
+    #   - [0, 0]
+    #   - [80, 0]
+    #   - { arc_to: [85, 5], center: [80, 5] }
+    #   - [85, 50]
+    #   - [0, 50]
+  cutouts:
+    - rect: [[70, 20], [78, 30]]
+      reason: "flex cable to display"
+    - slot: { from: [10, 48], to: [25, 48], width: 2 }
+      reason: "cable strain relief"
+  edge_clearance: 0.3        # how far copper stays from the edge and the cutouts
+```
+
+### The coordinate convention
+
+**The source frame is millimetres, Y up, with the origin at the bottom-left corner
+of the outline.** `origin: bottom_left` says so explicitly rather than leaving it to
+be inferred, because KiCad's board space is Y *down* and a silent mismatch between
+the two is the kind of bug that looks right until the board comes back mirrored.
+
+The emitter converts, once, in one place:
+
+```
+kicad_x = origin_x + (x - min_x)
+kicad_y = origin_y + (max_y - y)
+```
+
+where `origin` is `layout.origin_mm`, which is where the board's top-left corner
+sits in KiCad's coordinate space. So a point at the *top* of the board in the source
+— larger `y` — comes out at a *smaller* KiCad `y`. Compass directions follow the
+source frame: **north is +y**, which is the top of the board as KiCad draws it.
+
+The one place this does *not* apply is the older `layout.placement.rules[].region_mm`,
+which predates the board frame and stays in its own: Y down, relative to
+`layout.origin_mm`. New designs should use `placement:` below.
+
+### Outlines
+
+`rect: [width, height]` is the shorthand, and is what most boards want. A `polygon:`
+is a list of vertices, counter-clockwise, closing implicitly. A vertex is either
+`[x, y]` or an arc:
+
+```yaml
+- { arc_to: [85, 5], center: [80, 5], direction: ccw }
+```
+
+which draws an arc from the *previous* vertex to `arc_to` about `center`.
+`direction` defaults to `ccw`, which is the direction that rounds off the corner of
+a counter-clockwise polygon. Both ends have to be the same distance from the
+centre; `aipcb validate` says so, with both radii, when they are not.
+
+Arcs are emitted to KiCad as arcs — `gr_arc` on `Edge.Cuts` — not as chords.
+
+### Cutouts
+
+A cutout is a hole through the board: `rect: [[x1, y1], [x2, y2]]`, a milled
+`slot: { from, to, width }`, or a `polygon:` in the same form as the outline's.
+
+Each one carries a `reason:`, for the same reason a `fixed:` placement does. A
+cutout is mechanical law, not reclaimable routing area, and an agent reading the
+source has no other way to tell the difference. A cutout with no reason is a
+warning.
+
+Cutouts pierce every layer, and the router knows it: a hole is a hole in every
+layer's free space, so two points either side of a slot are genuinely in different
+homotopy classes and going round it one way is a different route from going round
+it the other. `aipcb validate` checks that every cutout lies inside the outline and
+that no two of them overlap.
+
+### Edge clearance
+
+`edge_clearance` is how far copper must stay from the board edge and from every
+cutout. It feeds two things at once: the router keeps to it, and it is written into
+the project as KiCad's `min_copper_edge_clearance` rule, so `kicad-cli pcb drc`
+checks the same figure. A design that says nothing gets KiCad's own default,
+0.5 mm, from both.
+
+Net-class geometry works the same way. A class asking for something *tighter* than
+KiCad's board minimums — a 0.4 mm via for a 0.5 mm-pitch package, say — has those
+minimums written into the project too, so DRC checks the board against the rules the
+source stated rather than against defaults it never agreed to.
+
+## Mechanical placement
+
+`placement:` is where a component's position comes from outside the electrical
+design: a connector aligned to an enclosure opening, a mounting hole on a bolt
+circle, a button under a moulded cap, an LED under a light pipe. Coordinates are in
+the board frame `board:` defines, so a `placement:` block needs a `board:` block.
+
+```yaml
+placement:
+  J1:                                # fully fixed: mechanical law
+    fixed: { x: 0, y: 15, rot: 90, side: front }
+    reason: "enclosure port opening, see mech/enclosure-v3.step"
+  H1:
+    fixed: { x: 3.5, y: 3.5 }
+    role: mounting_hole
+  SW1:                               # partially constrained
+    edge: { side: north, offset_range: [20, 40], rot: 0 }
+  D5:
+    region: { rect: [[10, 10], [30, 25]] }   # anywhere inside this area
+  # everything else: the relative intents under `constraints:` and `layout:`
+```
+
+Three levels, and they outrank each other in this order:
+
+| Level | Means |
+|---|---|
+| `fixed` | An exact position and rotation. The placer never moves it. |
+| `edge` / `region` | The placer chooses, but only from the set the source allows. |
+| relative intent | `constraints:` and `layout.placement`. Groups, proximity, keep-apart. |
+
+A relative intent that names a fixed part constrains only the *other* parts: the
+group deforms around the anchor, and the anchor does not move. A cluster that
+contains an anchor is packed *around* it, which is how a decoupling group follows
+its connector to the board edge without anything new being said.
+
+`fixed` coordinates are the footprint's own origin — the point KiCad stores as its
+position — and are **not** snapped to `layout.placement.grid_mm`. A grid is a
+convenience for parts nobody cares about the exact position of; a connector aligned
+to an enclosure is not one of them.
+
+`edge` sides are `north`, `south`, `east`, `west` in the source frame, and
+`offset_range` is how far along that edge the part may sit — measured in `x` for
+north and south, in `y` for east and west. On a board that is not a rectangle, the
+edge is found from the real outline at the chosen offset, so a part on the north
+edge of an L-shaped board sits against the boundary that is actually above it.
+
+`side: back` on a `fixed` placement still validates, warns, and places on the
+front. Mirroring a footprint is deferred rather than approximated — see
+[`roadmap.md`](roadmap.md).
+
+`reason:` is free text and strongly encouraged on `fixed`: it is what tells the next
+reader — or the next agent — that the part *cannot* move, and where the authority
+for that lives. A `fixed` placement with neither `reason:` nor `role:` is a warning.
+
+### Conflicts, caught before anything is built
+
+`aipcb validate` checks the mechanical model against geometry alone, with no build:
+
+| Code | Severity | Means |
+|---|---|---|
+| `fixed-courtyards-overlap` | error | Two fixed parts want the same board area. |
+| `fixed-part-outside-outline` | error | A fixed part falls outside the real polygon — not its bounding box. |
+| `part-over-cutout` | error | A courtyard covers a hole there is no board in. |
+| `placement-set-empty` | error | An `edge` or `region` allows no position that fits. |
+| `cutout-outside-outline` | error | A hole reaches past the board edge. |
+| `cutouts-overlap` | error | Two holes share area, so they are one hole. |
+| `board-arc-inconsistent` | error | An arc's two ends are different distances from its centre. |
+| `board-outline-self-intersecting` | error | The outline crosses itself. |
+| `constraint-unreachable` | warning | A `max_distance` the anchors already make impossible. |
+| `fixed-placement-without-reason` | warning | A position nobody can tell is law. |
+| `cutout-without-reason` | warning | A hole nobody can tell is law. |
+
+The last is deliberately conservative. `constraint-unreachable` reasons with
+intervals — the closest two allowed sets can possibly be — and speaks only when that
+lower bound already exceeds what the constraint asks for. A complaint means the
+constraint really cannot hold; silence means nothing either way.
+
+### When somebody moves a part in KiCad
+
+A `fixed:` placement is mechanical law, so `aipcb build` puts a hand-moved part back
+where the source says — and reports that it did, as `fixed-placement-drift`. Movable
+parts keep M6's behaviour unchanged: the source never said where they go, so the
+human's position stands.
+
+When the board is right and the YAML is stale, `aipcb sync-placement` goes the other
+way:
+
+```console
+$ aipcb sync-placement examples/enclosure/design.yaml
+J1 moved 0.447 mm from its fixed position in source: (4, 17) -> (4.4, 16.8)
+
+1 part moved. Re-run with --apply to write these positions into the source, or
+run `aipcb build` to put them back where the source says.
+
+$ aipcb sync-placement examples/enclosure/design.yaml --apply
+```
+
+The edit is surgical: the `fixed:` line is rewritten and every other line of the
+file — comments, `reason:`, the rest of the design — is left exactly as it was. An
+`edge` or `region` entry becomes a `fixed` one, because moving the part by hand is
+what that means. `--json` lists the drift without asking anything.
+
+## Fanout
+
+A fine-pitch package is where rubber-band routing meets its density ceiling. A
+QFN-32 on a 0.5 mm pitch leaves about 0.25 mm between neighbouring pad edges, and a
+0.25 mm track with 0.2 mm clearance needs 0.65 mm of corridor: there is nothing to
+get out through.
+
+Escaping one is not a routing problem, it is a *pattern*, and `fanout:` asks for it:
+
+```yaml
+fanout:
+  U1:
+    style: auto          # auto | dogbone | via_in_pad | none
+    escape_layers: [In1.Cu, B.Cu]
+    via: { drill: 0.2, diameter: 0.45 }   # defaults from the net class if omitted
+    reason: Nothing escapes a 0.5 mm pitch on the layer the part is on.
+```
+
+`aipcb route all` runs the generators first, then routes between the escape
+terminals. The generator lays a short stub from each pad to a via just clear of the
+part, registers that copper as a fixed obstacle, and publishes the via as the
+terminal the router sees *in place of* the package pad. The router that runs
+afterwards has no idea a fanout happened.
+
+| `style` | What it lays |
+|---|---|
+| `auto` | Looks at the geometry: more than one interior pad means an area array, which gets dog-bones; anything else gets perimeter stubs. |
+| `dogbone` | A via in the gap the pad's quadrant points toward — the classic BGA escape. |
+| `via_in_pad` | A via at the pad centre. Never chosen for you: under a solder ball it needs filling and capping, and costs real money. |
+| `none` | Nothing. The router reaches the pads itself, or says it cannot. |
+
+Details that matter:
+
+* **The barrel reaches every layer named.** `escape_layers` is where the signal may
+  be picked up; the via spans from the package's own layer to the deepest of them,
+  so the router can take whichever corridor it likes.
+* **Unused pads get no fanout.** A pad the design never connects has nothing to
+  escape to.
+* **Neighbouring escapes stagger into two rows**, decided by where the pad is rather
+  than by where it comes in a list. At 0.5 mm pitch a single row of 0.45 mm vias
+  would be one continuous piece of copper.
+* **An interior pad on a perimeter package is a thermal pad** and gets a via straight
+  through it. That is not the expensive via-in-pad case: what costs money is a filled
+  and capped via under a solder ball, and an exposed pad's thermal vias are neither.
+* **A power or ground pad may get several vias**, in a short column along the escape.
+  The model is that one via carries about as much current as a track as wide as its
+  barrel, so a net whose class asks for a fat track asks for proportionally more
+  vias. It is a rule of thumb, and it is stated rather than hidden.
+* **Everything is keyed by pad instance**, never by pad number: a QFN's exposed pad
+  and its pin 1 are both real copper and only one of them is called "1".
+* **The escape has to fit.** The generator respects the package's own pads, its
+  courtyard, the board outline and every cutout, and where a pad has nowhere to go it
+  says so (`fanout-pad-not-escaped`) and leaves that pad to the router rather than
+  laying copper DRC will reject.
+* **Escapes the router did not use come back out.** The generator has to propose one
+  per pad before anything is routed; where the router reached a pad without ever
+  using the far layer, the via would join copper to nothing, so it is removed.
+
 ## Layout intent
+
+Everything the compiler is free to interpret: how thick the stack is, how tightly
+to pack, what may not be entered, and which routes were sketched by hand.
 
 ```yaml
 layout:
-  outline:
-    shape: rect          # or `polygon`, with `points_mm: [[x, y], …]`
-    width_mm: 22.0
-    height_mm: 16.0
-    corner_radius_mm: 0
   stackup:
-    copper_layers: 2     # must be even
+    copper_layers: 4     # must be even
     thickness_mm: 1.6
     finish: ENIG
+    planes:              # copper layers given over to a plane
+      - layer: In1.Cu
+        net: GND
+        reason: The reference the pair on F.Cu is designed against.
+    via_types: [through] # or blind, buried — through only, by default
+    preferred_direction: # a soft H/V hint per layer
+      F.Cu: horizontal
+      B.Cu: vertical
   placement:
     grid_mm: 0.5
     margin_mm: 2.0
@@ -261,11 +556,43 @@ layout:
         reason: The receptacle overhangs the board edge.
     keepouts:
       - region_mm: [0, 0, 5, 5]
-        layers: [F.Cu]
+        layers: [F.Cu]     # omit for every layer
         reason: Mounting hole and its washer.
   origin_mm: [100.0, 100.0]
   routes: []             # topological routing sketches
 ```
+
+`layout.origin_mm` is where the board's top-left corner sits in KiCad's coordinate
+space. Nothing about a design depends on it; it exists so the generated files open
+somewhere sensible on an A4 sheet.
+
+### The older outline block
+
+`layout.outline` still works and still means what it always meant:
+
+```yaml
+layout:
+  outline:
+    shape: rect          # or `polygon`, with `points_mm: [[x, y], …]`
+    width_mm: 22.0
+    height_mm: 16.0
+    corner_radius_mm: 0
+```
+
+Its coordinates are Y *down*, relative to `layout.origin_mm`, and it cannot express
+arcs or cutouts. Declaring both it and [`board:`](#the-board) is an error rather
+than a silent precedence rule. New designs should use `board:`; migrating is one
+block, and for a rectangle the generated files come out byte for byte identical.
+
+`layout.placement.rules[].region_mm` is in that same older frame. The
+[`placement:`](#mechanical-placement) block is the supported way to say where
+something goes.
+
+A keepout is a region nothing may enter, given relative to the board origin like
+every other region. The router honours it: no track, no via barrel, on the layers it
+names or on all of them when it names none. `examples/congestion` uses a pair of
+them to cut the board down to a single channel, which is what makes that board
+unroutable on one layer.
 
 ### Routing sketches
 
@@ -299,8 +626,29 @@ A `passes` entry is either a **pass** (`obstacle` + `side`) or a **via hop**
 Nets with no sketch are routed automatically.
 
 `aipcb route check` verifies each sketch is realizable against the current
-placement, and `aipcb route all` builds the copper. The model, the algorithm and
-the limits are in [`topology.md`](topology.md).
+placement *and* that the declared routes fit alongside each other — every corridor
+across the free space has a capacity, and a set of routes that over-subscribes one
+cannot be built however sound each route is on its own. `aipcb route all` builds the
+copper, across every signal layer the stackup allows. The model, the algorithm and
+the limits are in [`topology.md`](topology.md); what the router is minimising is in
+[`routing-costs.md`](routing-costs.md).
+
+### Layers, planes and vias
+
+A layer listed under `stackup.planes` is closed to signal routing. That is enforced,
+not advisory: nothing is placed there, and the nets that would have lived on it are
+routed as tracks on the signal layers. A net class reaches a plane only by naming it
+in `prefer_layers`. Pouring the plane is not built yet, so today a declared plane is
+a reservation.
+
+`via_types` says which spans the fabricator will build. The default is through-only,
+because blind and buried vias are a real extra cost that nobody should discover in a
+quote; a stackup that lists `blind` or `buried` gets them where they help. A via is
+modelled as a *column* — copper on every layer its barrel passes, not only the two
+it connects — so an inner-layer track never runs through a drill.
+
+`preferred_direction` is the classic H/V hint. It is soft: going against the grain
+costs 25% more per millimetre, which biases without producing staircases.
 
 ## Part libraries
 
@@ -386,10 +734,37 @@ Selected checks:
 | `voltage-rating-exceeded` | error | A part sits on a net above its rating. |
 | `asymmetric-diff-pair` | error | A pair declared from only one side. |
 | `unknown-symbol` / `unknown-footprint` | error | The KiCad binding does not resolve. |
+| `route-unrealizable` | error | A declared sketch cannot be built on this placement. |
+| `route-cut-over-subscribed` | error | Declared routes need more of a corridor than it has. |
+| `fixed-courtyards-overlap` | error | Two fixed parts want the same board area. |
+| `fixed-part-outside-outline` | error | A fixed part falls outside the real outline polygon. |
+| `part-over-cutout` | error | A courtyard covers a hole there is no board in. |
+| `placement-set-empty` | error | An `edge` or `region` allows no position that fits. |
+| `cutout-outside-outline` | error | A cutout reaches past the board edge. |
+| `cutouts-overlap` | error | Two cutouts share area, so they are one hole. |
+| `board-arc-inconsistent` | error | An arc's ends are different distances from its centre. |
+| `board-outline-self-intersecting` | error | The outline crosses itself. |
+| `unknown-mechanical-member` | error | `placement:` or `fanout:` names no such component. |
 | `voltage-derating` | warning | Under 20% margin on a voltage rating. |
 | `undriven-power-net` | warning | A power net with no pin that sources it. |
 | `role-without-target` | warning | `role: decoupling` with no `for:`. |
 | `unknown-role` | warning | A role outside the known vocabulary. |
+| `route-handed-over` | warning | A connection the router refused, with its `unrouted:` category and the corridor that blocked it. |
+| `constraint-unreachable` | warning | A `max_distance` the mechanical anchors already make impossible. |
+| `fixed-placement-drift` | warning | A `fixed` part was moved in KiCad and has been put back. |
+| `fixed-placement-without-reason` | warning | A fixed position with nothing saying it is law. |
+| `cutout-without-reason` | warning | A hole with nothing saying it is law. |
+| `fanout-pad-not-escaped` | warning | A pad the escape pattern could not clear; left to the router. |
+| `fanout-via-in-pad` | warning | Via-in-pad was asked for, and costs money at the fabricator. |
+| `diff-pair-not-coupled` | warning | A pair was routed as two ordinary nets, with the measurement that decided it. |
+| `diff-pair-skew` | warning | A pair misses its `max_skew_mm` and could not be meandered into it. |
+| `diff-pair-coupled` | info | A pair was routed as a pair, with its gap and fan-out. |
+| `diff-pair-length-matched` | info | Meander added to close a pair's skew. |
+| `route-repaired` | info | A connection was re-routed against the board as it stood. |
+| `routing-congested` | info | The negotiation did not settle. What it could not then realize legally is handed over. |
+| `fanout-generated` | info | How many escapes were laid, and for which packages. |
+| `fanout-escapes-settled` | info | Escapes the router turned out not to need, taken back out. |
+| `vias-merged` | info | Two barrels of one net through the same copper, drilled once. |
 | `unconnected-pin` | info | A declared pin the design never connects. |
 
 ## YAML notes

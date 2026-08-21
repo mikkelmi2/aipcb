@@ -16,8 +16,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from aipcb.ids import element_uuid
+from aipcb.model.board import Board
 from aipcb.model.design import Constraint, Net
 from aipcb.model.layout import Layout, NetClass
+from aipcb.model.mech import Fanout, MechPlacement
 from aipcb.model.parts import Part
 from aipcb.source import Loc
 
@@ -124,7 +126,35 @@ class Netlist:
     constraints: tuple[ElabConstraint, ...] = ()
     net_classes: dict[str, NetClass] = field(default_factory=dict)
     layout: Layout | None = None
+    board: Board | None = None
+    """The mechanical boundary, when the design declares one."""
+    placement: dict[str, MechPlacement] = field(default_factory=dict)
+    """Mechanical placement, keyed by reference designator."""
+    fanout: dict[str, Fanout] = field(default_factory=dict)
+    """Fanout intent, keyed by reference designator."""
+    unknown_mech_refs: tuple[tuple[str, str], ...] = ()
+    """``(block, name)`` for mechanical entries naming no component in the design."""
+    mech_names: dict[str, str] = field(default_factory=dict)
+    """Reference designator to the name a mechanical block used for it."""
+    locs: dict[tuple[str | int, ...], Loc] = field(default_factory=dict)
+    """Source positions for the blocks that have no elaborated object of their own."""
     description: str | None = None
+
+    # -- mechanical lookups ----------------------------------------------------
+
+    def anchored(self) -> dict[str, MechPlacement]:
+        """Components the source pins, in reference-designator order."""
+        return {r: self.placement[r] for r in sorted(self.placement)}
+
+    def fixed_refs(self) -> tuple[str, ...]:
+        return tuple(r for r in sorted(self.placement) if self.placement[r].level == "fixed")
+
+    def mech_path(self, block: str, refdes: str, *rest: str | int) -> tuple[str | int, ...]:
+        """The source path of a mechanical entry, in the words the source used."""
+        return (block, self.mech_names.get(refdes, refdes), *rest)
+
+    def mech_loc(self, block: str, refdes: str) -> Loc | None:
+        return self.locs.get((block, self.mech_names.get(refdes, refdes)))
 
     # -- lookups ---------------------------------------------------------------
 

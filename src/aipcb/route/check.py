@@ -1,4 +1,4 @@
-"""Validating route topologies against a placed board -- milestone M7a.
+"""Validating route topologies against a placed board.
 
 A sketch can be well-formed and still impossible: it can name a pad that is not on
 its net, ask to pass an obstacle that no longer exists, or describe a path around
@@ -8,34 +8,57 @@ one side of a part that placement has since made unreachable. This module answer
 Realizability is not decided by inspection. The sketch is turned into a homotopy
 class against a triangulation of the actual free space, exactly as the stretcher
 would, and a class that cannot be built is one that does not exist.
+
+There is a second question a per-route check cannot answer: whether the sketches fit
+*alongside each other*. Every cut across the free space has a capacity, and a set of
+routes that over-subscribes one cannot be built however sound each of them is on its
+own. That is what :func:`check_capacity` adds, across every layer at once.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from aipcb.diagnostics import Report
 from aipcb.kicad.sexpr import SNode
+from aipcb.model.layout import NetClass
 from aipcb.netlist import Netlist
+from aipcb.route.costs import DEFAULT_COSTS
+from aipcb.route.field import build_field, keepout_obstacles
+from aipcb.route.geometry import edge_clearance_for
 from aipcb.route.model import Pass, RouteTopology, ViaHop
-from aipcb.route.obstacles import extract_obstacles
-from aipcb.route.plan import EDGE_CLEARANCE, rules_for
-from aipcb.route.stretch import StretchError, stretch_route
-from aipcb.route.triangulate import FreeSpaceError, build_triangulation
+from aipcb.route.obstacles import RoutingEnvironment, extract_obstacles
+from aipcb.route.plan import rules_for
+from aipcb.route.stack import stack_for
+from aipcb.route.stretch import (
+    LayerGeometry,
+    RouteRules,
+    StretchError,
+    stretch_route,
+)
+from aipcb.route.triangulate import (
+    FreeSpaceError,
+    free_space,
+    triangulate_free,
+)
 
-__all__ = ["RouteCheck", "check_routes"]
+__all__ = ["RouteCheck", "check_capacity", "check_routes"]
 
 
 class RouteCheck:
     """The outcome of checking every route topology in a design."""
 
-    __slots__ = ("realizable", "unrealizable")
+    __slots__ = ("over_subscribed", "realizable", "unrealizable")
 
     def __init__(self) -> None:
         self.realizable: list[RouteTopology] = []
         self.unrealizable: list[tuple[RouteTopology, str]] = []
+        self.over_subscribed: list[dict[str, object]] = []
+        """Cuts that carry more copper than they have room for, across all layers."""
 
     @property
     def ok(self) -> bool:
-        return not self.unrealizable
+        return not self.unrealizable and not self.over_subscribed
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -44,6 +67,7 @@ class RouteCheck:
             "unrealizable": [
                 {"route": r.key(), "reason": why} for r, why in self.unrealizable
             ],
+            "over_subscribed": self.over_subscribed,
         }
 
 
@@ -51,10 +75,11 @@ def check_routes(board: SNode, netlist: Netlist, report: Report) -> RouteCheck:
     """Check every ``layout.routes`` entry against the placed board."""
     outcome = RouteCheck()
     topologies = tuple(netlist.layout.routes) if netlist.layout else ()
+    environment = extract_obstacles(board, edge_clearance=edge_clearance_for(netlist))
+    check_capacity(board, netlist, report, outcome, topologies)
     if not topologies:
         return outcome
 
-    environment = extract_obstacles(board)
     net_pads: dict[str, set[str]] = {}
     for name, net in netlist.nets.items():
         net_pads[name] = {f"{node.refdes}.{node.pin}" for node in net.nodes}
@@ -67,19 +92,13 @@ def check_routes(board: SNode, netlist: Netlist, report: Report) -> RouteCheck:
 
         rules = rules_for(netlist, route.net)
         try:
-            blocking = environment.blocking(
-                route.net,
-                route.layer,
-                clearance=rules.clearance,
-                track_width=rules.track_width,
-                clearance_of=lambda net: rules_for(netlist, net) .clearance if net else 0.0,
-            )
-            triangulation = build_triangulation(
+            stretch_route(
+                route,
                 environment,
-                blocking,
-                edge_margin=EDGE_CLEARANCE + rules.track_width / 2,
+                _layer_geometry(environment, netlist, route, rules),
+                rules,
+                stack=stack_for(netlist.layout),
             )
-            stretch_route(route, environment, triangulation, rules)
         except (StretchError, FreeSpaceError) as exc:
             reason = getattr(exc, "message", str(exc))
             outcome.unrealizable.append((route, reason))
@@ -96,6 +115,145 @@ def check_routes(board: SNode, netlist: Netlist, report: Report) -> RouteCheck:
         outcome.realizable.append(route)
 
     return outcome
+
+
+def check_capacity(
+    board: SNode,
+    netlist: Netlist,
+    report: Report,
+    outcome: RouteCheck,
+    topologies: tuple[RouteTopology, ...],
+) -> None:
+    """Decide whether the declared routes fit, cut by cut, across every layer.
+
+    This is Maley's realizability criterion and SURF's routability test, applied to
+    the sketches the source wrote: every interior edge of every layer's
+    triangulation is a *cut* across the free space, and a set of routes can be
+    turned into legal geometry exactly when no cut carries more track-plus-clearance
+    than its length allows.
+
+    It is a different question from "can this one route be built", which the rest of
+    this module answers by building it. A sketch can be perfectly realizable on its
+    own and impossible alongside the three others that want the same corridor, and
+    the only way to see that is to add the corridors up.
+    """
+    if not topologies:
+        return
+    stack = stack_for(netlist.layout, DEFAULT_COSTS)
+    environment = extract_obstacles(board, edge_clearance=edge_clearance_for(netlist))
+    classes = [
+        netlist.net_classes[name]
+        for name in sorted({net.net_class for net in netlist.nets.values()})
+        if name in netlist.net_classes
+    ] or [NetClass()]
+
+    try:
+        field_ = build_field(
+            environment,
+            stack,
+            reference_clearance=max(c.clearance_mm for c in classes),
+            reference_width=max(c.trace_width_mm for c in classes),
+            via_radius=max(c.via_diameter_mm / 2 for c in classes),
+            layout=netlist.layout,
+            origin=netlist.layout.origin_mm if netlist.layout else (0.0, 0.0),
+        )
+    except FreeSpaceError:
+        return
+
+    owners: dict[tuple[str, int], list[str]] = {}
+    for route in topologies:
+        rules = rules_for(netlist, route.net)
+        demand = rules.track_width + rules.clearance
+        try:
+            built = stretch_route(
+                route,
+                environment,
+                _layer_geometry(environment, netlist, route, rules),
+                rules,
+                stack=stack,
+            )
+        except (StretchError, FreeSpaceError):
+            continue  # reported as unrealizable by the per-route check
+        for leg in built.legs:
+            layer_field = field_.layers.get(leg.layer)
+            if layer_field is None:
+                continue
+            for edge in layer_field.cuts_crossed(leg.points):
+                layer_field.used[edge] += demand
+                owners.setdefault((leg.layer, edge), []).append(route.net)
+
+    for layer, edges in field_.congested().items():
+        for edge in edges:
+            layer_field = field_.layers[layer]
+            nets = sorted(set(owners.get((layer, edge), ())))
+            outcome.over_subscribed.append(
+                {
+                    "layer": layer,
+                    "width_mm": round(layer_field.capacity[edge], 3),
+                    "demand_mm": round(layer_field.used[edge], 3),
+                    "nets": nets,
+                }
+            )
+            report.error(
+                "route-cut-over-subscribed",
+                f"{', '.join(nets)} together need "
+                f"{layer_field.used[edge]:.2f} mm of a corridor on {layer} that is "
+                f"{layer_field.capacity[edge]:.2f} mm wide",
+                path=("layout", "routes"),
+                hint="one of them has to go somewhere else: another layer, another "
+                "side of the obstacle between them, or a different placement",
+            )
+
+
+def _layer_geometry(
+    environment: RoutingEnvironment,
+    netlist: Netlist,
+    route: RouteTopology,
+    rules: RouteRules,
+) -> dict[str, LayerGeometry]:
+    """One view of each layer the route uses, inflated by what this route needs.
+
+    The route's own two pads are open to it -- it has to be able to land on them --
+    and every other pad on its net is not, because a track that clips one on the way
+    past leaves a copper sliver.
+    """
+    open_pads = frozenset(
+        key
+        for key in (
+            environment.resolve_pad(route.from_),
+            environment.resolve_pad(route.to),
+        )
+        if key
+    )
+    # Keepouts are part of the environment here for the same reason they are when
+    # the board is routed: a check that ignores them says a route is realizable when
+    # the router will refuse to build it.
+    guarded = replace(environment, obstacles=dict(environment.obstacles))
+    for obstacle in keepout_obstacles(
+        netlist.layout, netlist.layout.origin_mm if netlist.layout else (0.0, 0.0)
+    ):
+        guarded.obstacles[obstacle.name] = obstacle
+
+    geometry: dict[str, LayerGeometry] = {}
+    for layer in dict.fromkeys(route.layers_used()):
+        free = free_space(
+            guarded,
+            guarded.blocking(
+                route.net,
+                layer,
+                clearance=rules.clearance,
+                track_width=rules.track_width,
+                clearance_of=lambda net: rules_for(netlist, net).clearance
+                if net
+                else 0.0,
+                open_pads=open_pads,
+            ),
+            edge_margin=guarded.edge_clearance + rules.track_width / 2,
+        )
+        geometry[layer] = LayerGeometry(
+            layer=layer, triangulation=triangulate_free(free), free=free
+        )
+    return geometry
 
 
 def _structural_problems(

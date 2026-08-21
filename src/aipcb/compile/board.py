@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 
+from aipcb.compile.frame import BoardFrame, auto_frame, frame_for
 from aipcb.compile.place import BoardPlacement, plan_placement
 from aipcb.compile.preserve import FINGERPRINT_PROPERTY, component_fingerprint
 from aipcb.diagnostics import Report
@@ -23,10 +24,23 @@ from aipcb.ids import element_uuid, net_codes
 from aipcb.kicad.footprints import Extent, footprint_extent, resolve_footprint
 from aipcb.kicad.sexpr import Atom, SNode, num, quoted, sym
 from aipcb.kicad.symbols import SymbolNotFound, resolve_symbol
-from aipcb.model.layout import BoardOutline, Layout, StackupLayer
+from aipcb.model.board import Arc, Segment
+from aipcb.model.layout import (
+    COPPER_THICKNESS_MM,
+    Layout,
+    Stackup,
+    StackupLayer,
+    copper_layer_names,
+)
 from aipcb.netlist import Netlist
 
-__all__ = ["BOARD_VERSION", "build_board", "standard_layers", "unconnected_net_name"]
+__all__ = [
+    "BOARD_VERSION",
+    "build_board",
+    "edge_geometry",
+    "standard_layers",
+    "unconnected_net_name",
+]
 
 #: The ``.kicad_pcb`` format version this writer emits, as KiCad 9.0 writes it.
 BOARD_VERSION = "20241229"
@@ -60,14 +74,27 @@ _TECHNICAL_LAYERS: tuple[tuple[int, str, str, str], ...] = (
 )
 
 
-def standard_layers(copper_count: int = 2) -> SNode:
-    """The layer table for a board with ``copper_count`` copper layers."""
+def standard_layers(
+    copper_count: int = 2, planes: frozenset[str] = frozenset()
+) -> SNode:
+    """The layer table for a board with ``copper_count`` copper layers.
+
+    A layer the stackup gave over to a plane is written as ``power`` rather than
+    ``signal``, which is how KiCad itself labels one. The router already refuses to
+    put signals there; saying so in the board means a human opening it sees the
+    same rule.
+    """
     node = SNode("layers")
-    node.add(SNode(str(FRONT_CU)).add(quoted("F.Cu"), sym("signal")))
+
+    def role(name: str) -> str:
+        return "power" if name in planes else "signal"
+
+    node.add(SNode(str(FRONT_CU)).add(quoted("F.Cu"), sym(role("F.Cu"))))
     for index in range(1, copper_count - 1):
         number = 2 + index * 2
-        node.add(SNode(str(number)).add(quoted(f"In{index}.Cu"), sym("signal")))
-    node.add(SNode(str(BACK_CU)).add(quoted("B.Cu"), sym("signal")))
+        inner = f"In{index}.Cu"
+        node.add(SNode(str(number)).add(quoted(inner), sym(role(inner))))
+    node.add(SNode(str(BACK_CU)).add(quoted("B.Cu"), sym(role("B.Cu"))))
     for number, name, kind, alias in _TECHNICAL_LAYERS:
         entry = SNode(str(number)).add(quoted(name), sym(kind))
         if alias:
@@ -85,7 +112,6 @@ def _stackup(layout: Layout | None) -> SNode:
     """The physical stack, which is what impedance and DRC depend on."""
     stack = layout.stackup if layout else None
     copper_count = stack.copper_layers if stack else 2
-    total = stack.thickness_mm if stack else 1.6
     finish = (stack.finish if stack else None) or "None"
 
     node = SNode("stackup")
@@ -100,14 +126,14 @@ def _stackup(layout: Layout | None) -> SNode:
     )
 
     declared = list(stack.layers) if stack and stack.layers else []
-    copper_thickness = 0.035
+    copper_thickness = COPPER_THICKNESS_MM
     # The dielectric takes whatever the copper does not, so the total board
-    # thickness matches what the source asked for rather than drifting.
-    dielectric = max(total - copper_count * copper_thickness - 0.02, 0.05)
-    inner_dielectrics = max(copper_count - 1, 1)
-    per_dielectric = round(dielectric / inner_dielectrics, 4)
+    # thickness matches what the source asked for rather than drifting. The
+    # arithmetic lives on `Stackup` because the router needs the same number: a
+    # via barrel's length is what it adds to a length-matched net.
+    per_dielectric = (stack or Stackup()).dielectric_thickness_mm
 
-    copper_names = ["F.Cu", *[f"In{i}.Cu" for i in range(1, copper_count - 1)], "B.Cu"]
+    copper_names = list(copper_layer_names(copper_count))
     for index, name in enumerate(copper_names):
         node.add(
             SNode("layer").add(
@@ -171,46 +197,64 @@ def _setup(layout: Layout | None) -> SNode:
 # ---------------------------------------------------------------------------
 
 
-def _outline(outline: BoardOutline | None, origin: tuple[float, float]) -> list[SNode]:
-    """Draw the board edge on ``Edge.Cuts``.
+def edge_geometry(frame: BoardFrame) -> list[SNode]:
+    """Draw the board edge and every cutout on ``Edge.Cuts``.
 
     Without an edge KiCad has no board: DRC cannot tell inside from outside and
-    fabrication output is meaningless. A design that declares no outline gets a
-    rectangle big enough for what was placed, which is more useful than nothing.
+    fabrication output is meaningless. A cutout is drawn the same way -- KiCad reads
+    a closed loop inside the outline as a hole -- so a flex-tail window and the board
+    edge itself are one mechanism, which is what lets the router treat them as one
+    too.
+
+    The rings arrive already canonicalised by :mod:`aipcb.compile.frame`, so the
+    segment order is a function of the board rather than of how the source happened
+    to write it.
     """
-    if outline is None:
-        return []
-    ox, oy = origin
-    if outline.shape == "rect":
-        width = outline.width_mm or 100.0
-        height = outline.height_mm or 80.0
-        corners = [
-            (ox, oy), (ox + width, oy), (ox + width, oy + height), (ox, oy + height),
-        ]
-    else:
-        corners = [(ox + x, oy + y) for x, y in outline.points_mm]
-
-    segments: list[SNode] = []
-    for index, start in enumerate(corners):
-        end = corners[(index + 1) % len(corners)]
-        segments.append(
-            SNode("gr_line").add(
-                SNode("start").add(num(start[0]), num(start[1])),
-                SNode("end").add(num(end[0]), num(end[1])),
-                SNode("stroke").add(
-                    SNode("width").add(num(EDGE_WIDTH)), SNode("type").add(sym("default"))
-                ),
-                SNode("layer").add(quoted("Edge.Cuts")),
-                SNode("uuid").add(quoted(element_uuid("edge", index))),
+    nodes: list[SNode] = []
+    for index, segment in enumerate(frame.outline):
+        nodes.append(_edge_node(segment, element_uuid("edge", index)))
+    for cut, ring in enumerate(frame.cutouts):
+        for index, segment in enumerate(ring):
+            nodes.append(
+                _edge_node(segment, element_uuid("edge", "cutout", cut, index))
             )
+    return nodes
+
+
+def _edge_node(segment: Segment, uuid: str) -> SNode:
+    """One ``Edge.Cuts`` graphic: a line, or an arc written the way KiCad writes one."""
+    stroke = SNode("stroke").add(
+        SNode("width").add(num(EDGE_WIDTH)), SNode("type").add(sym("default"))
+    )
+    if isinstance(segment, Arc):
+        return SNode("gr_arc").add(
+            SNode("start").add(num(segment.a[0]), num(segment.a[1])),
+            SNode("mid").add(num(segment.mid[0]), num(segment.mid[1])),
+            SNode("end").add(num(segment.b[0]), num(segment.b[1])),
+            stroke,
+            SNode("layer").add(quoted("Edge.Cuts")),
+            SNode("uuid").add(quoted(uuid)),
         )
-    return segments
+    return SNode("gr_line").add(
+        SNode("start").add(num(segment.a[0]), num(segment.a[1])),
+        SNode("end").add(num(segment.b[0]), num(segment.b[1])),
+        stroke,
+        SNode("layer").add(quoted("Edge.Cuts")),
+        SNode("uuid").add(quoted(uuid)),
+    )
 
 
-def _auto_outline(placement: BoardPlacement, extents: dict[str, Extent]) -> BoardOutline:
+def edge_segment_count(frame: BoardFrame) -> tuple[int, tuple[int, ...]]:
+    """How many graphics the outline and each cutout produce, for UUID indexing."""
+    return len(frame.outline), tuple(len(ring) for ring in frame.cutouts)
+
+
+def _auto_size(
+    placement: BoardPlacement, extents: dict[str, Extent]
+) -> tuple[float, float]:
     """A rectangle that contains everything placed, for designs with no outline."""
     if not placement.positions:
-        return BoardOutline(shape="rect", width_mm=50.0, height_mm=50.0)
+        return (50.0, 50.0)
     ox, oy = placement.origin
     max_x = max_y = 0.0
     for placed in placement.positions.values():
@@ -219,9 +263,7 @@ def _auto_outline(placement: BoardPlacement, extents: dict[str, Extent]) -> Boar
         span_y = extent.max_y if extent else 1.0
         max_x = max(max_x, placed.x - ox + span_x)
         max_y = max(max_y, placed.y - oy + span_y)
-    return BoardOutline(
-        shape="rect", width_mm=round(max_x + 5.0, 2), height_mm=round(max_y + 5.0, 2)
-    )
+    return (round(max_x + 5.0, 2), round(max_y + 5.0, 2))
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +290,7 @@ def _adapt_footprint(
     sheet_file: str,
     dnp: bool,
     fingerprint: str,
+    attributes: tuple[str, ...] = (),
 ) -> SNode:
     """Turn a library footprint into a placed instance on the board."""
     node = copy.deepcopy(source)
@@ -293,12 +336,89 @@ def _adapt_footprint(
     node.add(SNode("path").add(quoted(f"/{component_uuid}")))
     node.add(SNode("sheetname").add(quoted("/")))
     node.add(SNode("sheetfile").add(quoted(sheet_file)))
-    if dnp:
-        node.add(SNode("attr").add(sym("dnp")))
+    _set_attributes(node, (*attributes, *(("dnp",) if dnp else ())))
 
     _assign_uuids(node, hier)
     _assign_nets(node, nets, hier)
+    _turn_with_footprint(node, rotation)
     return node
+
+
+def _set_attributes(node: SNode, flags: tuple[str, ...]) -> None:
+    """Add footprint attribute flags, merging into whatever the library already set.
+
+    KiCad allows one ``attr`` node holding several flags, and it compares those
+    flags against the schematic symbol's: a symbol marked "exclude from bill of
+    materials" whose footprint is not is reported by ``--schematic-parity``, which
+    is exactly what a mounting hole does. Merging rather than appending a second
+    ``attr`` matters because ``(attr smd)`` is already there on most footprints --
+    and leaving the node alone when there is nothing to add is what keeps every
+    board built before this existed byte-identical.
+    """
+    if not flags:
+        return
+    attr = node.child("attr")
+    if attr is None:
+        attr = SNode("attr")
+        node.add(attr)
+    present = {a.value for a in attr.atoms()}
+    for flag in flags:
+        if flag not in present:
+            attr.add(sym(flag))
+
+
+#: What a symbol's library flags mean when written on a footprint instead.
+_SYMBOL_ATTRIBUTES = (("in_bom", "exclude_from_bom"), ("on_board", "exclude_from_board"))
+
+
+def _symbol_attributes(symbol_id: str) -> tuple[str, ...]:
+    """The footprint attributes implied by a symbol's own library flags."""
+    try:
+        symbol = resolve_symbol(symbol_id)
+    except SymbolNotFound:  # pragma: no cover - validation catches this earlier
+        return ()
+    flags: list[str] = []
+    for token, attribute in _SYMBOL_ATTRIBUTES:
+        node = symbol.node.child(token)
+        if node is not None and node.value(0) == "no":
+            flags.append(attribute)
+    return tuple(flags)
+
+
+#: Footprint children whose ``at`` angle KiCad stores absolutely, and which therefore
+#: have to be turned when the footprint is.
+_TURNS_WITH_FOOTPRINT = ("pad", "property", "fp_text")
+
+
+def _turn_with_footprint(node: SNode, rotation: float) -> None:
+    """Carry the footprint's rotation into the things that record their own angle.
+
+    KiCad stores a pad's ``(at x y angle)`` angle *absolutely*, not relative to the
+    footprint it sits in: a footprint placed at 90 degrees has every pad written at
+    its own angle plus 90. A copy that leaves the library's angles alone therefore
+    describes a part whose pads did not turn with it -- KiCad draws the oval pads of
+    a rotated header across the board instead of along it, reports the footprint as
+    not matching its library, and then reports every track that lands on one of those
+    pads as unconnected, because the copper is not where the router thought it was.
+
+    Text works the same way, and gets the same treatment: a reference designator left
+    at the library's angle on a turned part lies across the part's own silkscreen.
+    """
+    if not rotation:
+        return
+    for item in node.items:
+        if not isinstance(item, SNode) or item.name not in _TURNS_WITH_FOOTPRINT:
+            continue
+        at = item.child("at")
+        if at is None:
+            continue
+        angle = float(at.value(2) or 0) + rotation
+        atoms = [i for i, entry in enumerate(at.items) if isinstance(entry, Atom)]
+        turned = num(round(angle % 360, 4))
+        if len(atoms) >= 3:
+            at.items[atoms[2]] = turned
+        else:
+            at.add(turned)
 
 
 def _set_head(node: SNode, name: str) -> None:
@@ -457,7 +577,8 @@ def build_board(
         if component.part is not None
     }
     extents = {refdes: footprint_extent(fp) for refdes, fp in footprints.items()}
-    placement = plan_placement(netlist, report=report, extents=extents)
+    frame = frame_for(netlist)
+    placement = plan_placement(netlist, report=report, extents=extents, frame=frame)
 
     unconnected = _unconnected_nets(netlist)
     synthetic = {name for pins in unconnected.values() for name in pins.values()}
@@ -481,7 +602,8 @@ def build_board(
             SNode("rev").add(quoted(netlist.revision)),
         )
     )
-    root.add(standard_layers(copper_count))
+    planes = frozenset(layout.stackup.plane_layers) if layout else frozenset()
+    root.add(standard_layers(copper_count, planes))
     root.add(_setup(layout))
 
     # Net 0 is KiCad's unconnected net and must come first.
@@ -519,11 +641,13 @@ def build_board(
                 sheet_file=sheet_file,
                 dnp=component.dnp,
                 fingerprint=component_fingerprint(component, netlist),
+                attributes=_symbol_attributes(component.part.symbol),
             )
         )
 
-    outline = (layout.outline if layout else None) or _auto_outline(placement, extents)
-    for segment in _outline(outline, placement.origin):
+    if frame is None:
+        frame = auto_frame(*_auto_size(placement, extents), placement.origin)
+    for segment in edge_geometry(frame):
         root.add(segment)
 
     root.add(SNode("embedded_fonts").add(sym("no")))

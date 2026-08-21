@@ -1,0 +1,28 @@
+# Mechanical parts: the things on a board that exist because the enclosure does.
+#
+# A mounting hole is a component like any other -- it has a footprint, it takes up
+# board area, and its plated pad is on a net. Modelling it as one is what lets the
+# placer treat it as an obstacle and the router keep copper out of it, rather than
+# discovering it as a drill hit in the middle of a track.
+
+parts:
+  MOUNT_M3_PAD:
+    description: M3 mounting hole, 3.2 mm drill, plated and tied to ground
+    symbol: Mechanical:MountingHole_Pad
+    refdes_prefix: H
+    footprint: MountingHole:MountingHole_3.2mm_M3_Pad
+    value: M3
+    keywords: [mechanical, mounting]
+    pins:
+      "1": { type: input, name: "1", description: "The plated barrel, normally ground" }
+
+  SW_TACT_SMD:
+    description: SPST tactile switch, 6 mm surface mount
+    symbol: Switch:SW_Push
+    refdes_prefix: SW
+    footprint: Button_Switch_SMD:SW_SPST_B3S-1000
+    value: SW_Push
+    keywords: [switch, button]
+    pins:
+      "1": { type: passive, name: "1" }
+      "2": { type: passive, name: "2" }

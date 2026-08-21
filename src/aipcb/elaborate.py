@@ -17,7 +17,7 @@ instead of stopping at the first.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, TypeVar
 
 from aipcb.diagnostics import Report
 from aipcb.loader import LoadedDesign
@@ -32,8 +32,9 @@ from aipcb.model.design import (
     Net,
     Param,
 )
+from aipcb.model.mech import Fanout, MechPlacement
 from aipcb.netlist import ElabComponent, ElabConstraint, ElabNet, Netlist, Node
-from aipcb.source import SourceMap
+from aipcb.source import Loc, SourceMap
 
 __all__ = ["MAX_DEPTH", "elaborate"]
 
@@ -41,6 +42,10 @@ __all__ = ["MAX_DEPTH", "elaborate"]
 MAX_DEPTH = 32
 
 _SUBST_RE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+
+_T = TypeVar("_T")
+#: Which source block a mechanical entry came from, so a diagnostic can name it.
+_BLOCK_OF: dict[type, str] = {MechPlacement: "placement", Fanout: "fanout"}
 
 
 class _Elaborator:
@@ -76,6 +81,13 @@ class _Elaborator:
 
         components = self._assign_refdes()
         nets = self._build_nets(components)
+        placement, unplaced = _resolve_refs(design.placement, components)
+        fanout, unfanned = _resolve_refs(design.fanout, components)
+        names = {c.path_text: c.refdes for c in components}
+        mech_names = {
+            names.get(name, name): name
+            for name in (*design.placement, *design.fanout)
+        }
         return Netlist(
             name=design.name,
             revision=design.revision,
@@ -85,7 +97,32 @@ class _Elaborator:
             constraints=tuple(self.constraints),
             net_classes=dict(design.net_classes),
             layout=design.layout,
+            board=design.board,
+            placement=placement,
+            fanout=fanout,
+            unknown_mech_refs=(*unplaced, *unfanned),
+            mech_names=mech_names,
+            locs=self._mech_locs(),
         )
+
+    def _mech_locs(self) -> dict[tuple[str | int, ...], Loc]:
+        """Source positions for the mechanical blocks, which have no elaborated form.
+
+        A component carries its own ``loc``; a cutout does not, and "this hole is
+        outside the board" is worth pointing at the line that drew it.
+        """
+        design = self.design
+        paths: list[tuple[str | int, ...]] = [("board",), ("board", "outline")]
+        if design.board is not None:
+            paths.extend(("board", "cutouts", i) for i in range(len(design.board.cutouts)))
+        paths.extend(("placement", name) for name in design.placement)
+        paths.extend(("fanout", name) for name in design.fanout)
+        found: dict[tuple[str | int, ...], Loc] = {}
+        for path in paths:
+            loc = self.smap.get(path)
+            if loc is not None:
+                found[path] = loc
+        return found
 
     # -- scope walking ---------------------------------------------------------
 
@@ -607,3 +644,27 @@ def elaborate(loaded: LoadedDesign, report: Report | None = None) -> Netlist:
     """Flatten a loaded design into a netlist, reporting problems as it goes."""
     report = report if report is not None else loaded.report
     return _Elaborator(loaded, report).run()
+
+
+def _resolve_refs(
+    block: dict[str, _T], components: list[ElabComponent]
+) -> tuple[dict[str, _T], tuple[tuple[str, str], ...]]:
+    """Key a mechanical block by reference designator rather than by source name.
+
+    A mechanical block names components the way the source does -- ``J1``, or
+    ``supply1.C1`` inside a module instance -- while everything downstream works in
+    reference designators. Names that match nothing are handed back rather than
+    dropped, so a semantic check can point at the line that wrote them instead of
+    the board silently missing a constraint.
+    """
+    by_path = {c.path_text: c.refdes for c in components}
+    by_refdes = {c.refdes for c in components}
+    resolved: dict[str, _T] = {}
+    unknown: list[tuple[str, str]] = []
+    for name, value in block.items():
+        refdes = name if name in by_refdes else by_path.get(name)
+        if refdes is None:
+            unknown.append((_BLOCK_OF.get(type(value), "placement"), name))
+            continue
+        resolved[refdes] = value
+    return resolved, tuple(unknown)

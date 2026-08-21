@@ -18,6 +18,7 @@ from aipcb.diagnostics import Report
 from aipcb.kicad.cli import run_kicad
 from aipcb.kicad.footprints import footprint_extent, resolve_footprint
 from aipcb.kicad.sexpr import Atom, parse
+from aipcb.model.board import Outline
 from aipcb.model.layout import BoardOutline
 
 from .conftest import REPO_ROOT, needs_kicad_cli, needs_kicad_libraries
@@ -108,9 +109,9 @@ class TestPlacement:
         netlist = compile_netlist(
             REPO_ROOT / "examples" / "usb-port" / "design.yaml", Report()
         )
-        assert netlist.layout is not None
-        netlist.layout = netlist.layout.model_copy(
-            update={"outline": BoardOutline(shape="rect", width_mm=10.0, height_mm=10.0)}
+        assert netlist.board is not None
+        netlist.board = netlist.board.model_copy(
+            update={"outline": Outline(rect=(10.0, 10.0))}
         )
         plan_placement(netlist, report=report, extents={})
         diag = next(d for d in report if d.code == "placement-overflow")
@@ -183,8 +184,18 @@ class TestBoardStructure:
                     assert child.child("uuid") is None, f"{child.name} carries a uuid"
 
     def test_board_outline_is_closed(self, example_design: Path, tmp_path: Path) -> None:
+        """Every edge's end is another edge's start -- arcs included.
+
+        A shaped board's edge is drawn with `gr_arc` as well as `gr_line`, and an
+        arc that does not join the segments either side of it is a gap the
+        fabricator mills straight through.
+        """
         root = parse(board_of(example_design, tmp_path).read_text(encoding="utf-8"))
-        edges = [g for g in root.children("gr_line") if g.get("layer") == "Edge.Cuts"]
+        edges = [
+            g
+            for g in root.children()
+            if g.name in ("gr_line", "gr_arc") and g.get("layer") == "Edge.Cuts"
+        ]
         assert len(edges) >= 3
         starts = {(g.child("start").value(0), g.child("start").value(1)) for g in edges}
         ends = {(g.child("end").value(0), g.child("end").value(1)) for g in edges}

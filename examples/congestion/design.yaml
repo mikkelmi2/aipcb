@@ -1,0 +1,137 @@
+# A board that cannot be routed on one layer, and can be routed on two.
+#
+# Two four-pin headers face each other across a narrow board, wired in reverse: pin
+# 1 to pin 4, pin 2 to pin 3, pin 3 to pin 2, pin 4 to pin 1. Between them is a
+# single channel, cut down to one by the keepouts below.
+#
+# Four wires entering a channel in one order and leaving it in the reverse order have
+# to cross each other inside it, and two wires that cross on one layer are a short.
+# That is a fact about the plane, not about the router: no amount of cleverness gets
+# all four across on F.Cu, and `--layers F.Cu` gets one of them.
+#
+# The channel is the whole trick. Take the keepouts away and the wires simply loop
+# round the outside of the headers, which is planar and dull.
+#
+# On two layers it is easy, and the interesting part is *which* nets take the second
+# layer and where the vias land. Nothing here says. The negotiation works it out:
+# every net is routed as though it had the whole board, the corridors that end up
+# over-subscribed get more expensive, the nets that lost the argument are ripped up
+# and re-routed, and it repeats until every cut across the free space carries no
+# more copper than it has room for.
+#
+# `SWAP_B` is the one net that does say something. It is priority 95 and
+# `rip_up: never`, which means everything else moves before it does. On two layers
+# that changes nothing -- there is room for all four -- and the way to see it is to
+# take a layer away:
+#
+#     aipcb route all examples/congestion/design.yaml --layers F.Cu
+#
+# That run cannot finish the board, and is worth doing once to see what the second
+# layer is buying. SWAP_B is one of the two nets that get through it, and it is
+# there because it said so: move the `protected` class to another net and a
+# different one survives.
+
+name: congestion
+revision: A
+description: Two headers wired in reverse across a narrow board, which is not
+  routable on one layer and is routable on two.
+
+libraries:
+  - ../library/connectors.yaml
+
+net_classes:
+  crossing:
+    trace_width_mm: 0.25
+    clearance_mm: 0.2
+    via_diameter_mm: 0.6
+    via_drill_mm: 0.3
+    priority: 50
+    description: Four signals that have to get past each other. Nothing
+      distinguishes them, which is the point -- the router has to decide.
+  protected:
+    trace_width_mm: 0.25
+    clearance_mm: 0.2
+    via_diameter_mm: 0.6
+    via_drill_mm: 0.3
+    priority: 95
+    rip_up: never
+    description: One net that is not up for negotiation. It routes first and it
+      never moves, so everything else has to work around wherever it went. On a
+      board with room for everyone that costs nothing; take a layer away and it is
+      the difference between getting through and not.
+
+nets:
+  SWAP_A:
+    class: crossing
+    description: J1 pin 1 to J2 pin 4. The longest diagonal, and the one with the
+      least freedom, so it chooses its corridor first on difficulty alone.
+  SWAP_B:
+    class: protected
+    description: J1 pin 2 to J2 pin 3, and the net that is not up for negotiation.
+  SWAP_C:
+    class: crossing
+    description: J1 pin 3 to J2 pin 2.
+  SWAP_D:
+    class: crossing
+    description: J1 pin 4 to J2 pin 1.
+
+components:
+  J1:
+    part: CONN_BRK_1X04
+    role: connector
+    reason: The left-hand side of the reversal.
+    pins:
+      P1: SWAP_A
+      P2: SWAP_B
+      P3: SWAP_C
+      P4: SWAP_D
+
+  J2:
+    part: CONN_BRK_1X04
+    role: connector
+    reason: The right-hand side. Its pin order is the reverse of J1's, which is what
+      makes the four connections a permutation no plane can hold.
+    pins:
+      P1: SWAP_D
+      P2: SWAP_C
+      P3: SWAP_B
+      P4: SWAP_A
+
+board:
+  # The mechanical boundary, in the board's own frame: millimetres, Y up,
+  # origin at the bottom-left corner. See docs/format.md.
+  origin: bottom_left
+  outline:
+    rect: [26.0, 20.0]
+
+layout:
+  stackup:
+    copper_layers: 2
+    thickness_mm: 1.6
+  placement:
+    margin_mm: 2.0
+    keepouts:
+      - region_mm: [0, 0, 26, 3.4]
+        reason: A mounting rail runs along the top of this board. Nothing may go
+          there, on any layer, which is what confines the four crossings to the band
+          between the two headers and makes the permutation genuinely unroutable on
+          one layer rather than merely awkward.
+      - region_mm: [0, 16.6, 26, 20]
+        reason: The same rail along the bottom.
+      - region_mm: [8.5, 3.4, 17.5, 7.6]
+        reason: A cut-out for the rail's fixing, above the corridor. Together with
+          the one below it this leaves a single channel between the two headers,
+          which is what makes the reversal impossible on one layer - four wires
+          entering a channel in one order and leaving it reversed have to cross
+          inside it, and two wires that cross on one layer are a short.
+      - region_mm: [8.5, 12.4, 17.5, 16.6]
+        reason: The fixing's other side, below the corridor.
+    rules:
+      - members: [J1]
+        region_mm: [2, 4, 8.2, 18]
+        reason: Left edge. Close enough to the right-hand header that the four
+          crossings have to happen in a few millimetres, which is what makes the
+          corridors contested rather than merely occupied.
+      - members: [J2]
+        region_mm: [19, 4, 25.2, 18]
+        reason: Right edge, directly opposite, with its pins in the opposite order.

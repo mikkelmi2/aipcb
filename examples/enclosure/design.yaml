@@ -1,0 +1,238 @@
+# A USB breakout that lives inside an enclosure.
+#
+# This example exists for the *mechanical* half of a board. Its outline is not a
+# rectangle, it has a hole in it, and five of its parts are where they are because
+# something outside the electrical design says so: a connector aligned to a port in
+# the enclosure wall, two mounting holes on the boss pattern, a button under a
+# moulded cap, an LED under a light pipe.
+#
+# Everything else is still relative intent, and still auto-placed. That is the
+# point of the three-level model: mechanical law where there is mechanical law,
+# and packing everywhere else.
+
+name: enclosure
+revision: A
+description: USB Micro-B breakout on a shaped board, with fixed mechanical
+  placement against an enclosure.
+
+libraries:
+  - ../library/passives.yaml
+  - ../library/connectors.yaml
+  - ../library/mechanical.yaml
+
+net_classes:
+  power:
+    trace_width_mm: 0.3
+    clearance_mm: 0.2
+    description: Narrow for a power rail, and deliberately so -- VBUS lands on a
+      0.65 mm-pitch Micro-B pin, and a wider track cannot reach that pad without
+      breaking clearance to its neighbours.
+  signal:
+    trace_width_mm: 0.25
+    clearance_mm: 0.2
+
+nets:
+  VBUS:
+    class: power
+    voltage: 5.0
+    max_current_a: 0.3
+    reason: Bus power. The host may cut it at any time, so nothing may assume it.
+  GND:
+    class: ground
+    reason: Signal ground, the shield and both mounting holes are joined, which on
+      a board inside a plastic case is the whole of the grounding scheme.
+  USB_DP:
+    class: signal
+    description: Passed straight through to the breakout header.
+  USB_DM:
+    class: signal
+    description: Passed straight through to the breakout header.
+  ID:
+    class: signal
+    description: Held low so the port always enumerates as a device, never a host.
+  BTN:
+    class: signal
+    description: Pulled up, shorted to ground by the button.
+  LED_A:
+    class: signal
+    description: The indicator's anode, downstream of its current-limiting resistor.
+
+components:
+  J1:
+    part: USB_MICRO_B
+    role: connector
+    reason: Micro-B rather than Type-C, because this board is only ever a device
+      and the enclosure tooling already has the Micro-B cut-out.
+    pins:
+      VBUS: VBUS
+      D+: USB_DP
+      D-: USB_DM
+      ID: ID
+      GND: GND
+      Shield: GND
+
+  H1:
+    part: MOUNT_M3_PAD
+    role: test_point
+    reason: Grounded through its plated barrel, which is also how the enclosure's
+      metal boss reaches board ground.
+    pins:
+      "1": GND
+
+  H2:
+    part: MOUNT_M3_PAD
+    role: test_point
+    reason: The second bolt. Two are enough on a board this size, and a third would
+      over-constrain the mounting.
+    pins:
+      "1": GND
+
+  SW1:
+    part: SW_TACT_SMD
+    role: indicator
+    reason: The user button. It is on the board only because the enclosure has a
+      cap for it.
+    pins:
+      "1": BTN
+      "2": GND
+
+  D1:
+    part: LED_RED_0603
+    role: indicator
+    reason: Power indicator, visible through the light pipe in the lid.
+    pins:
+      A: LED_A
+      K: GND
+
+  R1:
+    part: R_330R_0603
+    role: current_limit
+    for: D1
+    reason: Sets the indicator to about 9 mA off a 5 V rail, which is bright enough
+      through a light pipe and cheap enough on a bus-powered board.
+    pins:
+      "1": VBUS
+      "2": LED_A
+
+  R2:
+    part: R_10K_0603
+    role: pull_up
+    for: SW1
+    reason: A button with no pull-up is a floating input, which reads as noise.
+    pins:
+      "1": VBUS
+      "2": BTN
+
+  R3:
+    part: R_10K_0603
+    role: pull_down
+    for: J1
+    reason: A floating ID pin lets the port enumerate as a host by accident.
+    pins:
+      "1": ID
+      "2": GND
+
+  C1:
+    part: C_10U_0805
+    role: bulk
+    for: J1
+    reason: Rides out the inrush when the cable is plugged in.
+    pins:
+      "1": VBUS
+      "2": GND
+
+  C2:
+    part: C_100N_0603
+    role: decoupling
+    for: J1
+    reason: The ceramic the bulk capacitor is too slow to be.
+    pins:
+      "1": VBUS
+      "2": GND
+
+  J2:
+    part: CONN_BRK_1X04
+    role: connector
+    reason: Whatever consumes this port plugs in here.
+    pins:
+      P1: USB_DP
+      P2: USB_DM
+      P3: BTN
+      P4: GND
+
+constraints:
+  - kind: max_distance
+    between: [C1, J1]
+    mm: 14.0
+    reason: The bulk capacitor works only if it is on the same short length of
+      copper as the connector it is smoothing.
+
+  - kind: group
+    name: button_pullup
+    members: [SW1, R2]
+    reason: The pull-up belongs beside the switch it holds up, so the node between
+      them is a short piece of copper rather than a length of board.
+
+board:
+  # The board frame: millimetres, Y up, origin at the outline's bottom-left corner.
+  # The emitter converts to KiCad's Y-down space; see docs/format.md.
+  origin: bottom_left
+
+  outline:
+    # Not a rectangle. The south-east corner is radiused where the enclosure's
+    # wall curves, and the north-east corner is cut away entirely for the boss
+    # column that carries the lid screw. Both come from the mechanical model, and
+    # both take board area the placer would otherwise use.
+    polygon:
+      - [0, 0]
+      - [42, 0]
+      - { arc_to: [48, 6], center: [42, 6] }
+      - [48, 26]
+      - [36, 26]
+      - [36, 34]
+      - [0, 34]
+
+  cutouts:
+    - rect: [[16, 10], [22, 18]]
+      reason: The display's flex tail passes through the board here and folds back
+        underneath. Mechanical law -- this is not routing area that a tight board
+        can reclaim, and copper either side of it is on opposite sides of a wall.
+
+  # Tighter than KiCad's 0.5 mm default, because this board is small and the
+  # fabricator quoted for it. The router keeps to it and DRC checks it.
+  edge_clearance: 0.3
+
+placement:
+  J1:
+    fixed: { x: 4.0, y: 17.0, rot: 270 }
+    reason: The receptacle's opening lines up with the port in the enclosure's west
+      wall. Datum B of mech/enclosure-v3.step; moving it means re-cutting the tool.
+
+  H1:
+    fixed: { x: 4.0, y: 28.5 }
+    role: mounting_hole
+    reason: North-west boss of the enclosure's bolt pattern.
+
+  H2:
+    fixed: { x: 42.0, y: 7.0 }
+    role: mounting_hole
+
+  SW1:
+    # Partially constrained: the cap in the lid runs along the north edge, and
+    # anywhere in the middle of it will do. The placer picks; the source bounds.
+    edge: { side: north, offset_range: [12, 30] }
+    reason: Under the moulded cap in the lid, which spans the middle of the north
+      edge.
+
+  D1:
+    region: { rect: [[28, 27], [34, 32]] }
+    reason: Under the light pipe. The pipe's mouth is 5 mm across, so anywhere in
+      this window is visible.
+
+layout:
+  stackup:
+    copper_layers: 2
+    thickness_mm: 1.6
+    finish: ENIG
+  placement:
+    margin_mm: 2.0

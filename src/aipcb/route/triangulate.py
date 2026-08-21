@@ -29,7 +29,9 @@ __all__ = [
     "FreeSpaceError",
     "Triangulation",
     "build_triangulation",
+    "free_space",
     "reduce_crossings",
+    "triangulate_free",
 ]
 
 Point = tuple[float, float]
@@ -73,13 +75,55 @@ class Triangulation:
     diagonals: list[Diagonal] = field(default_factory=list)
     by_triangle: dict[int, list[int]] = field(default_factory=dict)
     """Triangle index to the indices of its interior edges."""
+    _tree: object | None = None
+    """A lazily built R-tree over the triangles, so ``locate`` is not a linear scan."""
+    _components: list[int] | None = None
+    """Lazily computed connected components of the free space."""
 
     def locate(self, point: Point) -> int | None:
-        """Which triangle contains a point. ``None`` if it is outside the free area."""
-        for index, triangle in enumerate(self.triangles):
-            if _inside(point, triangle):
+        """Which triangle contains a point. ``None`` if it is outside the free area.
+
+        Bounding boxes first. Multilayer routing locates points by the thousand --
+        every candidate via site on every layer -- and a linear scan over the
+        triangles turned that into most of the router's running time.
+        """
+        for index in sorted(self._candidates(point)):
+            if _inside(point, self.triangles[index]):
                 return index
         return None
+
+    def _candidates(self, point: Point) -> list[int]:
+        from shapely import STRtree
+        from shapely.geometry import Polygon as _ShapelyPolygon
+
+        if self._tree is None:
+            self._tree = STRtree([_ShapelyPolygon(t) for t in self.triangles])
+        return [int(i) for i in self._tree.query(ShapelyPoint(point))]  # type: ignore[attr-defined]
+
+    def component(self, triangle: int) -> int:
+        """Which connected piece of the free space a triangle belongs to.
+
+        Inflating obstacles by a clearance does not merely narrow the free space --
+        it breaks it into pieces, and the pieces are what decide whether two points
+        can be joined at all. Knowing this before searching turns "the search found
+        nothing" into "these are on opposite sides of a wall", which is both a
+        better message and a cheaper answer.
+        """
+        if self._components is None:
+            parent = list(range(len(self.triangles)))
+
+            def find(i: int) -> int:
+                while parent[i] != i:
+                    parent[i] = parent[parent[i]]
+                    i = parent[i]
+                return i
+
+            for diagonal in self.diagonals:
+                a, b = find(diagonal.triangles[0]), find(diagonal.triangles[1])
+                if a != b:
+                    parent[min(a, b)] = max(a, b)
+            self._components = [find(i) for i in range(len(self.triangles))]
+        return self._components[triangle]
 
     def nearest(self, point: Point) -> int:
         """The triangle whose centroid is closest -- a fallback for points on an edge."""
@@ -247,6 +291,52 @@ def reduce_crossings(sequence: list[int]) -> list[int]:
 # ---------------------------------------------------------------------------
 
 
+def free_space(
+    environment: RoutingEnvironment,
+    obstacles: list[Obstacle],
+    *,
+    edge_margin: float = 0.0,
+) -> ShapelyPolygon:
+    """The region a wire's centre-line may occupy, as one geometry.
+
+    Split out from :func:`build_triangulation` because the multilayer router needs
+    the polygon as well as the triangulation: deciding whether a via fits somewhere
+    is a distance-to-the-nearest-obstacle question, which a triangulation answers
+    badly and a polygon answers exactly.
+    """
+    if len(environment.outline) < 3:
+        raise FreeSpaceError(
+            "the board has no usable outline, so there is nowhere to route; "
+            "declare `layout.outline` or draw an edge in KiCad"
+        )
+
+    # Cutouts are holes in the shell, not obstacles removed from it. Negative
+    # buffering a polygon with holes shrinks the shell and *grows* the holes, which
+    # is exactly the edge clearance a milled window needs -- and it means a slot
+    # that separates two corridors separates them in the triangulation too, so the
+    # homotopy model can tell going round it one way from going round it the other.
+    board = ShapelyPolygon(environment.outline, environment.cutouts)
+    if edge_margin > 0:
+        board = board.buffer(-edge_margin, join_style="mitre")
+        if board.is_empty:
+            raise FreeSpaceError(
+                f"the board is smaller than the {edge_margin:.2f} mm of edge "
+                "clearance copper needs; nothing can be routed"
+            )
+        if board.geom_type == "MultiPolygon" and len(board.geoms) > 1:
+            # A cutout that reaches across the board splits it into pieces. Routing
+            # in the biggest one is the only honest answer: copper cannot jump a
+            # slot, and the nets that needed to are about to say so themselves.
+            board = max(board.geoms, key=lambda g: g.area)
+        if board.geom_type != "Polygon":
+            board = max(board.geoms, key=lambda g: g.area)
+    holes = [ShapelyPolygon(o.polygon) for o in obstacles if len(o.polygon) >= 3]
+    free = board.difference(unary_union(holes)) if holes else board
+    if free.is_empty:
+        raise FreeSpaceError("obstacles cover the whole board; nothing can be routed")
+    return free
+
+
 def build_triangulation(
     environment: RoutingEnvironment,
     obstacles: list[Obstacle],
@@ -263,27 +353,13 @@ def build_triangulation(
     to the board edge is a DRC error, so the edge is pulled in before routing rather
     than the result being checked afterwards.
     """
-    if len(environment.outline) < 3:
-        raise FreeSpaceError(
-            "the board has no usable outline, so there is nowhere to route; "
-            "declare `layout.outline` or draw an edge in KiCad"
-        )
+    return triangulate_free(
+        free_space(environment, obstacles, edge_margin=edge_margin)
+    )
 
-    board = ShapelyPolygon(environment.outline)
-    if edge_margin > 0:
-        board = board.buffer(-edge_margin, join_style="mitre")
-        if board.is_empty:
-            raise FreeSpaceError(
-                f"the board is smaller than the {edge_margin:.2f} mm of edge "
-                "clearance copper needs; nothing can be routed"
-            )
-        if board.geom_type != "Polygon":
-            board = max(board.geoms, key=lambda g: g.area)
-    holes = [ShapelyPolygon(o.polygon) for o in obstacles if len(o.polygon) >= 3]
-    free = board.difference(unary_union(holes)) if holes else board
-    if free.is_empty:
-        raise FreeSpaceError("obstacles cover the whole board; nothing can be routed")
 
+def triangulate_free(free: ShapelyPolygon) -> Triangulation:
+    """Triangulate a free-space geometry that has already been computed."""
     collection = constrained_delaunay_triangles(free)
     triangles: list[tuple[Point, Point, Point]] = []
     for geometry in getattr(collection, "geoms", [collection]):

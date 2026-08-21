@@ -70,6 +70,21 @@ def _missing(kind: str, name: str, available: list[str]) -> None:
 # ---------------------------------------------------------------------------
 
 
+#: How much of a `reason:` the summary shows. The whole point of the summary is to
+#: be cheap to read; the full text is one `aipcb query` away.
+_REASON_WIDTH = 90
+
+
+def _why(reason: object) -> str:
+    """A reason, on one line and short enough to skim."""
+    if not reason:
+        return ""
+    text = " ".join(str(reason).split())
+    if len(text) > _REASON_WIDTH:
+        text = text[: _REASON_WIDTH - 1].rstrip() + "…"
+    return f" -- {text}"
+
+
 def render_summary(data: dict[str, Any]) -> str:
     lines = [f"{data['design']} rev {data['revision']}"]
     if data.get("description"):
@@ -81,6 +96,28 @@ def render_summary(data: dict[str, Any]) -> str:
     )
     classes = ", ".join(f"{k} x{v}" for k, v in data["net_classes"].items())
     lines.append(f"  net classes: {classes}")
+
+    mechanical = data.get("mechanical")
+    if mechanical:
+        lines.append("")
+        lines.append("mechanical:")
+        outline = mechanical.get("outline")
+        if outline:
+            shape = (
+                f"rect {outline['size_mm'][0]} x {outline['size_mm'][1]} mm"
+                if outline.get("size_mm")
+                else f"polygon, {outline['vertices']} vertices"
+            )
+            clearance = outline.get("edge_clearance_mm")
+            edge = f", edge clearance {clearance} mm" if clearance else ""
+            lines.append(f"  outline: {shape}{edge}")
+        for cutout in mechanical.get("cutouts", ()):
+            lines.append(f"  cutout: {cutout['shape']}{_why(cutout.get('reason'))}")
+        for entry in mechanical.get("placement", ()):
+            why = entry.get("reason") or entry.get("role")
+            lines.append(f"  {entry['level']}: {entry['refdes']}{_why(why)}")
+        for entry in mechanical.get("fanout", ()):
+            lines.append(f"  fanout: {entry['refdes']} ({entry['style']})")
 
     lines.append("")
     lines.append("blocks:")

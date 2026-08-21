@@ -60,6 +60,7 @@ def summarise_design(netlist: Netlist) -> dict[str, Any]:
         "description": netlist.description,
         "totals": netlist.stats(),
         "net_classes": dict(sorted(by_class.items())),
+        "mechanical": _mechanical_summary(netlist),
         "blocks": blocks,
         "constraints": [
             {
@@ -68,6 +69,49 @@ def summarise_design(netlist: Netlist) -> dict[str, Any]:
                 "reason": getattr(constraint.constraint, "reason", None),
             }
             for constraint in netlist.constraints
+        ],
+    }
+
+
+def _mechanical_summary(netlist: Netlist) -> dict[str, Any] | None:
+    """What the outside world dictates: the board's shape and what is pinned to it.
+
+    Worth its own line in the first thing anybody reads, because it is the part of
+    a design that cannot be renegotiated. An agent that knows J1 is fixed to an
+    enclosure opening does not waste a turn trying to move it.
+    """
+    board = netlist.board
+    if board is None and not netlist.placement and not netlist.fanout:
+        return None
+
+    outline: dict[str, Any] | None = None
+    if board is not None:
+        shape = board.outline
+        outline = {
+            "shape": "rect" if shape.rect else "polygon",
+            "size_mm": list(shape.rect) if shape.rect else None,
+            "vertices": len(shape.polygon) or None,
+            "edge_clearance_mm": board.edge_clearance,
+        }
+
+    return {
+        "outline": outline,
+        "cutouts": [
+            {"shape": cutout.label, "reason": cutout.reason}
+            for cutout in (board.cutouts if board else ())
+        ],
+        "placement": [
+            {
+                "refdes": refdes,
+                "level": netlist.placement[refdes].level,
+                "role": netlist.placement[refdes].role,
+                "reason": netlist.placement[refdes].reason,
+            }
+            for refdes in sorted(netlist.placement)
+        ],
+        "fanout": [
+            {"refdes": refdes, "style": netlist.fanout[refdes].style}
+            for refdes in sorted(netlist.fanout)
         ],
     }
 

@@ -81,7 +81,14 @@ def route_all(
         Path | None,
         typer.Option("--out", "-o", help="Output directory. Defaults to the design's."),
     ] = None,
-    layer: Annotated[str, typer.Option("--layer", help="Layer to route on.")] = "F.Cu",
+    layers: Annotated[
+        str | None,
+        typer.Option(
+            "--layers",
+            help="Comma-separated copper layers to route on. Defaults to every "
+            "signal layer in the stackup.",
+        ),
+    ] = None,
     congestion: Annotated[
         float,
         typer.Option(
@@ -94,24 +101,43 @@ def route_all(
 ) -> None:
     """Build a design and route it, writing tracks into the board."""
     from aipcb.kicad.sexpr import dump
-    from aipcb.route.emit import attach_tracks
-    from aipcb.route.plan import route_board
+    from aipcb.route.emit import attach_copper, drop_generated, generated_uuids
+    from aipcb.route.plan import RoutedBoard, route_board
 
     report = Report()
     target = out or design.parent
     try:
         result, board_path, board = _build(design, target, report)
         topologies = tuple(result.netlist.layout.routes) if result.netlist.layout else ()
-        routed = route_board(
-            board,
-            result.netlist,
-            report,
-            layer=layer,
-            topologies=topologies,
-            congestion=congestion,
+        chosen = (
+            tuple(part.strip() for part in layers.split(",") if part.strip())
+            if layers
+            else None
         )
-        count = attach_tracks(
-            board, routed.with_endpoints(), sorted(result.netlist.nets)
+
+        def run(manual_copper: bool) -> RoutedBoard:
+            return route_board(
+                board,
+                result.netlist,
+                report,
+                layers=chosen,
+                topologies=topologies,
+                congestion=congestion,
+                manual_copper=manual_copper,
+            )
+
+        # Copper already in the board is either somebody's hand routing, which must
+        # be preserved and routed around, or this command's own output from a
+        # previous run, which must be replaced rather than duplicated. Routing once
+        # while ignoring all of it says which UUIDs *we* would produce, and anything
+        # in the board carrying one of those is ours. Only run when there is copper
+        # to sort out, which on a first build there is not.
+        if list(board.children("segment")) or list(board.children("via")):
+            owned = generated_uuids(run(False).connections)
+            drop_generated(board, owned)
+        routed = run(True)
+        count, via_count = attach_copper(
+            board, routed.connections, sorted(result.netlist.nets)
         )
         board_path.write_text(dump(board), encoding="utf-8")
     except SourceError as exc:
@@ -122,7 +148,9 @@ def route_all(
         raise typer.Exit(1) from exc
 
     summary = routed.summary()
+    layers = ", ".join(str(name) for name in sorted({leg.layer for leg in routed.routed}))
     summary["segments"] = count
+    summary["vias"] = via_count
     if as_json:
         payload = report.to_dict()
         payload["routing"] = summary
@@ -131,9 +159,16 @@ def route_all(
         typer.echo(report.render(color=sys.stdout.isatty(), summary=bool(report)))
         typer.echo(
             f"routed {summary['routed']} connections "
-            f"({summary['failed']} unrouted), {count} track segments, "
+            f"({summary['failed']} unrouted) on "
+            f"{layers or 'no layers'}, "
+            f"{count} track segments and {via_count} vias, "
             f"{summary['length_mm']} mm of copper"
         )
+        for handed in routed.handed_over():
+            typer.echo(
+                f"  unrouted ({handed['unrouted']}): {handed['net']} "
+                f"{handed['from']} -> {handed['to']}"
+            )
         typer.echo(f"wrote {board_path}")
     # Unrouted connections are reported, not fatal: a partly routed board is a
     # useful thing to open in KiCad and finish by hand.

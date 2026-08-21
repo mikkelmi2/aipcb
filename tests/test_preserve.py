@@ -323,7 +323,9 @@ class TestOutlineOwnership:
     ) -> None:
         """Drawing the edge in KiCad is normal; a silent source has not claimed it."""
         source = workspace.original  # type: ignore[attr-defined]
-        start = source.index("layout:")
+        # Cut the design off before its `board:` block, so it declares no edge at
+        # all -- neither the new block nor the old `layout.outline`.
+        start = source.index("board:")
         design, out = workspace(source[:start])
         build_design(design, out_dir=out)
 

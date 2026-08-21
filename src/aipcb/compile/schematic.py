@@ -52,6 +52,10 @@ PAPER_SIZES: tuple[tuple[str, float, float], ...] = (
 GRID = 1.27
 
 #: One grid cell per component. Generous, because labels need room around a symbol.
+#: These are the *minimum*: a cell grows to hold whatever the biggest symbol on the
+#: sheet needs, because a symbol wider than its cell puts its pins on top of its
+#: neighbour's stubs, and two pins at one coordinate are connected. A 33-pin MCU is
+#: 76 mm tall and found this the hard way.
 CELL_W = 50.8
 CELL_H = 45.72
 MARGIN = 25.4
@@ -118,12 +122,21 @@ def undriven_power_nets(netlist: Netlist, symbols: Mapping[str, Symbol]) -> list
     return undriven
 
 
-def plan_layout(netlist: Netlist, flag_nets: Sequence[str] = ()) -> SchematicLayout:
+def plan_layout(
+    netlist: Netlist,
+    flag_nets: Sequence[str] = (),
+    symbols: Mapping[str, Symbol] | None = None,
+) -> SchematicLayout:
     """Place components on a grid, grouped by module instance.
 
     Grouping by instance is what makes the sheet navigable at all: everything a
     module contributed lands together, in source order, rather than being scattered
     by reference designator.
+
+    The cell is sized to hold the biggest symbol on the sheet. That is not
+    cosmetic: every pin gets a stub and a label, and a symbol taller than its cell
+    puts its pins on top of the row below's stubs -- where KiCad, which connects by
+    exact coordinate, joins them. A 33-pin MCU shorted VCC to GND that way.
     """
     groups = netlist.module_instances()
     ordered: list[ElabComponent] = []
@@ -133,24 +146,50 @@ def plan_layout(netlist: Netlist, flag_nets: Sequence[str] = ()) -> SchematicLay
     flags = list(flag_nets)
     total = len(ordered) + len(flags)
     columns = max(1, _columns_for(total))
+    cell_w, cell_h = _cell_size(symbols)
 
-    paper, width, height = _paper_for(total, columns)
+    paper, width, height = _paper_for(total, columns, cell_w, cell_h)
     placements: dict[str, Placement] = {}
     for index, component in enumerate(ordered):
-        placements[component.refdes] = Placement(_cell_centre(index, columns))
+        placements[component.refdes] = Placement(
+            _cell_centre(index, columns, cell_w, cell_h)
+        )
 
     flag_positions: dict[str, Point] = {}
     for offset, net in enumerate(flags):
-        flag_positions[net] = _cell_centre(len(ordered) + offset, columns)
+        flag_positions[net] = _cell_centre(
+            len(ordered) + offset, columns, cell_w, cell_h
+        )
 
     return SchematicLayout(paper, width, height, placements, flag_positions)
 
 
-def _cell_centre(index: int, columns: int) -> Point:
+#: Clear space kept between one symbol's stubs and the next cell, in millimetres.
+_CELL_GAP = 2 * GRID
+
+
+def _cell_size(symbols: Mapping[str, Symbol] | None) -> tuple[float, float]:
+    """How big a cell has to be for the symbols actually on this sheet.
+
+    Never smaller than the standing minimum, so a sheet of ordinary parts comes out
+    exactly as it always has.
+    """
+    width, height = CELL_W, CELL_H
+    for symbol in (symbols or {}).values():
+        if not symbol.pins:
+            continue
+        half_w = max(abs(pin.x) for pin in symbol.pins) + STUB
+        half_h = max(abs(pin.y) for pin in symbol.pins) + STUB
+        width = max(width, 2 * half_w + _CELL_GAP)
+        height = max(height, 2 * half_h + _CELL_GAP)
+    return (_snap(width), _snap(height))
+
+
+def _cell_centre(index: int, columns: int, cell_w: float, cell_h: float) -> Point:
     row, col = divmod(index, columns)
     return Point(
-        _snap(MARGIN + col * CELL_W + CELL_W / 2),
-        _snap(MARGIN + row * CELL_H + CELL_H / 2),
+        _snap(MARGIN + col * cell_w + cell_w / 2),
+        _snap(MARGIN + row * cell_h + cell_h / 2),
     )
 
 
@@ -167,10 +206,12 @@ def _columns_for(count: int) -> int:
     return columns
 
 
-def _paper_for(count: int, columns: int) -> tuple[str, float, float]:
+def _paper_for(
+    count: int, columns: int, cell_w: float = CELL_W, cell_h: float = CELL_H
+) -> tuple[str, float, float]:
     rows = -(-count // columns) if columns else 1
-    need_w = 2 * MARGIN + columns * CELL_W
-    need_h = 2 * MARGIN + rows * CELL_H
+    need_w = 2 * MARGIN + columns * cell_w
+    need_h = 2 * MARGIN + rows * cell_h
     for name, width, height in PAPER_SIZES:
         if need_w <= width and need_h <= height:
             return name, width, height
@@ -195,7 +236,7 @@ def build_schematic(netlist: Netlist, *, project: str | None = None) -> SNode:
     # symbols' pin types.
     placed_symbols = _resolve_symbols(netlist, needs_power_flag=False)
     flag_nets = undriven_power_nets(netlist, placed_symbols)
-    layout = plan_layout(netlist, flag_nets)
+    layout = plan_layout(netlist, flag_nets, placed_symbols)
     sheet_uuid = element_uuid("sheet", "/")
 
     root = SNode("kicad_sch")
@@ -300,6 +341,13 @@ def _property(key: str, value: str, at: Point, *, hide: bool = False) -> SNode:
     )
 
 
+def _library_flag(symbol: Symbol, token: str) -> str:
+    """A symbol's own ``in_bom``/``on_board`` flag, defaulting to yes."""
+    node = symbol.node.child(token)
+    value = node.value(0) if node is not None else None
+    return "no" if value == "no" else "yes"
+
+
 def _symbol_instance(
     component: ElabComponent,
     symbol: Symbol,
@@ -316,8 +364,12 @@ def _symbol_instance(
     node.add(SNode("at").add(num(origin.x), num(origin.y), num(placement.rotation)))
     node.add(SNode("unit").add(sym("1")))
     node.add(SNode("exclude_from_sim").add(sym("no")))
-    node.add(SNode("in_bom").add(sym("yes")))
-    node.add(SNode("on_board").add(sym("yes")))
+    # Follow the library's own answer rather than assuming yes. A mounting hole is
+    # declared `in_bom no` by its symbol and `exclude_from_bom` by its footprint,
+    # and a schematic that says otherwise makes KiCad's schematic-parity check
+    # report every one of them as a mismatch.
+    node.add(SNode("in_bom").add(sym(_library_flag(symbol, "in_bom"))))
+    node.add(SNode("on_board").add(sym(_library_flag(symbol, "on_board"))))
     node.add(SNode("dnp").add(sym("yes" if component.dnp else "no")))
     node.add(SNode("uuid").add(quoted(component.uuid)))
 

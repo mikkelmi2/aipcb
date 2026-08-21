@@ -1,23 +1,20 @@
-"""Differential pairs: routed as one thing, emitted as two.
+"""What a differential pair *is*: which nets, which pads, how wide, how far apart.
 
 A pair is not two nets that happen to run alongside each other. Its impedance comes
 from the coupling between them, so the gap has to hold along the whole run and the
 two halves have to stay the same length. Routing them independently and hoping does
 not produce either property.
 
-So a pair is tightened *once*, as a single centre-line wide enough for both traces
-and the gap between them, and the result is then offset to either side. The gap is
-then correct by construction everywhere, including around corners, and the two
-halves are the same length except where the offset makes the outside of a bend
-longer -- which is exactly the skew a real pair accumulates, and is measured and
-reported rather than assumed away.
+This module answers the questions that come before any routing: which declared pairs
+can be routed as pairs at all, which pad of each net faces which, and what gap the
+impedance target implies when the source does not state one. Turning that into
+copper is :mod:`aipcb.route.pairs`.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from itertools import pairwise
+from dataclasses import dataclass
 
 from shapely.geometry import LineString
 
@@ -25,7 +22,6 @@ from aipcb.diagnostics import Report
 from aipcb.model.layout import NetClass
 from aipcb.netlist import Netlist
 from aipcb.route.obstacles import RoutingEnvironment
-from aipcb.route.stretch import StretchResult
 
 __all__ = [
     "DiffPair",
@@ -33,7 +29,6 @@ __all__ = [
     "achievable_range",
     "estimate_gap",
     "find_pairs",
-    "skew_of",
     "split_centre_line",
 ]
 
@@ -185,15 +180,16 @@ def _gap_for(
 
 
 def _dielectric_height(netlist: Netlist) -> float:
-    """Distance from the outer copper to the reference plane below it."""
+    """Distance from the outer copper to the reference plane below it.
+
+    A two-layer board references the far side; more layers put a plane one
+    dielectric away. Either way this is the height the coupling sees, and it is the
+    same number the stackup is written with -- an impedance estimated against a
+    different board than the one that gets fabricated is worse than none.
+    """
     if netlist.layout is None:
         return 0.2
-    stack = netlist.layout.stackup
-    # A two-layer board references the far side; more layers put a plane one
-    # dielectric away. Either way this is the height the coupling sees.
-    copper = 0.035 * stack.copper_layers
-    dielectrics = max(stack.copper_layers - 1, 1)
-    return max((stack.thickness_mm - copper) / dielectrics, 0.05)
+    return max(netlist.layout.stackup.dielectric_thickness_mm, 0.05)
 
 
 class ImpedanceUnreachable(ValueError):
@@ -300,22 +296,3 @@ def _offset(line: LineString, distance: float) -> list[Point]:
     if offset.geom_type == "MultiLineString":
         offset = max(offset.geoms, key=lambda g: g.length)
     return [(round(x, 6), round(y, 6)) for x, y in offset.coords]
-
-
-def skew_of(a: StretchResult, b: StretchResult) -> float:
-    """The length difference between the two halves of a pair, in millimetres."""
-    return abs(a.length - b.length)
-
-
-@dataclass(slots=True)
-class PairOutcome:
-    """What routing one pair produced."""
-
-    pair: DiffPair
-    results: list[tuple[StretchResult, str, str]] = field(default_factory=list)
-    skew: float = 0.0
-    centre_length: float = 0.0
-
-
-def route_length(points: list[Point]) -> float:
-    return sum(math.dist(a, b) for a, b in pairwise(points))

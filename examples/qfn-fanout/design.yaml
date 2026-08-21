@@ -1,0 +1,231 @@
+# A 0.5 mm-pitch QFN, escaped by pattern and then routed by rubber band.
+#
+# This is where topological routing meets its density ceiling. A QFN-32 on a 0.5 mm
+# pitch leaves 0.5 mm between neighbouring pad centres and about 0.25 mm between
+# their edges; a 0.25 mm track with 0.2 mm clearance needs 0.65 mm of corridor. No
+# amount of cleverness gets a track out from between two of those pads, because
+# there is nothing to get out through.
+#
+# Escaping a package like this is not a routing problem. It is a *pattern*: a short
+# stub outward from each pad to a via just clear of the part, with neighbouring vias
+# staggered into two rows so they are not at pad pitch. `fanout:` asks for it, and a
+# deterministic generator lays it before any routing happens.
+#
+# After that, the router sees ordinary terminals -- the escape vias, out in open
+# board on B.Cu -- and routes between them exactly as it does on every other
+# example. It has no idea a fanout happened. That is the architecture: a pattern
+# generator whose output is fixed obstacles and terminals, composing with the
+# topology model rather than replacing it (ADR 0008).
+#
+# The exposed pad is the one pad with no way out, and it gets the answer a layout
+# engineer would give it: a via straight through it, down to the same layer as
+# everything else.
+
+name: qfn-fanout
+revision: A
+description: An ATmega328P in a 32-pin QFN, escaped with a generated fanout pattern
+  and routed between the escape vias.
+
+libraries:
+  - ../library/passives.yaml
+  - ../library/connectors.yaml
+  - ../library/semiconductors.yaml
+
+net_classes:
+  # These numbers are the 0.5 mm pitch talking. A staggered escape puts one pad's
+  # stub past its neighbour's via, one pitch away, so the track's half width plus
+  # the via's radius plus the clearance has to come to less than 0.5 mm. At
+  # 0.2 mm tracks, 0.4 mm vias and 0.15 mm clearance it comes to 0.45 and the
+  # pattern fits; at the toolchain's comfortable defaults it does not, and the
+  # generator says so rather than laying copper that DRC will reject.
+  power:
+    trace_width_mm: 0.25
+    clearance_mm: 0.15
+    via_diameter_mm: 0.4
+    via_drill_mm: 0.2
+    description: The supply rails. An AVR at 3.3 V draws about 10 mA, so 0.25 mm is
+      already more copper than the current needs; what decides the width here is
+      what fits beside a 0.5 mm pitch.
+  signal:
+    trace_width_mm: 0.2
+    clearance_mm: 0.15
+    via_diameter_mm: 0.4
+    via_drill_mm: 0.2
+  ground:
+    trace_width_mm: 0.25
+    clearance_mm: 0.15
+    via_diameter_mm: 0.4
+    via_drill_mm: 0.2
+    description: Ground, on the same tight geometry as everything else. A class left
+      undeclared falls back to the toolchain's comfortable defaults -- 0.6 mm vias
+      and 0.2 mm clearance -- and those do not fit beside a 0.5 mm pitch, which the
+      fanout generator will tell you by refusing to escape the pad.
+  analog:
+    trace_width_mm: 0.2
+    clearance_mm: 0.15
+    via_diameter_mm: 0.4
+    via_drill_mm: 0.2
+    description: AREF, which wants its capacitor and nothing else.
+
+nets:
+  VCC:
+    class: power
+    voltage: 3.3
+    max_current_a: 0.05
+    reason: Supplied by the programmer through the ISP header, which is how a board
+      this small is usually powered on the bench. 3.3 V rather than 5 V, because
+      the part is rated to 5.5 V and running it at 5.0 leaves no derating margin.
+  GND:
+    class: ground
+    reason: One ground, joined at the exposed pad under the part.
+  RESET:
+    class: signal
+    description: Pulled up, driven low by the programmer.
+  MOSI:
+    class: signal
+  MISO:
+    class: signal
+  SCK:
+    class: signal
+  IO_PC0:
+    class: signal
+    description: Broken out to the header.
+  IO_PC1:
+    class: signal
+  IO_PD0:
+    class: signal
+  IO_PD1:
+    class: signal
+  AREF:
+    class: analog
+    description: The ADC reference, decoupled to ground at the pin.
+
+components:
+  U1:
+    part: ATMEGA328P_QFN32
+    role: mcu
+    reason: The whole point of the example. Nothing gets out from between its pads
+      on the layer it sits on, so its signals have to escape by pattern first.
+    pins:
+      "3": GND
+      "4": VCC
+      "5": GND
+      "6": VCC
+      "15": MOSI
+      "16": MISO
+      "17": SCK
+      "18": VCC
+      "20": AREF
+      "21": GND
+      "23": IO_PC0
+      "24": IO_PC1
+      "29": RESET
+      "30": IO_PD0
+      "31": IO_PD1
+      "33": GND
+
+  J1:
+    part: CONN_ISP_1X06
+    role: connector
+    reason: In-system programming, and the board's power while it is on the bench.
+    pins:
+      MISO: MISO
+      VCC: VCC
+      SCK: SCK
+      MOSI: MOSI
+      RESET: RESET
+      GND: GND
+
+  J2:
+    part: CONN_BRK_1X04
+    role: connector
+    reason: Four general-purpose pins brought out, which is what makes the escape
+      pattern do real work rather than just reaching the nearest decoupling cap.
+    pins:
+      P1: IO_PC0
+      P2: IO_PC1
+      P3: IO_PD0
+      P4: IO_PD1
+
+  C1:
+    part: C_100N_0603
+    role: decoupling
+    for: U1
+    reason: The digital supply's ceramic, on the pin pair it serves.
+    pins:
+      "1": VCC
+      "2": GND
+
+  C2:
+    part: C_100N_0603
+    role: decoupling
+    for: U1
+    reason: The analogue supply's own ceramic. Sharing one with the digital rail is
+      how ADC noise gets in.
+    pins:
+      "1": VCC
+      "2": GND
+
+  C3:
+    part: C_1U_0603
+    role: bulk
+    for: U1
+    reason: The local reservoir, close enough to the part to be worth having.
+    pins:
+      "1": VCC
+      "2": GND
+
+  C4:
+    part: C_100N_0603
+    role: filter
+    for: U1
+    reason: AREF wants a capacitor to ground and nothing else; a track leaving it
+      to anywhere is an antenna into the ADC.
+    pins:
+      "1": AREF
+      "2": GND
+
+  R1:
+    part: R_10K_0603
+    role: pull_up
+    for: U1
+    reason: A floating reset line resets on nothing at all.
+    pins:
+      "1": RESET
+      "2": VCC
+
+constraints:
+  - kind: max_distance
+    between: [C1, U1]
+    mm: 8.0
+    reason: A decoupling capacitor is a loop area, and the loop is what it is for.
+
+  - kind: max_distance
+    between: [C4, U1]
+    mm: 8.0
+    reason: AREF's capacitor belongs at the pin, not near it.
+
+fanout:
+  U1:
+    # `auto` looks at the geometry rather than at a name: a package whose only
+    # interior pad is its thermal one is a perimeter package, and gets short stubs
+    # outward. An area array -- a BGA -- has many interior pads, and gets dog-bones
+    # into the quadrant each ball points toward.
+    style: auto
+    escape_layers: [B.Cu]
+    via: { drill: 0.2, diameter: 0.4 }
+    reason: Nothing escapes a 0.5 mm pitch on the layer the part is on. The vias put
+      every signal in open board on the back, where the router can reach it.
+
+board:
+  origin: bottom_left
+  outline:
+    rect: [44.0, 40.0]
+
+layout:
+  stackup:
+    copper_layers: 2
+    thickness_mm: 1.6
+    finish: ENIG
+  placement:
+    margin_mm: 2.0

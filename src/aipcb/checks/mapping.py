@@ -99,13 +99,40 @@ def build_index(netlist: Netlist) -> UuidIndex:
     for net in netlist.sorted_nets():
         _index_net(index, net, netlist)
 
-    for position in range(4):
+    _index_edges(index, netlist)
+    return index
+
+
+#: How many outline and cutout graphics to index. A DRC violation names a UUID, and
+#: the only way back to the source line is to have that UUID in the table -- so the
+#: table covers more segments than any real board has rather than guessing.
+_MAX_EDGE_SEGMENTS = 256
+
+
+def _index_edges(index: UuidIndex, netlist: Netlist) -> None:
+    """Map every ``Edge.Cuts`` graphic back to the block that declared it.
+
+    Cutouts are indexed separately from the outline, because "copper too close to
+    the edge" and "copper inside the flex-tail window" are different problems with
+    different fixes, and a diagnostic that pointed at `board.outline` for both would
+    send the reader to the wrong block.
+    """
+    where = ("board", "outline") if netlist.board is not None else ("layout", "outline")
+    for position in range(_MAX_EDGE_SEGMENTS):
         index.add(
             element_uuid("edge", position),
-            SourceRef("board outline", f"edge segment {position + 1}",
-                      path=("layout", "outline")),
+            SourceRef("board outline", f"edge segment {position + 1}", path=where),
         )
-    return index
+    for cut, cutout in enumerate(netlist.board.cutouts if netlist.board else ()):
+        for position in range(_MAX_EDGE_SEGMENTS):
+            index.add(
+                element_uuid("edge", "cutout", cut, position),
+                SourceRef(
+                    "board cutout",
+                    cutout.reason or cutout.label,
+                    path=("board", "cutouts", cut),
+                ),
+            )
 
 
 def _index_component(index: UuidIndex, component: ElabComponent) -> None:
@@ -191,11 +218,18 @@ def _index_footprint_items(index: UuidIndex, component: ElabComponent) -> None:
                     ),
                 )
             continue
-        if item.name == "pad" or not _takes_uuid(item.name):
+        if not _takes_uuid(item.name):
             continue
         position = counters.get(item.name, 0)
         counters[item.name] = position + 1
-        index.add(element_uuid("fp", *component.hier, item.name, str(position)), body)
+        # The board writer keys a pad on its number and everything else on its
+        # ordinal, and falls back to the ordinal for a pad that has no number --
+        # which a QFN's paste-only sub-pads do not. Mirroring that here is what
+        # keeps "every UUID we emit maps back to source" true: `index.add` keeps
+        # the first entry, so a numbered pad keeps the richer reference the pin
+        # loop above already gave it.
+        key = (item.value(0) if item.name == "pad" else None) or str(position)
+        index.add(element_uuid("fp", *component.hier, item.name, key), body)
 
     # Reference and Value are always rewritten, and the fingerprint is added by the
     # board writer, so none of the three need exist in the library footprint.

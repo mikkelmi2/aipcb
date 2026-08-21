@@ -17,7 +17,9 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from aipcb.model.board import Board
 from aipcb.model.layout import Layout, NetClass
+from aipcb.model.mech import Fanout, MechPlacement
 
 __all__ = [
     "KNOWN_NET_CLASSES",
@@ -48,6 +50,9 @@ TEMPLATE_RE = re.compile(r"^\{\{\s*[A-Za-z_][A-Za-z0-9_]*\s*\}\}$")
 
 Ident = Annotated[str, Field(pattern=IDENT_RE.pattern)]
 NetName = Annotated[str, Field(pattern=NET_NAME_RE.pattern)]
+#: How a mechanical block names a component: its source name, or its path inside a
+#: module instance (``supply1.C1``).
+PartRef = Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")]
 
 #: Roles carry design intent. Unknown roles are allowed but reported as a warning,
 #: because a typo'd role silently disables the checks that key off it.
@@ -265,6 +270,41 @@ class Design(Strict):
     instances: dict[Ident, Instance] = Field(default_factory=dict)
     constraints: tuple[Constraint, ...] = ()
     layout: Layout | None = None
+    board: Board | None = Field(
+        default=None,
+        description="The mechanical boundary: outline, cutouts, edge clearance. The "
+        "frame every coordinate under `placement:` is given in.",
+    )
+    placement: dict[PartRef, MechPlacement] = Field(
+        default_factory=dict,
+        description="Components whose position is dictated from outside the "
+        "electrical design: fixed, edge-constrained or region-constrained.",
+    )
+    fanout: dict[PartRef, Fanout] = Field(
+        default_factory=dict,
+        description="Packages that need pattern-based escape routing before the "
+        "router can reach their pads.",
+    )
+
+    @model_validator(mode="after")
+    def _one_outline(self) -> Design:
+        """The board edge is declared once, in one block, or not at all."""
+        if self.board is not None and self.layout is not None and self.layout.outline:
+            raise ValueError(
+                "the board edge is declared twice: under `board.outline` and under "
+                "`layout.outline`. Keep the `board:` block and delete the old one"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _placement_has_a_frame(self) -> Design:
+        """Mechanical coordinates are meaningless without the outline they refer to."""
+        if self.placement and self.board is None:
+            raise ValueError(
+                "`placement:` gives coordinates in the board frame, so the design "
+                "needs a `board:` block with an `outline:` to define that frame"
+            )
+        return self
 
     @model_validator(mode="after")
     def _non_empty(self) -> Design:
