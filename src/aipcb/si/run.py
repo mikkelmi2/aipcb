@@ -13,7 +13,6 @@ the batch carries on, because the value of a batch is the eleven pairs that work
 from __future__ import annotations
 
 import json
-import shutil
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -250,21 +249,41 @@ def _one_pair(
         return PairResult(pair=pair, status="failed", directory=work,
                           message="no stackup declared")
 
+    # Everything the digest is computed from is written *before* the export, so a
+    # cache hit costs a slice and three small files rather than a zone fill and five
+    # runs of kicad-cli. On eleven pairs that is the difference between a re-run
+    # taking a minute and taking nothing at all.
     work.mkdir(parents=True, exist_ok=True)
-    (work / "slice.kicad_pcb").write_text(dump(sliced.board), encoding="utf-8")
     fab = work / "fab"
-    if fab.exists():
-        shutil.rmtree(fab)
-    exported = export_board(work / "slice.kicad_pcb", fab, netlist, report)
-    if not exported.ok:
-        return PairResult(
-            pair=pair, status="failed", directory=work, sliced=sliced,
-            message="the slice could not be exported",
-        )
+    (work / "slice.kicad_pcb").write_text(dump(sliced.board), encoding="utf-8")
     write_inputs(work, sliced, stackup, settings)
     (work / "slice.json").write_text(
         json.dumps(sliced.to_dict(), indent=2) + "\n", encoding="utf-8"
     )
+
+    digest = slice_digest(work)
+    cached = work / "result.json"
+    if cached.exists() and not force and not dry_run:
+        stored = json.loads(cached.read_text(encoding="utf-8"))
+        if stored.get("digest") == digest:
+            metrics = _analyse(work, pair, settings, port_ohm, target, sliced)
+            return PairResult(
+                pair=pair, status="cached", directory=work, digest=digest,
+                sliced=sliced, metrics=metrics, seconds=0.0,
+                message="unchanged since the last run",
+            )
+
+    # Plotted output from an earlier run goes first. `stackup.json` stays: it is in
+    # `fab/` because that is where gerber2ems looks for it, not because kicad-cli put
+    # it there, and it was written above with the rest of the digest's inputs.
+    for stale in (*fab.glob("*.gbr"), *fab.glob("*.drl"), *fab.glob("*pos.csv")):
+        stale.unlink()
+    exported = export_board(work / "slice.kicad_pcb", fab, netlist, report)
+    if not exported.ok:
+        return PairResult(
+            pair=pair, status="failed", directory=work, sliced=sliced, digest=digest,
+            message="the slice could not be exported",
+        )
 
     # Read the export back before spending minutes on it. A slice whose copper lost
     # its net attributes meshes coarsely and comes back a short circuit, at a clean
@@ -280,23 +299,13 @@ def _one_pair(
         report.error("si-slice-nets-lost", f"{pair.name}: {message}",
                      path=pair.source_path)
         return PairResult(pair=pair, status="failed", directory=work, sliced=sliced,
-                          message=message)
+                          digest=digest, message=message)
 
-    digest = slice_digest(work)
-    cached = work / "result.json"
+    # A dry run stops here: everything the solver reads has been produced and read
+    # back, which is the half of the pipeline worth checking without a container.
     if dry_run:
-        return PairResult(pair=pair, status="cached" if cached.exists() else "sliced",
-                          directory=work, digest=digest, sliced=sliced)
-
-    if cached.exists() and not force:
-        stored = json.loads(cached.read_text(encoding="utf-8"))
-        if stored.get("digest") == digest:
-            metrics = _analyse(work, pair, settings, port_ohm, target, sliced)
-            return PairResult(
-                pair=pair, status="cached", directory=work, digest=digest,
-                sliced=sliced, metrics=metrics, seconds=0.0,
-                message="unchanged since the last run",
-            )
+        return PairResult(pair=pair, status="sliced", directory=work, digest=digest,
+                          sliced=sliced)
 
     drill = next(iter(sorted(fab.glob("*-PTH.drl"))), None)
     expect_vias = _hole_count(drill) if drill else 0
