@@ -327,35 +327,34 @@ class TestSettings:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(scope="module")
+def exported_slice(tmp_path_factory: pytest.TempPathFactory):
+    """One `mcu-4layer` slice, exported by kicad-cli, for the file-level checks."""
+    from aipcb.route.pipeline import route_design
+
+    where = tmp_path_factory.mktemp("slice-export")
+    report = Report()
+    done = route_design(
+        REPO_ROOT / "examples" / "mcu-4layer" / "design.yaml", where / "routed", report
+    )
+    netlist = done.build.netlist
+    pair = next(p for p in logical_pairs(netlist) if p.name == "USB_DM+USB_DP")
+    settings = netlist.simulation.for_class(pair.net_class)
+    sliced = build_slice(done.board, netlist, pair, settings, port_impedance_ohm=45.0)
+    work = where / "slice"
+    work.mkdir()
+    (work / "slice.kicad_pcb").write_text(dump(sliced.board), encoding="utf-8")
+    result = export_board(work / "slice.kicad_pcb", work / "fab", netlist, report)
+    assert result.ok, report.render()
+    return sliced, work
+
+
 @needs_kicad_libraries
 @needs_kicad_cli
 class TestSliceExport:
-    """The two checks that only reading the exported files can make."""
+    """The three checks that only reading the exported files can make."""
 
-    @pytest.fixture(scope="class")
-    def exported(self, tmp_path_factory: pytest.TempPathFactory):
-        from aipcb.route.pipeline import route_design
-
-        where = tmp_path_factory.mktemp("slice-export")
-        report = Report()
-        done = route_design(
-            REPO_ROOT / "examples" / "mcu-4layer" / "design.yaml", where / "routed",
-            report,
-        )
-        netlist = done.build.netlist
-        pair = next(p for p in logical_pairs(netlist) if p.name == "USB_DM+USB_DP")
-        settings = netlist.simulation.for_class(pair.net_class)
-        sliced = build_slice(
-            done.board, netlist, pair, settings, port_impedance_ohm=45.0
-        )
-        work = where / "slice"
-        work.mkdir()
-        (work / "slice.kicad_pcb").write_text(dump(sliced.board), encoding="utf-8")
-        result = export_board(work / "slice.kicad_pcb", work / "fab", netlist, report)
-        assert result.ok, report.render()
-        return sliced, work
-
-    def test_the_pairs_nets_survive_into_the_gerbers(self, exported) -> None:
+    def test_the_pairs_nets_survive_into_the_gerbers(self, exported_slice) -> None:
         """The X2 net attribute is what the mesh generator keys on.
 
         A slice has few footprints and KiCad drops every net without a pad -- by
@@ -363,14 +362,14 @@ class TestSliceExport:
         geometry is untouched, which is exactly why nothing catches it except reading
         the attribute back.
         """
-        sliced, work = exported
+        sliced, work = exported_slice
         found = nets_in_gerbers(work / "fab")
         assert set(sliced.pair.nets) <= found, f"the Gerbers carry {sorted(found)}"
 
     def test_the_placement_file_puts_the_ports_where_the_slice_says(
-        self, exported
+        self, exported_slice
     ) -> None:
-        sliced, work = exported
+        sliced, work = exported_slice
         path = next((work / "fab").glob("*pos.csv"))
         rows = [
             row
@@ -390,8 +389,10 @@ class TestSliceExport:
             assert float(row["PosX"]) >= 0 and float(row["PosY"]) >= 0
             assert float(row["Rot"]) % 360 == port.rotation % 360
 
-    def test_the_plated_drill_file_is_where_gerber2ems_looks(self, exported) -> None:
-        _, work = exported
+    def test_the_plated_drill_file_is_where_gerber2ems_looks(
+        self, exported_slice
+    ) -> None:
+        _, work = exported_slice
         assert len(list((work / "fab").glob("*-PTH.drl"))) == 1
 
 
