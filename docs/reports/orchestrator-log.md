@@ -225,3 +225,69 @@ fab deliverable is a real decision, not a one-flag mechanical fix.
 
 Commits `2d046be`, `8a4c4c8`, pushed.
 
+### M10 gate — PASSED (all five)
+
+Re-run by the orchestrator, not taken from the subagent's report.
+
+| Gate | Result |
+|---|---|
+| 1 — suite, ruff, mypy | `pytest` exit 0 (968 collected, up from 886); `ruff` clean; `mypy --strict` clean on **66** source files (60 before) |
+| 2 — acceptance checks | passed, measured independently — see below |
+| 3 — delivery report | `docs/reports/m10.md`: deviations in a table at the top, measured numbers throughout, the required per-stage performance table with aipcb stages separated from `kicad-cli`/`pcbnew` calls and compared line-by-line against the pre-pours baseline |
+| 4 — commit + push | `a5c8152` (implementation), `7e9af61` (docs + report) — pushed |
+| 5 — this entry | written |
+
+**Gate 2, measured by the orchestrator on all ten examples:**
+
+- **Build byte-stable, unfilled:** built each example twice into separate
+  directories and diffed — 10/10 identical, and **`filled_polygon` count is 0 in
+  every build output**. The stability policy holds as a property of the file, not
+  as a promise.
+- **Zones present where they should be:** 8 of 10 carry zones (`mcu-4layer` has 3,
+  the split plane); `congestion` and `overconstrained` have **0**, which is both the
+  documented deviation and the live backward-compatibility witness — a design
+  without `pours:` still emits no zone at all.
+- **Check, filled: zero errors on all ten**, `rc=0` throughout. Severity counts from
+  `--json`: only `info`, plus 1 `warning` on `qfn-fanout` (the `min_contiguous`
+  fragmentation warning, as designed), 1 on `usb-port`, and 3 on `overconstrained`
+  (its expected hand-overs). No errors anywhere.
+- **Export ships filled copper:** `usb-port` F.Cu **1758** coordinate records —
+  independently reproducing the report's figure — `led-blinker` 1410,
+  `mcu-4layer` 2946, each with `G36` region-fill commands present. An unfilled pour
+  would have plotted as no copper and looked like a correct plot.
+
+**The four binding ADR 0009 conditions were checked in the code, not just in the
+prose:** the version lock compares `pcbnew.GetBuildVersion()` against
+`kicad-cli version` on the numeric prefix (Debian reports `9.0.8+dfsg-1`) and is
+enforced twice — in `fill_board` before spawning and inside the subprocess via
+`--require-version`, which exits refusing to fill; interpreter resolution is probed
+in a documented order rather than assumed; and
+`test_a_check_reports_it_rather_than_checking_an_unfilled_board` closes the
+silent-corruption path by asserting that a `python3` that cannot import `pcbnew`
+makes `check` report the failure **and not run DRC at all**, with no output file
+written.
+
+Notable, carried to the final report:
+
+- **The subagent corrected its own earlier Finding 3 rather than defending it.** The
+  stop report measured the fill byte-deterministic; closer measurement shows the
+  fill *geometry* is byte-identical while the filled *file* differs every run by
+  exactly 12 lines — UUIDs of `Datasheet`/`Description` properties KiCad's writer
+  adds itself. This is precisely why the guarantee is scoped to unfilled build
+  output. No UUID aipcb emits is lost across the fill (279 in, 279 out).
+- **KiCad's own default thermal settings (0.5/0.5) produce boards KiCad's own DRC
+  rejects** on 4 of 8 poured examples. aipcb defaults to 0.25/0.5 instead, measured.
+- **New CI prerequisite:** the `kicad` package, not only the `kicad-cli` binary.
+  Confined — a design without `pours:` never invokes it — but real, and flagged at
+  the top of the report rather than in a footnote.
+- **Pad-UUID aliasing re-verified against the new code:** `usb-port` still emits 12
+  pads numbered 6 sharing one UUID, unchanged and un-worked-around; exactly one of
+  the twelve carries `(zone_connect 2)`, asserted by a test that *also* asserts the
+  twelve still share a UUID. Stitching never reads a pad UUID.
+- Deviations, all at the top of the report: 8/10 examples poured; `thermal_pad` as
+  the explicit list the spec permits rather than a role; the fragmenting case split
+  between a synthetic board (exact counts) and `qfn-fanout` (the real warning);
+  keepout zones built but exercised only by a purpose-built test; suite runtime
+  10 m 58 s → 13 m 57 s; and `--no-route` now saying louder that it checks a
+  different board.
+
