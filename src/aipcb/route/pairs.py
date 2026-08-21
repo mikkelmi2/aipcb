@@ -25,8 +25,9 @@ routes the halves separately -- which is worse, and true.
 from __future__ import annotations
 
 import math
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from itertools import pairwise
+from typing import Any
 
 from aipcb.diagnostics import Report
 from aipcb.netlist import Netlist
@@ -54,9 +55,26 @@ from aipcb.route.stretch import (
 )
 from aipcb.route.triangulate import FreeSpaceError
 
-__all__ = ["MAX_UNCOUPLED", "measure_skew", "realize_pair"]
+__all__ = [
+    "MAX_UNCOUPLED",
+    "PairAudit",
+    "WallHug",
+    "measure_skew",
+    "realize_pair",
+]
 
 Point = tuple[float, float]
+
+#: M11d rule 2, the two numbers. A controlled-impedance segment that runs within
+#: ``HUG_DISTANCE x gap`` of another copper feature for more than
+#: ``HUG_LENGTH x gap`` is hugging a wall: close enough for that feature to be part
+#: of the field the pair sees, and for long enough that it matters. Both are
+#: multiples of the pair's own gap because the gap is the length the coupling works
+#: at -- a feature three gaps away is most of a decade down in influence, and a
+#: run of five gaps is where the discontinuity stops being a corner and starts
+#: being a section of transmission line with the wrong impedance.
+HUG_DISTANCE = 3.0
+HUG_LENGTH = 5.0
 
 #: How much of a pair may be fan-out before it stops being worth calling coupled.
 #: A short uncoupled breakout at each end is normal and unavoidable -- pads are
@@ -77,6 +95,81 @@ _GRAZE = 1e-6
 #: How finely the coupled run is sampled when looking for the part of it that is
 #: genuinely clear, in millimetres.
 _TRIM_STEP = 0.05
+
+#: How finely rule 2 samples a stretch that passes close to something, in
+#: millimetres. Only the part already inside the skirt is sampled, so this is a
+#: few dozen points per feature rather than a few hundred per board.
+_HUG_STEP = 0.05
+
+
+@dataclass(frozen=True, slots=True)
+class WallHug:
+    """A stretch of coupled run that spent too long too close to something else."""
+
+    feature: str
+    """The obstacle's key -- ``J1.6#7`` for a pad, ``track:GND/...`` for copper."""
+    net: str | None
+    layer: str
+    length_mm: float
+    """How far the pair ran within :data:`HUG_DISTANCE` gaps of it."""
+    closest_mm: float
+    """The nearest the two came, copper edge to copper edge."""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "feature": self.feature,
+            "net": self.net,
+            "layer": self.layer,
+            "length_mm": round(self.length_mm, 4),
+            "closest_mm": round(self.closest_mm, 4),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PairAudit:
+    """What M11d measured about one pair. The M11e report's routing-side input."""
+
+    key: str
+    positive: str
+    negative: str
+    net_class: str
+    layer: str
+    coupled: bool
+    reason: str | None
+    """Why it is not coupled, when it is not."""
+    width_mm: float
+    gap_mm: float
+    standoff: float
+    target_ohm: float | None
+    uncoupled_mm: tuple[float, ...] = ()
+    """Uncoupled length per half, in source order: positive first."""
+    budget_mm: float | None = None
+    wall_hugs: tuple[WallHug, ...] = ()
+    retightened: bool = False
+    """Whether rule 2's one re-tighten was tried."""
+    resolved_by_retighten: bool = False
+
+    @property
+    def worst_uncoupled(self) -> float:
+        return max(self.uncoupled_mm) if self.uncoupled_mm else 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "pair": self.key,
+            "net_class": self.net_class,
+            "layer": self.layer,
+            "coupled": self.coupled,
+            "reason": self.reason,
+            "width_mm": self.width_mm,
+            "gap_mm": self.gap_mm,
+            "standoff": self.standoff,
+            "target_ohm": self.target_ohm,
+            "uncoupled_mm": [round(v, 4) for v in self.uncoupled_mm],
+            "max_uncoupled_mm": self.budget_mm,
+            "wall_hugs": [hug.to_dict() for hug in self.wall_hugs],
+            "retightened": self.retightened,
+            "resolved_by_retighten": self.resolved_by_retighten,
+        }
 
 
 def measure_skew(
@@ -122,6 +215,7 @@ def realize_pair(
     stack: RoutingStack,
     congestion: float,
     report: Report,
+    audits: list[PairAudit] | None = None,
 ) -> list[RoutedConnection] | None:
     """Tighten a pair's centre-line, then offset it into two traces.
 
@@ -132,12 +226,133 @@ def realize_pair(
     Returns ``None`` when the result would not be a pair worth calling one -- which
     is a refusal, not a failure, and the caller falls back to routing the halves
     separately after saying why.
+
+    **M11d.** A pair whose class names an ``impedance_diff_ohm`` gets three extra
+    rules, and only such a pair does -- everything else takes exactly the path it
+    took before:
+
+    1. the centre-line is tightened against ``clearance x standoff`` rather than
+       the bare minimum, so ordinary copper stops crowding the pair's field;
+    2. a coupled run that spends more than :data:`HUG_LENGTH` gaps within
+       :data:`HUG_DISTANCE` gaps of another feature is re-tightened once with that
+       feature's clearance inflated, and if that does not resolve it the flag
+       stands and reaches the M11e report;
+    3. ``max_uncoupled_mm`` is a hard budget. Over it, the pair is *refused* --
+       raised rather than returned, so the caller hands it over instead of quietly
+       routing the halves separately.
     """
     pair = connection.pair
     assert isinstance(pair, DiffPair)
+    controlled = pair.target_ohm is not None
+
+    first = Report()
+    results = _attempt(pair, path, base, placed, netlist, congestion, first, None)
+
+    hugs: tuple[WallHug, ...] = ()
+    retightened = False
+    resolved = False
+    if results is not None and controlled:
+        hugs = _wall_hugging(pair, results, base, placed, path.legs[0].layer)
+        if hugs:
+            retightened = True
+            floors = {
+                hug.net: HUG_DISTANCE * pair.gap for hug in hugs if hug.net is not None
+            }
+            second = Report()
+            again = _attempt(
+                pair, path, base, placed, netlist, congestion, second, floors
+            )
+            if again is not None:
+                once_more = _wall_hugging(
+                    pair, again, base, placed, path.legs[0].layer
+                )
+                if len(once_more) < len(hugs):
+                    results, first, hugs = again, second, once_more
+                    resolved = not once_more
+
+    report.extend(first.diagnostics)
+
+    if results is None:
+        _record(
+            audits, pair, path, coupled=False, results=None,
+            reason=_refusal_reason(first),
+            hugs=hugs, retightened=retightened, resolved=resolved,
+        )
+        return None
+
+    uncoupled = _uncoupled_lengths(results, pair)
+    if pair.max_uncoupled is not None and max(uncoupled) > pair.max_uncoupled:
+        detail = ", ".join(
+            f"{half.net} {length:.3f} mm" for half, length in zip(results, uncoupled, strict=True)
+        )
+        _record(
+            audits, pair, path, coupled=False, results=results,
+            reason="uncoupled budget exceeded",
+            hugs=hugs, retightened=retightened, resolved=resolved,
+        )
+        raise StretchError(
+            f"{pair.key()} runs {max(uncoupled):.3f} mm uncoupled against a "
+            f"{pair.max_uncoupled:.3f} mm budget ({detail}); `coupling` on class "
+            f"{pair.net_class!r} makes that a refusal rather than a warning",
+            hint="the uncoupled length is the fan-out at the ends plus anything the "
+            "pair goes through in the middle; move the end components closer to the "
+            "pair's own pitch, or raise `max_uncoupled_mm` and accept the "
+            "discontinuity",
+        )
+
+    if hugs:
+        listing = "; ".join(
+            f"{hug.feature} at {hug.closest_mm:.3f} mm for {hug.length_mm:.3f} mm"
+            for hug in hugs
+        )
+        report.warning(
+            "diff-pair-wall-hugging",
+            f"{pair.key()} runs parallel to {len(hugs)} copper feature"
+            f"{'s' if len(hugs) != 1 else ''} closer than {HUG_DISTANCE:g} x its "
+            f"{pair.gap} mm gap and for longer than {HUG_LENGTH:g} x it: {listing}"
+            + (
+                ". Re-tightening with their clearance inflated did not move it"
+                if retightened
+                else ""
+            ),
+            hint="the impedance of a coupled pair depends on what is beside it as "
+            "well as what is under it; move the feature, give the pair a wider "
+            "`standoff_k`, or accept the deviation with the number in front of you",
+            net=pair.positive,
+        )
+
+    _record(
+        audits, pair, path, coupled=True, results=results, reason=None,
+        hugs=hugs, retightened=retightened, resolved=resolved,
+    )
+    return results
+
+
+def _attempt(
+    pair: DiffPair,
+    path: RoutePath,
+    base: RoutingEnvironment,
+    placed: list[Obstacle],
+    netlist: Netlist,
+    congestion: float,
+    report: Report,
+    clearance_floor: dict[str, float] | None,
+) -> list[RoutedConnection] | None:
+    """One go at realizing the pair, with an optional per-net clearance floor."""
     both = frozenset({pair.positive, pair.negative})
     base_rules = rules_for(netlist, pair.positive, congestion)
-    centre_rules = replace(base_rules, track_width=pair.corridor)
+    # M11d rule 1. The corridor the centre-line is tightened in stands off by
+    # `standoff` times the class clearance rather than by the class clearance --
+    # `standoff` is 1.0 for every class that does not ask for a controlled
+    # impedance, which is why nothing else on any board moves. Applied to the
+    # *centre-line* only: the fan-out at each end is not coupled to anything, and
+    # asking it to stand off as well is what makes a pair leaving a 0.5 mm pitch
+    # untightenable.
+    centre_rules = replace(
+        base_rules,
+        track_width=pair.corridor,
+        clearance=base_rules.clearance * pair.standoff,
+    )
 
     starts = [base.pad_centres.get(base.resolve_pad(p) or "") for p in pair.starts]
     ends = [base.pad_centres.get(base.resolve_pad(p) or "") for p in pair.ends]
@@ -164,6 +379,7 @@ def realize_pair(
                 )
                 if key
             ),
+            clearance_floor=clearance_floor,
         )
         start = centre_start if index == 0 else leg.start
         end = centre_end if index == len(path.legs) - 1 else leg.end
@@ -177,12 +393,21 @@ def realize_pair(
                 f"pair {pair.key()}",
             )
         except (StretchError, FreeSpaceError) as exc:
+            standoff = (
+                f" The corridor it was tightened in stands off "
+                f"{pair.standoff:g} x the class's {base_rules.clearance:g} mm "
+                f"clearance (M11d rule 1), which is very likely what refused it: "
+                f"lower `standoff_k` on class {pair.net_class!r} if the package "
+                "this pair leaves cannot give that much room."
+                if pair.standoff > 1
+                else ""
+            )
             report.warning(
                 "diff-pair-not-coupled",
                 f"could not route {pair.key()} as a coupled pair: "
                 f"{getattr(exc, 'message', exc)}",
                 hint="the two halves will be routed separately, so the gap and the "
-                "skew budget are no longer guaranteed",
+                "skew budget are no longer guaranteed." + standoff,
                 net=pair.positive,
             )
             return None
@@ -199,6 +424,191 @@ def realize_pair(
 
     return _split_pair(
         pair, centre, path, base, placed, netlist, congestion, report
+    )
+
+
+def _refusal_reason(report: Report) -> str | None:
+    """The message of the refusal that ended an attempt, for the audit."""
+    for diagnostic in reversed(report.diagnostics):
+        if diagnostic.code == "diff-pair-not-coupled":
+            return diagnostic.message
+    return None
+
+
+def _uncoupled_lengths(
+    results: list[RoutedConnection], pair: DiffPair
+) -> tuple[float, ...]:
+    """How much of each half is not coupled to the other, in millimetres.
+
+    The coupled run carries the pair's own width and the fan-out does not, so the
+    legs say which is which without anything having to remember. Measured *after*
+    length matching, because a meander is added to a fan-out leg and a budget
+    checked before it is a budget checked against the wrong number.
+    """
+    return tuple(
+        sum(leg.length for leg in half.legs if leg.width != pair.width)
+        for half in results
+    )
+
+
+def _record(
+    audits: list[PairAudit] | None,
+    pair: DiffPair,
+    path: RoutePath,
+    *,
+    coupled: bool,
+    results: list[RoutedConnection] | None,
+    reason: str | None,
+    hugs: tuple[WallHug, ...],
+    retightened: bool,
+    resolved: bool,
+) -> None:
+    if audits is None:
+        return
+    audits.append(
+        PairAudit(
+            key=pair.key(),
+            positive=pair.positive,
+            negative=pair.negative,
+            net_class=pair.net_class,
+            layer=path.legs[0].layer if path.legs else "",
+            coupled=coupled,
+            reason=reason,
+            width_mm=pair.width,
+            gap_mm=pair.gap,
+            standoff=pair.standoff,
+            target_ohm=pair.target_ohm,
+            uncoupled_mm=_uncoupled_lengths(results, pair) if results else (),
+            budget_mm=pair.max_uncoupled,
+            wall_hugs=hugs,
+            retightened=retightened,
+            resolved_by_retighten=resolved,
+        )
+    )
+
+
+def _wall_hugging(
+    pair: DiffPair,
+    results: list[RoutedConnection],
+    base: RoutingEnvironment,
+    placed: list[Obstacle],
+    layer: str,
+) -> tuple[WallHug, ...]:
+    """M11d rule 2: coupled run beside another copper feature, for too long.
+
+    Measured against *physical* copper, never against an inflated hull. A correctly
+    tightened path runs along an inflated hull for millimetres by construction --
+    that is what tightening is -- so measuring against the hull would flag every
+    pair on every board. The question here is a different one: how close is the
+    real copper, and for how far.
+    """
+    from shapely.geometry import LineString
+    from shapely.geometry import Polygon as ShapelyPolygon
+
+    near = HUG_DISTANCE * pair.gap
+    limit = HUG_LENGTH * pair.gap
+    if near <= 0 or limit <= 0:
+        return ()
+    mine = {pair.positive, pair.negative}
+
+    runs: list[LineString] = []
+    for half in results:
+        for leg in half.legs:
+            if leg.width == pair.width and len(leg.points) >= 2:
+                runs.append(LineString(leg.points))
+    if not runs:
+        return ()
+    span = _bounds(runs)
+
+    hugs: list[WallHug] = []
+    for obstacle in sorted(
+        {o.name: o for o in (*base.obstacles.values(), *placed)}.items()
+    ):
+        name, feature = obstacle
+        if feature.net in mine or feature.kind == "body":
+            continue
+        if feature.layers and layer not in feature.layers and "*.Cu" not in feature.layers:
+            continue
+        if len(feature.polygon) < 3 or not _overlaps(span, feature.polygon, near):
+            continue
+        shape = ShapelyPolygon(feature.polygon)
+        if not shape.is_valid:
+            shape = shape.buffer(0)
+        skirt = shape.buffer(near + pair.width / 2)
+        length = 0.0
+        closest = float("inf")
+        for run in runs:
+            for stretch, nearest in _parallel_stretches(run, shape, skirt, pair):
+                length = max(length, stretch)
+                closest = min(closest, nearest)
+        if length > limit:
+            hugs.append(
+                WallHug(
+                    feature=name,
+                    net=feature.net,
+                    layer=layer,
+                    length_mm=length,
+                    closest_mm=max(closest, 0.0),
+                )
+            )
+    return tuple(sorted(hugs, key=lambda h: (-h.length_mm, h.feature)))
+
+
+def _parallel_stretches(
+    run: Any, shape: Any, skirt: Any, pair: DiffPair
+) -> list[tuple[float, float]]:
+    """The stretches of ``run`` that keep a roughly constant, too-small distance.
+
+    "Runs parallel to" is the load-bearing word in M11d rule 2, and it is what
+    separates a pair that hugs a wall from one that merely goes past the end of a
+    pad. A path crossing a feature sweeps in and out; a path running beside it
+    holds its distance. So a stretch counts only while the distance stays within
+    one gap of the closest approach in that stretch -- which on a fine-pitch
+    package escape measures the pad's own length and nothing else.
+    """
+    from shapely.geometry import Point as ShapelyPoint
+
+    pieces = []
+    inside = run.intersection(skirt)
+    if inside.is_empty:
+        return []
+    geoms = list(inside.geoms) if hasattr(inside, "geoms") else [inside]
+    half = pair.width / 2
+    for piece in geoms:
+        if piece.geom_type != "LineString" or piece.length <= 0:
+            continue
+        steps = max(2, int(piece.length / _HUG_STEP) + 1)
+        distances = [
+            float(shape.distance(ShapelyPoint(piece.interpolate(i / steps, normalized=True))))
+            - half
+            for i in range(steps + 1)
+        ]
+        nearest = min(distances)
+        best = current = 0
+        for distance in distances:
+            current = current + 1 if distance <= nearest + pair.gap else 0
+            best = max(best, current)
+        pieces.append((max(best - 1, 0) * piece.length / steps, nearest))
+    return pieces
+
+
+def _bounds(runs: list[Any]) -> tuple[float, float, float, float]:
+    xs = [v for run in runs for v in (run.bounds[0], run.bounds[2])]
+    ys = [v for run in runs for v in (run.bounds[1], run.bounds[3])]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _overlaps(
+    span: tuple[float, float, float, float], polygon: tuple[Point, ...], margin: float
+) -> bool:
+    """A cheap bounding-box reject, so the shapely work runs on a handful of shapes."""
+    xs = [x for x, _ in polygon]
+    ys = [y for _, y in polygon]
+    return not (
+        max(xs) + margin < span[0]
+        or min(xs) - margin > span[2]
+        or max(ys) + margin < span[1]
+        or min(ys) - margin > span[3]
     )
 
 

@@ -11,6 +11,7 @@ neither has to import the other to get at them.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import replace
 from itertools import pairwise
 
@@ -182,8 +183,16 @@ def geometry_for(
     rules: RouteRules,
     congestion: float,
     open_pads: frozenset[str] = frozenset(),
+    clearance_floor: Mapping[str, float] | None = None,
 ) -> LayerGeometry:
-    """This net's own view of one layer: everything else, inflated by what it needs."""
+    """This net's own view of one layer: everything else, inflated by what it needs.
+
+    ``clearance_floor`` raises the clearance demanded *by* a named net, above what
+    its own class asks for. It exists for one caller: M11d rule 2 re-tightens a
+    controlled-impedance pair once, with the clearance of the feature it was
+    hugging inflated, to see whether the pair will stand off from it. Empty for
+    every other route, which is why every board built before M11 is unchanged.
+    """
     environment = replace(base, obstacles=dict(base.obstacles))
     for obstacle in placed:
         environment.obstacles[obstacle.name] = obstacle
@@ -192,11 +201,14 @@ def geometry_for(
     ):
         environment.obstacles[obstacle.name] = obstacle
 
+    floors = clearance_floor or {}
+
     def clearance_of(net: str | None) -> float:
         """The clearance the *other* net demands; KiCad enforces the larger."""
         if net is None:
             return 0.0
-        return rules_for(netlist, net, congestion).clearance
+        own = rules_for(netlist, net, congestion).clearance
+        return max(own, floors.get(net, 0.0))
 
     blocking = environment.blocking(
         nets,

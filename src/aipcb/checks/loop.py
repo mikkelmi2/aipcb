@@ -14,11 +14,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from aipcb.checks.highspeed import (
+    HighSpeedReport,
+    analyse_highspeed,
+    report_highspeed,
+)
 from aipcb.checks.kicad_reports import CheckOutcome, run_drc, run_erc
 from aipcb.checks.mapping import build_index
 from aipcb.checks.planes import PlaneReport, analyse_planes, report_planes
 from aipcb.compile.build import BuildResult, build_design
 from aipcb.diagnostics import Report
+from aipcb.highspeed import controlled_classes
 from aipcb.kicad.fill import FillError, FillResult, fill_project
 from aipcb.netlist import Netlist
 from aipcb.route.plan import RoutedBoard
@@ -43,6 +49,8 @@ class CheckResult:
     """What KiCad's zone filler produced, when the design declares pours."""
     planes: list[PlaneReport] = field(default_factory=list)
     """Plane integrity, measured off the filled board (M10d)."""
+    highspeed: HighSpeedReport | None = None
+    """The high-speed verification report, when the design declares one (M11e)."""
     filled_board: Path | None = None
     """The staged, filled copy DRC actually ran against."""
 
@@ -62,6 +70,8 @@ class CheckResult:
             out["fill"] = self.fill.to_dict()
         if self.planes:
             out["planes"] = [plane.to_dict() for plane in self.planes]
+        if self.highspeed is not None:
+            out["highspeed"] = self.highspeed.to_dict()
         return out
 
     @property
@@ -127,6 +137,7 @@ def _check_into(
             return result
         result.drc = run_drc(checked, index, report, work=target)
         _measure_planes(checked, build.netlist, report, result)
+        _measure_highspeed(checked, build.netlist, report, result)
     return result
 
 
@@ -166,6 +177,34 @@ def _fill_for_checking(
     result.fill = outcome
     result.filled_board = filled
     return filled
+
+
+def _measure_highspeed(
+    board_path: Path,
+    netlist: Netlist,
+    report: Report,
+    result: CheckResult,
+) -> None:
+    """Project every controlled-impedance net onto its reference plane (M11e).
+
+    Reads the same filled board DRC ran against, and the pair measurements the
+    router made while it routed. Nothing here fills anything: M10 already paid for
+    that, and the staged copy is right there.
+    """
+    from aipcb.kicad.sexpr import SExprError, parse
+
+    if not controlled_classes(netlist):
+        return
+    try:
+        tree = parse(board_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, SExprError):  # pragma: no cover
+        return
+    audits = result.routing.pair_audits if result.routing is not None else []
+    skew = result.routing.skew if result.routing is not None else {}
+    result.highspeed = analyse_highspeed(
+        tree, netlist, audits, skew, filled=result.filled_board is not None
+    )
+    report_highspeed(result.highspeed, netlist, report)
 
 
 def _measure_planes(
