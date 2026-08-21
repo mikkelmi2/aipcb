@@ -6,7 +6,7 @@ piece of copper that does not reach inside removed. It is exported by ``kicad-cl
 like any other board, which is what keeps ADR 0001 true -- aipcb never writes a
 Gerber itself, not even for a solver.
 
-Three things are added that the real board does not have, and each is a deliberate
+Four things separate a slice from the board it came out of, and each is a deliberate
 approximation worth stating out loud:
 
 * **The coupling capacitors become copper.** A pair split by ``role: ac_coupling``
