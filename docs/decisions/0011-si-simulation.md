@@ -508,6 +508,36 @@ net survives. And every run reads its own Gerbers back before spending a minute 
 them: if the pair's net attributes are not in the copper Gerbers, the run is refused
 with a diagnostic instead of being solved.
 
+### The launch was two more of them, and they were ours
+
+Not export gaps -- these were in the slicer this milestone wrote, and both were found
+by looking at the geometry openEMS was given rather than at the numbers it returned.
+
+The launch direction was the average of the two traces' outgoing directions. On a
+pair that leaves its pads *broadside* -- which is how `examples/pcie-sata`'s PCIe
+lanes leave the controller, 0.5 mm apart in x with both heading down the board -- that
+average points along the line joining them, so both launches run on the same line,
+overlap, and weld P to N. Measured on the transmit lane before the fix: |Sdd21| of
+**7.26**, a return loss of **+40 dB**, an impedance of **437 Ω** against an 85 Ω
+target. The rule is now perpendicular to the pair's separation, with only the sign
+taken from where the conductor is heading.
+
+The second is subtler and had no wrong-looking geometry at all. A launch runs
+*outward* from where the pair ends -- and where a pair ends is a pad, and past the pad
+is the component. A slice drops the footprints, so that region is not empty: it is the
+neighbouring pins' fanout, and on `examples/pcie-sata` **every one of the twenty-two
+pair ends has a ground track crossing within a millimetre of it.** A 1.5 mm launch
+laid straight through that is shorted to ground.
+
+Shortening the launch to fit was tried first and measured badly: on this board there
+is often no collision-free length at all, so every port collapsed to a 0.4 mm floor.
+What ships instead clears the corridor -- other nets' tracks are cut where they cross
+it and vias inside it are dropped -- which is a deliberate modification of the same
+kind as dropping the footprints and bridging the capacitors, and each slice reports
+how much it removed (1 to 5 mm of track across pcie-sata's eleven pairs). After the
+fix the transmit lane reads 66.6 Ω and its energy decays to −70 dB where it had
+plateaued at −35.
+
 ## What is now trustworthy, and what is not
 
 Phase 0 set a condition: *"M12a must not report an impedance number until a known-good
