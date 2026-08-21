@@ -232,6 +232,60 @@ what lands outside their frame, so a package in page coordinates is not rejected
 is quietly misread. Two of aipcb's own exports had that shape until M12 read the
 files back.
 
+### Simulating the pairs
+
+Rule-based checks say a differential pair *should* be 100 Ω. A field solver says what
+it is.
+
+```bash
+.venv/bin/aipcb simulate examples/pcie-sata/design.yaml
+```
+
+```
+simulating pcie-sata into examples/pcie-sata/out/si
+  PCIE_RXN+PCIE_RXP        simulated    62.3 s  Zdiff   61.5 ohm  (target 85, -27.6%)
+  PCIE_TXN+PCIE_TXP        simulated    52.0 s  Zdiff   66.6 ohm  (target 85, -21.6%)
+  REFCLKN+REFCLKP          simulated   131.4 s  Zdiff   50.9 ohm  (target 85, -40.1%)
+  ...
+```
+
+Those deviations are real and they are a finding about the *width solver*, not about
+the router: both closed forms aipcb derives a width from model a bare microstrip, and
+every one of these pairs has a ground pour within a class clearance of it. See
+[`docs/reports/m12.md`](docs/reports/m12.md).
+
+Each pair is cut out of the routed board as a **slice** — a small self-contained
+`.kicad_pcb` carrying that pair, the copper near it, the planes it is referenced to
+and four simulation ports — and handed to openEMS through Antmicro's gerber2ems in a
+pinned container. What comes back is S-parameters; what you get is the same
+source-referenced findings as `check`, plus the raw Touchstone file if you would
+rather work in scikit-rf.
+
+Three things the source knows that a geometric slicer could not:
+
+* a pair split by `role: ac_coupling` capacitors is **one link**, not two stubs, so
+  the capacitors become copper and the ports go where the link really ends;
+* the reference plane comes from `layout.stackup.planes`, not from guessing which
+  copper is nearest;
+* each port is terminated in half the class's declared `impedance_diff_ohm`, so the
+  measurement is of the line rather than of the mismatch.
+
+It is a separate command and stays one. A pair costs one to thirteen minutes where
+the whole of `check` costs seconds — and, more to the point, an impedance eight
+percent off target is a number to think about, not a correctness failure. Re-running
+an unchanged pair costs nothing: the cache key is a hash of what the solver actually
+reads.
+
+The honest limit, in the same place as the feature: **this validates the layout, not
+the board.** Every number comes from the stackup the source declares. A fabricator
+who presses a different prepreg builds a different impedance and nothing here will
+know. It finds a pair routed too narrow or a reference that is not where the class
+said; it does not replace an impedance coupon.
+
+Running it needs a container runtime and a locally built gerber2ems image — the only
+part of aipcb that needs either. [ADR 0011](docs/decisions/0011-si-simulation.md)
+records the pinned commits and how the image was built.
+
 ### Routing
 
 Routes are stored as **topology**, not geometry — which obstacles a wire passes and
@@ -635,6 +689,9 @@ unreadable.
 | M11c — pair via transitions and AC coupling | **done** for transitions: two signal vias at a column opened out from the pair's pitch, ground returns, the stub computed from the stackup, and two coupled segments for the router. **Partly** for AC coupling: the pairing, the symmetry and the budget are validated and measured; the capacitors are not *placed* |
 | M11d — stretcher environment discipline | **done**: the three bounded rules, and no others. The default 3x standoff is not available on a 0.5 mm pad pitch and refuses loudly there |
 | M11e — high-speed verification report | **done**: reference continuity projected onto the declared plane after the fill, geometry audit off the copper, skew, stubs and coupling budget. Rule-based, and it says so |
+| M12a — slice generation | **done**: one slice per pair, cut out of the routed board with its neighbours, planes and vias; `role: ac_coupling` parts bridged so a split lane is one link; a straight launch and four ports at the ends. Slices are byte-stable |
+| M12b — simulation orchestration | **done**: openEMS in the pinned container ADR 0011 records, sequential (openEMS already uses every core), cached on a hash of what the solver reads, per-pair failures, and a manifest. No `--parallel`, measured rather than assumed |
+| M12c — structured results | **done**: differential impedance against the class target, worst return loss and its frequency, insertion loss at the class's key frequencies, group delay, and pass/warn per metric — as `check`-shaped findings pointing at the source. Raw S-parameters kept as Touchstone. The thresholds are engineering defaults and say so |
 
 ## Documentation
 
