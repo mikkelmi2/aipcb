@@ -217,13 +217,20 @@ parsed is never silently overwritten; it might be hours of somebody's routing.
 ```
 
 ```
-exported 14 files to fab/ (gerbers, drill, position, bom)
+exported 16 files to fab/ (fill (1/1 zones), gerbers, drill, position, bom)
 ```
 
-Gerbers for every copper and technical layer, Excellon drill files with a drill
-map, a `.gbrjob`, a grouped BOM carrying the descriptions from your component
-database, and a placement file. That is the whole path: source → fab data, with no
-step that required opening a GUI.
+Gerbers for every copper and technical layer, Excellon drill files split by plating
+with a drill map, a `.gbrjob`, a grouped BOM carrying the descriptions from your
+component database, and a placement file. That is the whole path: source → fab data,
+with no step that required opening a GUI.
+
+Every coordinate in the package is measured from the board's own bottom-left corner
+rather than from a corner of the A4 sheet KiCad happened to put it on. That sounds
+like a detail and is not: consumers that parse unsigned coordinates *silently drop*
+what lands outside their frame, so a package in page coordinates is not rejected, it
+is quietly misread. Two of aipcb's own exports had that shape until M12 read the
+files back.
 
 ### Routing
 
@@ -585,6 +592,7 @@ The three bundled examples build up from there:
 | `aipcb export DESIGN` | Gerbers, drill files, BOM and placement file into `out/` |
 | `aipcb route check DESIGN` | verify route topologies are realizable, and that they fit alongside each other |
 | `aipcb route all DESIGN` | route the board across every signal layer and write tracks and vias |
+| `aipcb simulate DESIGN` | solve each differential pair with openEMS and report impedance, return and insertion loss |
 | `aipcb summary DESIGN` | one-line-per-block overview |
 | `aipcb query ...` | read one module, component, net, net class or role |
 | `aipcb parts DESIGN` | list the parts the design's libraries provide |

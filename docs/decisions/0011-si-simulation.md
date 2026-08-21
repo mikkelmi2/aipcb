@@ -357,3 +357,182 @@ list above, which M12a should implement properly.
 
 `examples/pcie-sata` was not exercised: M11 was running concurrently and its report
 did not yet exist. All figures here are from `examples/diff-pair`.
+
+---
+
+# M12 — the integration itself
+
+* **Status:** Accepted (M12a/M12b/M12c delivered)
+* **Date:** 2026-08-21
+* **Amends:** everything above, which was phase 0 and remains true
+
+Phase 0 above proved the toolchain and listed the export gaps. This section records
+what was decided while closing them, what the decisions cost, and the three defects
+the work exposed — two of which were in aipcb rather than in the integration.
+
+## Decision 1 — reimplement the slicer; do not reuse `kicad-si-simulation-wrapper`
+
+Phase 0 left this open. The call is **reimplement**, and the reasons are specific
+rather than a preference for our own code.
+
+Antmicro's wrapper works from a `.kicad_pcb` through the `pcbnew` Python API: it
+opens the board, deletes what is outside a region, and writes the fab files. aipcb
+already owns every one of those steps in a form that suits it better.
+
+1. **The slicer needs to know what a part *is*, not only where it is.** The
+   milestone's own reason: a pair split by `role: ac_coupling` capacitors is one
+   conductor at signal frequencies, and only the source knows that. On
+   `examples/pcie-sata` this is not a corner case — the transmit lane is two declared
+   pairs, four nets and two capacitors, and slicing it geometrically produces two
+   10 mm stubs with a port in the middle of a capacitor instead of one 18 mm link.
+2. **aipcb has no dependency on `pcbnew` and gains one here.** ADR 0009 already
+   confines the `pcbnew` Python module to a subprocess used for zone filling, with a
+   version lock, because importing it into the tool's own process is a large and
+   fragile binding. The wrapper's whole method is that import.
+3. **The output has to be an aipcb board.** A slice is written with the same s-expression
+   writer, the same deterministic UUIDs and the same stackup arithmetic as every other
+   board this tool emits, which is what makes "slice generation is byte-stable" a
+   property rather than a hope. A slice produced by a different writer would have to
+   be re-proved.
+4. **What was actually worth taking is the method, not the code**, and the method is
+   three sentences long: crop to a region, put `Simulation_Port` footprints at the
+   trace ends, feed the result to gerber2ems. That is reproduced here.
+
+What this costs: the port-placement geometry, the launch construction and the
+mixed-mode extraction are all ours to get right, and two of the three were wrong on
+the first attempt (below). Reuse would not have avoided that — the wrapper places
+ports by hand in KiCad — but it is the honest side of the ledger.
+
+## Decision 2 — the stackup comes from the source, not from the `.kicad_pcb`
+
+Phase 0's shim transcribed the stackup out of the board file. That is the wrong
+source, and finding out why is the most valuable thing this milestone measured.
+
+`compile/board.py::_stackup` divides the board thickness evenly between the copper
+layers and writes **one uniform dielectric thickness** into the `.kicad_pcb`, with
+the *first* declared core's material and permittivity applied to all of them.
+`model/layout.py::dielectric_between`, which is what M11's impedance derivation uses,
+honours the `layers:` block properly. On `examples/pcie-sata` those two disagree:
+
+| Between | Source declares | `.kicad_pcb` says |
+|---|---|---|
+| F.Cu – In1.Cu | 0.2104 mm, εr 4.4 (7628 prepreg) | 0.48 mm, εr 4.4 |
+| In1.Cu – In2.Cu | 1.065 mm, εr 4.6 (FR4 core) | 0.48 mm, εr 4.4 |
+| In2.Cu – B.Cu | 0.2104 mm, εr 4.4 | 0.48 mm, εr 4.4 |
+
+A pair 0.48 mm above its plane is not the same transmission line as one 0.21 mm
+above it — the difference is roughly a factor of 1.6 in impedance. Simulating the
+KiCad copy would measure a board nobody described, and would then disagree with
+aipcb's own impedance report for a reason no reader could find.
+
+So `si/inputs.py` derives `stackup.json` from `Stackup`, the same object the
+impedance target came from. **The `.kicad_pcb` discrepancy is left in place**: fixing
+it changes the stackup of every existing example and is a build-semantics change,
+which M12's guardrails forbid. It is recorded here and in `docs/roadmap.md` as work
+for whoever owns board generation next.
+
+## Decision 3 — `loss_tangent` becomes a source field
+
+Phase 0 recorded that `loss_tangent` was hardcoded to `0.02` and unreachable from
+source, and that this made the milestone's honesty clause about matching the fab's
+stackup vacuous. `StackupLayer.loss_tangent` now exists, defaults to `None`, and
+falls back to the same 0.02 — which is now a named constant in `model/layout.py`
+rather than a literal in two places.
+
+It is additive and no bundled example sets it, so every golden board is byte-identical.
+The `epsilon_r`-is-ignored and every-dielectric-is-`core` findings from phase 0 are
+**not** fixed, for the same reason as Decision 2: they live in board generation.
+
+## Decision 4 — sequential, and the measurement behind it
+
+`--parallel N` was not built. openEMS already uses every core — it reported
+750–1270 MCells/s on this machine's sixteen — so process-level parallelism divides
+the same cores between runs and adds a way for two containers to contend for memory
+on a board where one already needs a couple of gigabytes. The measured per-pair times
+in `docs/reports/m12.md` are what a second process would have to beat, and it cannot:
+the work is already parallel one level down.
+
+What makes a re-run fast is the cache, and that is where the effort went.
+
+## Decision 5 — no scikit-rf
+
+The milestone suggested it for post-processing. Not adopted: everything M12c needs is
+a mixed-mode combination of four columns and a median, about forty lines of `cmath`,
+and adding a runtime dependency for that would put a numeric stack in the install
+path of a tool whose other dependencies are a YAML parser, pydantic, typer and
+Shapely. What engineers who *want* scikit-rf need is the data, so every run writes a
+Touchstone `.s4p` beside its results.
+
+## Three defects, all silent, all found by reading files back
+
+Phase 0 found two failure modes that produce a confident wrong answer at a zero exit
+code. It predicted there would be more. There was one more, and it was ours.
+
+### The placement file was in the wrong frame
+
+`export.py` named the file `*-all-pos.csv` so the consumer could find it, but did not
+pass `--use-drill-file-origin`, so every row held absolute A4 page coordinates with a
+negative Y: `"C1",…,145.500000,-122.500000`. Harmless while nothing read the file;
+the moment ports appeared in it, every port would have landed off the board. Fixed,
+and the test reads the exported rows back against the board's own footprint positions
+rather than asserting that a flag was passed — which is the only kind of test that
+would have caught it, since the flags were right the whole time the drill output was
+wrong.
+
+### The drill file had a name nothing globs for
+
+`--excellon-separate-th` was not passed, so KiCad emitted one `MixedPlating`
+`<board>.drl`. gerber2ems globs for `*-PTH.drl` and calls `sys.exit(1)` when the glob
+is empty. Now split into PTH and NPTH, which is also what KiCad's own dialog does by
+default and what a fab that plates by file expects. **This changes the fabrication
+output of every design** — one drill file becomes two — and is recorded as such.
+
+### KiCad prunes nets that have no pads, by renumbering
+
+The new one, and the worst. A slice carries tracks but almost no footprints. When
+`pcbnew` loads such a board it drops every net that no pad references — and it drops
+them by *renumbering*, leaving the tracks pointing at codes that now mean something
+else. On the first working `mcu-4layer` slice the pair's copper came back labelled
+`DEV_DM`/`DEV_DP`, its neighbours' nets.
+
+The geometry was perfect. The Gerbers were perfect. What was wrong was the X2 net
+attribute, which is the thing gerber2ems's mesh generator keys on to decide which
+copper to resolve finely — so it refined nothing, meshed a 0.25 mm trace with a
+0.2 mm clearance at 114 µm, merged the pair into the ground pour it sits in, and
+returned Γ = −1 with |S21| = 0.0007. **A confident short circuit, at exit code zero,
+after four minutes of solving.**
+
+Two things came out of it. Each port footprint now carries one 50 µm pad on the
+launch it sits on — copper entirely inside the trace, so no geometry changes, and the
+net survives. And every run reads its own Gerbers back before spending a minute on
+them: if the pair's net attributes are not in the copper Gerbers, the run is refused
+with a diagnostic instead of being solved.
+
+## What is now trustworthy, and what is not
+
+Phase 0 set a condition: *"M12a must not report an impedance number until a known-good
+structure reproduces a known-good value."* Discharged, with a mesh convergence study
+on `examples/mcu-4layer` — the numbers are in `docs/reports/m12.md`. Three mesh
+densities spanning 0.45 M to 5.1 M cells on the same geometry agree on the median
+differential impedance to within a couple of percent, against the 3× spread phase 0
+saw on `examples/diff-pair`. The difference is the structure, exactly as phase 0
+predicted: a plane 0.48 mm below the trace guides; one 1.51 mm below does not.
+
+Two limits are real and are stated in the report rather than engineered around:
+
+* **The closed forms aipcb derives widths from ignore coplanar ground**, and every
+  bundled example pours ground right up to its pairs. Simulation therefore lands
+  consistently *below* the class target, and the size of the gap is a finding about
+  the derivation, not about the router.
+* **`examples/diff-pair` cannot reach its declared 100 Ω** — phase 0's warning, and
+  M12 confirms rather than fixes it. The example's target is wrong.
+
+## Consequences, added to those above
+
+* `aipcb simulate` exists, is not part of `check`, and is the only command in the
+  tool that needs a container.
+* `export` now writes split PTH/NPTH drill files and a placement file measured from
+  the board's own corner. Both are changes to what a fab receives.
+* `simulation:` is a new optional source block. Nothing in it reaches the board.
+* Slice generation is byte-stable; solver numerics are not bit-reproducible but are
+  stable enough that verdicts repeat.
