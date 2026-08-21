@@ -103,6 +103,7 @@ class _Elaborator:
             pours=design.pours,
             stitching=design.stitching,
             transitions=design.transitions,
+            simulation=design.simulation,
             unknown_mech_refs=(*unplaced, *unfanned),
             mech_names=mech_names,
             locs=self._mech_locs(),

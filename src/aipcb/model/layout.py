@@ -152,6 +152,13 @@ class StackupLayer(Strict):
     thickness_mm: float = Field(gt=0)
     material: str | None = None
     epsilon_r: float | None = Field(default=None, gt=0)
+    loss_tangent: float | None = Field(
+        default=None,
+        ge=0,
+        description="Dissipation factor of the laminate. Above about a gigahertz "
+        "this is what decides insertion loss, and until M12 it was unreachable from "
+        "source -- 0.02 was hardcoded. Only meaningful on a `core` or `prepreg`.",
+    )
 
 
 #: What a via is allowed to span. ``through`` goes the whole way; ``blind`` reaches
@@ -164,6 +171,12 @@ COPPER_THICKNESS_MM = 0.035
 
 #: Solder mask, per side.
 MASK_THICKNESS_MM = 0.01
+
+#: Dissipation factor assumed for a laminate that does not declare one. This is the
+#: number ``compile/board.py`` has always written into the KiCad stackup; it lives
+#: here now because signal-integrity simulation reads it too, and the two had better
+#: be the same board.
+DEFAULT_LOSS_TANGENT = 0.02
 
 
 @dataclass(frozen=True, slots=True)

@@ -23,6 +23,7 @@ from aipcb.model.layout import Layout, NetClass
 from aipcb.model.mech import Fanout, MechPlacement
 from aipcb.model.parts import Part
 from aipcb.model.pours import Pour, Stitching
+from aipcb.model.simulation import SimulationSettings
 from aipcb.source import Loc
 
 __all__ = ["ElabComponent", "ElabConstraint", "ElabNet", "Netlist", "Node"]
@@ -140,6 +141,8 @@ class Netlist:
     """Declared differential-pair layer changes, in source order."""
     stitching: tuple[Stitching, ...] = ()
     """Stitching-via patterns, in source order."""
+    simulation: SimulationSettings = field(default_factory=SimulationSettings)
+    """What a signal-integrity run may assume. Defaults when the source is silent."""
     unknown_mech_refs: tuple[tuple[str, str], ...] = ()
     """``(block, name)`` for mechanical entries naming no component in the design."""
     mech_names: dict[str, str] = field(default_factory=dict)

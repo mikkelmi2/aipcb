@@ -23,6 +23,7 @@ from aipcb.model.highspeed import PairTransition
 from aipcb.model.layout import Layout, NetClass
 from aipcb.model.mech import Fanout, MechPlacement
 from aipcb.model.pours import Pour, Stitching
+from aipcb.model.simulation import SimulationSettings
 
 __all__ = [
     "KNOWN_NET_CLASSES",
@@ -305,6 +306,12 @@ class Design(Strict):
     stitching: tuple[Stitching, ...] = Field(
         default=(),
         description="Patterns of vias tying a net's pours together between layers.",
+    )
+    simulation: SimulationSettings = Field(
+        default_factory=SimulationSettings,
+        description="What `aipcb simulate` may assume: band, slice margin, mesh "
+        "density and the thresholds a verdict is measured against (M12). Nothing "
+        "here reaches the board, and a design that omits it simulates on defaults.",
     )
 
     @model_validator(mode="after")
