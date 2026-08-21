@@ -35,6 +35,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from itertools import pairwise
 
 from aipcb.ids import element_uuid
 from aipcb.kicad.sexpr import SNode, num, quoted, sym
@@ -196,6 +197,16 @@ def _tracks(board: SNode) -> list[Track]:
     return out
 
 
+def _vias(board: SNode) -> list[tuple[Point, float]]:
+    """Every via as a centre and an outer radius, for collision tests."""
+    out: list[tuple[Point, float]] = []
+    for via in board.children("via"):
+        size = via.child("size")
+        radius = float(size.value() or 0.4) / 2 if size else 0.2
+        out.append((_point(via.child("at")), radius))
+    return out
+
+
 def _key(point: Point) -> tuple[float, float]:
     return (round(point[0] / _EPS) * _EPS, round(point[1] / _EPS) * _EPS)
 
@@ -270,6 +281,78 @@ def _outward(tracks: list[Track], point: Point) -> Point:
         if _key(track.end) == key:
             return (track.end[0] - track.start[0], track.end[1] - track.start[1])
     return (1.0, 0.0)
+
+
+#: How much board is cleared beside a launch. A typical class clearance on these
+#: designs, so what is removed is what would have been a design-rule violation had
+#: the launch been a real track.
+_LAUNCH_CLEARANCE_MM = 0.15
+
+
+def _launch_axis(pair_tracks: list[Track], p_point: Point, n_point: Point) -> Point:
+    """Which way both halves of one end are launched, as a unit axis vector.
+
+    The rule is *perpendicular to the pair's own separation*, and it is not a
+    refinement -- it is the difference between a working slice and a short circuit.
+    Take the average of the two traces' outgoing directions instead, and on a pair
+    that leaves its pads broadside (`examples/pcie-sata`'s PCIe lanes leave the
+    controller side by side, 0.5 mm apart in x, both heading down the board) the
+    average can come out along x. Both launches then run along the same line,
+    overlap, and weld P to N. Measured on that board before the rule existed:
+    |Sdd21| of 7.26, a return loss of +40 dB, and an impedance of 437 ohm against an
+    85 ohm target.
+
+    So the axis is the one the two endpoints do *not* separate along, and only the
+    sign comes from where the conductor is heading.
+    """
+    separation = (n_point[0] - p_point[0], n_point[1] - p_point[1])
+    outward = _add(_outward(pair_tracks, p_point), _outward(pair_tracks, n_point))
+    if abs(separation[0]) >= abs(separation[1]):
+        component = outward[1]
+        if abs(component) < 1e-9:
+            component = p_point[1] - _centroid(pair_tracks)[1]
+        return (0.0, 1.0 if component >= 0 else -1.0)
+    component = outward[0]
+    if abs(component) < 1e-9:
+        component = p_point[0] - _centroid(pair_tracks)[0]
+    return (1.0 if component >= 0 else -1.0, 0.0)
+
+
+def _centroid(tracks: list[Track]) -> Point:
+    xs = [c for t in tracks for c in (t.start[0], t.end[0])]
+    ys = [c for t in tracks for c in (t.start[1], t.end[1])]
+    return (sum(xs) / len(xs), sum(ys) / len(ys))
+
+
+def launch_corridor(stubs: list[Track]) -> object:
+    """The region the launches occupy, plus a clearance, as one shapely geometry.
+
+    A launch runs *outward* from where the pair ends -- which is where a pad was,
+    and beyond the pad is the component. Drop the footprints, as a slice does, and
+    that region is not empty: it is full of the neighbouring pins' fanout, and on
+    `examples/pcie-sata` every one of the twenty-two pair ends has a ground track
+    crossing within a millimetre of it. A launch laid straight through that is
+    welded to ground, and openEMS will report the short with a clean exit code.
+
+    So the corridor is cleared. That is a deliberate modification of the same kind
+    as dropping the footprints and bridging the coupling capacitors: the port stands
+    in for the pad and for everything past it -- the driver, the connector, the
+    cable -- and the neighbouring pins' fanout is not the transmission line under
+    test. The slice reports how much copper it removed, so the modification is
+    visible rather than assumed.
+    """
+    from shapely.geometry import LineString
+    from shapely.ops import unary_union
+
+    return unary_union(
+        [
+            LineString([t.start, t.end]).buffer(
+                t.width / 2 + _LAUNCH_CLEARANCE_MM, resolution=8
+            )
+            for t in stubs
+            if t.length > _EPS
+        ]
+    )
 
 
 def _rotation_for(direction: Point) -> float:
@@ -400,16 +483,21 @@ def build_slice(
     launch = settings.launch_mm
     ports: list[Port] = []
     stubs: list[Track] = []
+    directions = {
+        0: _launch_axis(all_pair, p_first, n_first),
+        1: _launch_axis(all_pair, p_second, n_second),
+    }
     for index, (side, point) in enumerate(
         (("p", p_first), ("p", p_second), ("n", n_first), ("n", n_second))
     ):
-        mate = {0: n_first, 1: n_second, 2: p_first, 3: p_second}[index]
-        direction = _axis(
-            _add(_outward(all_pair, point), _outward(all_pair, mate))
-        )
+        end = index % 2 if index < 2 else (index - 2) % 2
+        direction = directions[end]
         owner = _owner(all_pair, point)
-        end = (point[0] + direction[0] * launch, point[1] + direction[1] * launch)
-        stubs.append(Track(point, end, owner.width, owner.layer, owner.net))
+        stop = (
+            point[0] + direction[0] * launch,
+            point[1] + direction[1] * launch,
+        )
+        stubs.append(Track(point, stop, owner.width, owner.layer, owner.net))
         layer_index = metals.index(owner.layer) if owner.layer in metals else 0
         reference = stackup.reference_below(owner.layer)
         plane_index = (
@@ -424,7 +512,7 @@ def build_slice(
         ports.append(
             Port(
                 number=index + 1,
-                at=end,
+                at=stop,
                 rotation=_rotation_for((-direction[0], -direction[1])),
                 width_mm=owner.width,
                 length_mm=launch,
@@ -446,7 +534,15 @@ def build_slice(
     origin = (rect[0], rect[3])
     conductor_length = sum(t.length for t in all_pair)
 
-    node = _assemble(board, netlist, pair, rect, origin, ports, tracks, stubs, bridges)
+    node, cleared, dropped = _assemble(
+        board, netlist, pair, rect, origin, ports, tracks, stubs, bridges, all_pair
+    )
+    if cleared > _EPS or dropped:
+        notes.append(
+            f"{cleared:.2f} mm of other nets' track and {dropped} via(s) were removed "
+            "from the corridor the four launches occupy, because a launch runs out "
+            "past the pad into the neighbouring pins' fanout"
+        )
     return Slice(
         pair=pair,
         board=node,
@@ -601,7 +697,8 @@ def _assemble(
     tracks: list[Track],
     stubs: list[Track],
     bridges: list[Track],
-) -> SNode:
+    own: list[Track],
+) -> tuple[SNode, float, int]:
     root = SNode("kicad_pcb")
     for name in ("version", "generator", "generator_version", "general", "paper"):
         node = board.child(name)
@@ -631,17 +728,48 @@ def _assemble(
         rect[2] - _CLIP_INSET_MM,
         rect[3] - _CLIP_INSET_MM,
     )
+    from shapely.geometry import LineString
+    from shapely.geometry import Point as ShapelyPoint
+
+    corridor = launch_corridor(stubs)
+    mine = {id(t) for t in own}
     kept: list[Track] = []
+    cleared = 0.0
     for track in (*tracks, *bridges, *stubs):
         clipped = _clip(track, inner)
-        if clipped is not None:
+        if clipped is None:
+            continue
+        if id(track) in mine or track in stubs or track in bridges:
             kept.append(clipped)
-    vias = [
-        via
-        for via in board.children("via")
-        if inner[0] <= _point(via.child("at"))[0] <= inner[2]
-        and inner[1] <= _point(via.child("at"))[1] <= inner[3]
-    ]
+            continue
+        line = LineString([clipped.start, clipped.end])
+        if not line.intersects(corridor):
+            kept.append(clipped)
+            continue
+        cleared += line.intersection(corridor).length
+        outside = line.difference(corridor)
+        for piece in getattr(outside, "geoms", [outside]):
+            if piece.is_empty or piece.length < _EPS:
+                continue
+            points = list(piece.coords)
+            for a, b in pairwise(points):
+                kept.append(
+                    Track((a[0], a[1]), (b[0], b[1]), clipped.width,
+                          clipped.layer, clipped.net)
+                )
+
+    vias = []
+    dropped = 0
+    for via in board.children("via"):
+        at = _point(via.child("at"))
+        if not (inner[0] <= at[0] <= inner[2] and inner[1] <= at[1] <= inner[3]):
+            continue
+        size = via.child("size")
+        radius = float(size.value() or 0.4) / 2 if size else 0.2
+        if ShapelyPoint(at).buffer(radius, resolution=8).intersects(corridor):
+            dropped += 1
+            continue
+        vias.append(via)
     zones = list(board.children("zone"))
 
     # Renumber the nets. A slice carries a fraction of the board's nets, and KiCad
@@ -673,7 +801,7 @@ def _assemble(
     for port in ports:
         code = next((c for c, n in names.items() if n == port.net), 0)
         root.add(port_footprint(port, pair.name, recode.get(code, 0)))
-    return root
+    return root, cleared, dropped
 
 
 def _net_names(board: SNode) -> dict[int, str]:
