@@ -1,0 +1,306 @@
+{
+  "board": {
+    "design_settings": {
+      "rules": {
+        "min_copper_edge_clearance": 0.15,
+        "min_through_hole_diameter": 0.2,
+        "min_via_diameter": 0.4
+      }
+    },
+    "layer_presets": [],
+    "viewports": []
+  },
+  "boards": [],
+  "cvpcb": {
+    "equivalence_files": []
+  },
+  "erc": {
+    "erc_exclusions": [],
+    "meta": {
+      "version": 0
+    },
+    "rule_severities": {}
+  },
+  "libraries": {
+    "pinned_footprint_libs": [],
+    "pinned_symbol_libs": []
+  },
+  "meta": {
+    "filename": "pcie-sata.kicad_pro",
+    "version": 3
+  },
+  "net_settings": {
+    "classes": [
+      {
+        "bus_width": 12,
+        "clearance": 0.2,
+        "diff_pair_gap": 0.2,
+        "diff_pair_via_gap": 0.2,
+        "diff_pair_width": 0.25,
+        "line_style": 0,
+        "microvia_diameter": 0.508,
+        "microvia_drill": 0.127,
+        "name": "Default",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 2147483647,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "wire_width": 6
+      },
+      {
+        "bus_width": 12,
+        "clearance": 0.15,
+        "diff_pair_gap": 0.15,
+        "diff_pair_via_gap": 0.15,
+        "diff_pair_width": 0.25,
+        "line_style": 0,
+        "microvia_diameter": 0.508,
+        "microvia_drill": 0.127,
+        "name": "ground",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 0,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.25,
+        "via_diameter": 0.4,
+        "via_drill": 0.2,
+        "wire_width": 6
+      },
+      {
+        "bus_width": 12,
+        "clearance": 0.15,
+        "diff_pair_gap": 0.15,
+        "diff_pair_via_gap": 0.15,
+        "diff_pair_width": 0.2,
+        "line_style": 0,
+        "microvia_diameter": 0.508,
+        "microvia_drill": 0.127,
+        "name": "pcie_rx",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 0,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.2,
+        "via_diameter": 0.4,
+        "via_drill": 0.2,
+        "wire_width": 6
+      },
+      {
+        "bus_width": 12,
+        "clearance": 0.15,
+        "diff_pair_gap": 0.15,
+        "diff_pair_via_gap": 0.15,
+        "diff_pair_width": 0.2,
+        "line_style": 0,
+        "microvia_diameter": 0.508,
+        "microvia_drill": 0.127,
+        "name": "pcie_tx",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 0,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.2,
+        "via_diameter": 0.4,
+        "via_drill": 0.2,
+        "wire_width": 6
+      },
+      {
+        "bus_width": 12,
+        "clearance": 0.15,
+        "diff_pair_gap": 0.15,
+        "diff_pair_via_gap": 0.15,
+        "diff_pair_width": 0.25,
+        "line_style": 0,
+        "microvia_diameter": 0.508,
+        "microvia_drill": 0.127,
+        "name": "power",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 0,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.25,
+        "via_diameter": 0.4,
+        "via_drill": 0.2,
+        "wire_width": 6
+      },
+      {
+        "bus_width": 12,
+        "clearance": 0.15,
+        "diff_pair_gap": 0.2,
+        "diff_pair_via_gap": 0.2,
+        "diff_pair_width": 0.2,
+        "line_style": 0,
+        "microvia_diameter": 0.508,
+        "microvia_drill": 0.127,
+        "name": "sata",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 0,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.2,
+        "via_diameter": 0.4,
+        "via_drill": 0.2,
+        "wire_width": 6
+      },
+      {
+        "bus_width": 12,
+        "clearance": 0.15,
+        "diff_pair_gap": 0.15,
+        "diff_pair_via_gap": 0.15,
+        "diff_pair_width": 0.2,
+        "line_style": 0,
+        "microvia_diameter": 0.508,
+        "microvia_drill": 0.127,
+        "name": "signal",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 0,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.2,
+        "via_diameter": 0.4,
+        "via_drill": 0.2,
+        "wire_width": 6
+      }
+    ],
+    "meta": {
+      "version": 4
+    },
+    "net_colors": null,
+    "netclass_assignments": null,
+    "netclass_patterns": [
+      {
+        "netclass": "ground",
+        "pattern": "GND"
+      },
+      {
+        "netclass": "power",
+        "pattern": "P12V"
+      },
+      {
+        "netclass": "power",
+        "pattern": "P3V3"
+      },
+      {
+        "netclass": "pcie_rx",
+        "pattern": "PCIE_RXN"
+      },
+      {
+        "netclass": "pcie_rx",
+        "pattern": "PCIE_RXP"
+      },
+      {
+        "netclass": "pcie_tx",
+        "pattern": "PCIE_TXN"
+      },
+      {
+        "netclass": "pcie_tx",
+        "pattern": "PCIE_TXN_C"
+      },
+      {
+        "netclass": "pcie_tx",
+        "pattern": "PCIE_TXP"
+      },
+      {
+        "netclass": "pcie_tx",
+        "pattern": "PCIE_TXP_C"
+      },
+      {
+        "netclass": "pcie_rx",
+        "pattern": "REFCLKN"
+      },
+      {
+        "netclass": "pcie_rx",
+        "pattern": "REFCLKP"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA0_RXN"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA0_RXP"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA0_TXN"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA0_TXP"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA1_RXN"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA1_RXP"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA1_TXN"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA1_TXP"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA2_RXN"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA2_RXP"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA2_TXN"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA2_TXP"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA3_RXN"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA3_RXP"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA3_TXN"
+      },
+      {
+        "netclass": "sata",
+        "pattern": "SATA3_TXP"
+      }
+    ]
+  },
+  "pcbnew": {
+    "last_paths": {
+      "gencad": "",
+      "idf": "",
+      "netlist": "",
+      "plot": "",
+      "pos_files": "",
+      "specctra_dsn": "",
+      "step": "",
+      "svg": "",
+      "vrml": ""
+    },
+    "page_layout_descr_file": ""
+  },
+  "schematic": {
+    "legacy_lib_dir": "",
+    "legacy_lib_list": [],
+    "meta": {
+      "version": 1
+    },
+    "page_layout_descr_file": ""
+  },
+  "sheets": [
+    [
+      "fac7359a-0697-5d85-9732-947d62b06bc7",
+      "Root"
+    ]
+  ],
+  "text_variables": {}
+}

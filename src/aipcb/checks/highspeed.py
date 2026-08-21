@@ -32,6 +32,7 @@ them to fail the check says ``verify: error``.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
@@ -218,9 +219,21 @@ def analyse_highspeed(
     audits: list[PairAudit],
     skew: dict[str, float],
     *,
+    vias: Sequence[tuple[str, Point, str, str, float]] = (),
     filled: bool = True,
 ) -> HighSpeedReport:
-    """Measure every controlled-impedance net on a routed -- and filled -- board."""
+    """Measure every controlled-impedance net on a routed -- and filled -- board.
+
+    ``vias`` is the router's own record of what it drilled: net, position, the two
+    layers the signal uses, and the diameter. It is passed in rather than read back
+    because **KiCad's writer normalises a through via's recorded span to the outer
+    layers**, measured on a four-layer board where a transition to `In2.Cu` came
+    back from `pcbnew` written as `F.Cu`/`B.Cu`. That is not wrong of KiCad -- a
+    through via *is* drilled the whole way -- but it erases the one thing a stub
+    calculation needs, which is where the signal stopped. Without the router's
+    record every stub on every board measures zero, which is a comfortable answer
+    and a false one.
+    """
     targets = controlled_classes(netlist)
     if not targets:
         return HighSpeedReport()
@@ -234,7 +247,7 @@ def analyse_highspeed(
         for name, net in netlist.nets.items()
         if net.net_class in targets
     }
-    result.stubs = _stubs(board, controlled, stackup)
+    result.stubs = _stubs(board, controlled, stackup, vias)
     if filled:
         copper = filled_copper(board)
         for name in sorted(controlled):
@@ -374,6 +387,7 @@ def _stubs(
     board: SNode,
     controlled: dict[str, ImpedanceTarget],
     stackup: Stackup,
+    routed: Sequence[tuple[str, Point, str, str, float]] = (),
 ) -> list[ViaStub]:
     """The barrel a via leaves behind, below and above the layers carrying signal.
 
@@ -391,21 +405,39 @@ def _stubs(
     outer_top, outer_bottom = order[0], order[-1]
     through_only = "through" in stackup.via_types and len(stackup.via_types) == 1
 
+    found: list[tuple[str, Point, str, str, float, bool]] = [
+        (net, at, first, second, diameter, False)
+        for net, at, first, second, diameter in routed
+        if net in controlled and first in order and second in order
+    ]
+    if not found:
+        for item in board.children("via"):
+            code = item.get("net")
+            net = names.get(code) if code is not None else None
+            if not net or net not in controlled:
+                continue
+            layers = item.child("layers")
+            at = item.child("at")
+            size = item.child("size")
+            if layers is None or at is None:
+                continue
+            atoms = [str(a.value) for a in layers.atoms()]
+            if len(atoms) != 2 or atoms[0] not in order or atoms[1] not in order:
+                continue
+            found.append(
+                (
+                    net,
+                    (float(at.value(0) or 0), float(at.value(1) or 0)),
+                    atoms[0],
+                    atoms[1],
+                    float(size.value(0) or 0.6) if size is not None else 0.6,
+                    any(str(a.value) in ("blind", "micro") for a in item.atoms()),
+                )
+            )
+
     out: list[ViaStub] = []
-    for item in board.children("via"):
-        code = item.get("net")
-        net = names.get(code) if code is not None else None
-        if not net or net not in controlled:
-            continue
-        layers = item.child("layers")
-        at = item.child("at")
-        if layers is None or at is None:
-            continue
-        atoms = [str(a.value) for a in layers.atoms()]
-        if len(atoms) != 2 or atoms[0] not in order or atoms[1] not in order:
-            continue
-        used = (atoms[0], atoms[1])
-        blind = any(str(a.value) in ("blind", "micro") for a in item.atoms())
+    for net, position, first, second, diameter, blind in found:
+        used = (first, second)
         span = used if (blind and not through_only) else (outer_top, outer_bottom)
         shallow, deep = sorted(used, key=order.index)
         stub = stackup.barrel_length_mm(span[0], shallow) + stackup.barrel_length_mm(
@@ -414,15 +446,11 @@ def _stubs(
         out.append(
             ViaStub(
                 net=net,
-                at=(float(at.value(0) or 0), float(at.value(1) or 0)),
+                at=position,
                 span=span,
                 used=used,
                 stub_mm=stub,
-                diameter_mm=float(
-                    size.value(0) or 0.6
-                    if (size := item.child("size")) is not None
-                    else 0.6
-                ),
+                diameter_mm=diameter,
             )
         )
     return sorted(out, key=lambda v: (-v.stub_mm, v.net, v.at))
@@ -467,7 +495,11 @@ def _pairs(
                 layer=audit.layer,
                 coupled=audit.coupled,
                 target_ohm=audit.target_ohm,
-                target_width_mm=target.width_mm,
+                # The *derived* width, not the one the source may have overridden
+                # it with: the audit's question is what the impedance target
+                # implies against what the board carries, and comparing the
+                # override against itself would answer it with a zero every time.
+                target_width_mm=target.geometry.width_mm,
                 target_gap_mm=target.gap_mm,
                 actual_widths_mm=widths,
                 actual_gap_mm=gap,

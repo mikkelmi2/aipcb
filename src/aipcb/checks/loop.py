@@ -201,8 +201,22 @@ def _measure_highspeed(
         return
     audits = result.routing.pair_audits if result.routing is not None else []
     skew = result.routing.skew if result.routing is not None else {}
+    vias = (
+        [
+            (via.net, via.point, via.from_layer, via.to_layer, via.diameter)
+            for connection in result.routing.connections
+            for via in connection.vias
+        ]
+        if result.routing is not None
+        else []
+    )
     result.highspeed = analyse_highspeed(
-        tree, netlist, audits, skew, filled=result.filled_board is not None
+        tree,
+        netlist,
+        audits,
+        skew,
+        vias=vias,
+        filled=result.filled_board is not None,
     )
     report_highspeed(result.highspeed, netlist, report)
 
