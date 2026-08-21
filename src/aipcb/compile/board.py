@@ -183,12 +183,18 @@ def _dielectric(index: int, thickness: float, declared: list[StackupLayer]) -> S
     )
 
 
-def _setup(layout: Layout | None) -> SNode:
+def _setup(layout: Layout | None, aux_origin: tuple[float, float]) -> SNode:
     node = SNode("setup")
     node.add(_stackup(layout))
     node.add(SNode("pad_to_mask_clearance").add(num(0)))
     node.add(SNode("allow_soldermask_bridges_in_footprints").add(sym("no")))
     node.add(SNode("tenting").add(sym("front"), sym("back")))
+    # The drill/place file origin, at the board's bottom-left corner. Export asks
+    # kicad-cli for output relative to it (--use-drill-file-origin, --drill-origin
+    # plot); without this token that origin silently defaults to the page corner and
+    # every drill coordinate comes out negative in Y. See BoardFrame.aux_origin for
+    # why this corner and no other.
+    node.add(SNode("aux_axis_origin").add(num(aux_origin[0]), num(aux_origin[1])))
     return node
 
 
@@ -579,6 +585,8 @@ def build_board(
     extents = {refdes: footprint_extent(fp) for refdes, fp in footprints.items()}
     frame = frame_for(netlist)
     placement = plan_placement(netlist, report=report, extents=extents, frame=frame)
+    if frame is None:
+        frame = auto_frame(*_auto_size(placement, extents), placement.origin)
 
     unconnected = _unconnected_nets(netlist)
     synthetic = {name for pins in unconnected.values() for name in pins.values()}
@@ -604,7 +612,7 @@ def build_board(
     )
     planes = frozenset(layout.stackup.plane_layers) if layout else frozenset()
     root.add(standard_layers(copper_count, planes))
-    root.add(_setup(layout))
+    root.add(_setup(layout, frame.aux_origin))
 
     # Net 0 is KiCad's unconnected net and must come first.
     root.add(SNode("net").add(num(0), quoted("")))
@@ -645,8 +653,6 @@ def build_board(
             )
         )
 
-    if frame is None:
-        frame = auto_frame(*_auto_size(placement, extents), placement.origin)
     for segment in edge_geometry(frame):
         root.add(segment)
 

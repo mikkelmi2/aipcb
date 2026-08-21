@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from aipcb.compile.build import build_design
 from aipcb.compile.export import export_board, gerber_layers
 from aipcb.diagnostics import Report
+from aipcb.kicad.sexpr import parse
 
 from .conftest import REPO_ROOT, needs_kicad_cli, needs_kicad_libraries
 
@@ -121,3 +125,111 @@ class TestExportCli:
         before = set(design.parent.iterdir())
         self._run(str(design), "--out", str(tmp_path / "fab"))
         assert set(design.parent.iterdir()) == before
+
+
+@needs_kicad_libraries
+class TestDrillOrigin:
+    """The drill/place file origin, which decides whether fab data is legible.
+
+    ``export`` already asked kicad-cli for coordinates relative to the drill file
+    origin (``--use-drill-file-origin``, ``--drill-origin plot``). What was missing
+    was the origin itself: with no ``(aux_axis_origin ...)`` in the board, KiCad
+    falls back to the page corner, and every drill coordinate comes out negative in
+    Y. That is still valid Excellon, so nothing fails -- consumers that parse
+    unsigned coordinates simply drop every hole in silence. These tests therefore
+    read the exported file rather than trusting the flags, because the flags were
+    right the whole time the output was wrong.
+    """
+
+    def test_the_board_declares_its_bottom_left_corner_as_the_origin(
+        self, example_design: Path, tmp_path: Path
+    ) -> None:
+        result = build_design(example_design, out_dir=tmp_path / "build")
+        board = parse(
+            next(p for p in result.written if p.suffix == ".kicad_pcb").read_text(
+                encoding="utf-8"
+            )
+        )
+        setup = board.child("setup")
+        assert setup is not None
+        origin = setup.child("aux_axis_origin")
+        assert origin is not None, "the board declares no drill/place file origin"
+
+        xs, ys = [], []
+        for graphic in ("gr_line", "gr_arc"):
+            for node in board.children(graphic):
+                if (layer := node.child("layer")) is None or layer.value() != "Edge.Cuts":
+                    continue
+                for point in ("start", "mid", "end"):
+                    if (at := node.child(point)) is not None:
+                        xs.append(float(at.value(0) or 0))
+                        ys.append(float(at.value(1) or 0))
+        assert xs, "the board has no edge"
+        # Bottom-left in KiCad's Y-down board space: the smallest X, the largest Y.
+        assert (float(origin.value(0) or 0), float(origin.value(1) or 0)) == (
+            pytest.approx(min(xs)),
+            pytest.approx(max(ys)),
+        )
+
+    @needs_kicad_cli
+    def test_no_exported_drill_coordinate_is_negative(self, tmp_path: Path) -> None:
+        board, netlist, origin = self._routed_board("mcu-4layer", tmp_path)
+        vias = [
+            (float(at.value(0) or 0), float(at.value(1) or 0))
+            for via in board.children("via")
+            if (at := via.child("at")) is not None
+        ]
+        assert vias, "mcu-4layer routed without vias; the test would prove nothing"
+
+        report = Report()
+        result = export_board(
+            tmp_path / "routed" / "mcu-4layer.kicad_pcb",
+            tmp_path / "fab",
+            netlist,
+            report,
+        )
+        assert result.ok, report.render()
+        drill = next(p for p in result.files if p.suffix == ".drl")
+        holes = _drill_coordinates(drill)
+        assert holes
+
+        negative = [c for c in holes if c[0] < 0 or c[1] < 0]
+        assert not negative, f"drill coordinates outside the origin: {negative[:4]}"
+
+        # Every via lands where the declared origin says it should. This is the half
+        # a sign check cannot see: an origin nothing was measured from would still
+        # pass the test above on a board that happens to sit in the positive
+        # quadrant.
+        for x, y in vias:
+            want = (round(x - origin[0], 3), round(origin[1] - y, 3))
+            assert any(
+                abs(hx - want[0]) < 1e-3 and abs(hy - want[1]) < 1e-3
+                for hx, hy in holes
+            ), f"via at {(x, y)} is not in the drill file at {want}"
+
+    def _routed_board(self, name: str, tmp_path: Path):
+        design = REPO_ROOT / "examples" / name / "design.yaml"
+        run = subprocess.run(
+            [sys.executable, "-m", "aipcb.cli", "route", "all",
+             str(design), "--out", str(tmp_path / "routed")],
+            capture_output=True, text=True, check=False,
+        )
+        assert run.returncode == 0, run.stdout + run.stderr
+        netlist = build_design(design, out_dir=tmp_path / "build").netlist
+        board = parse(
+            (tmp_path / "routed" / f"{name}.kicad_pcb").read_text(encoding="utf-8")
+        )
+        setup = board.child("setup")
+        assert setup is not None
+        origin = setup.child("aux_axis_origin")
+        assert origin is not None
+        return board, netlist, (float(origin.value(0) or 0), float(origin.value(1) or 0))
+
+
+def _drill_coordinates(path: Path) -> list[tuple[float, float]]:
+    """Every hole position in an Excellon file, as the fab's reader sees them."""
+    out: list[tuple[float, float]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        for match in re.finditer(r"X(-?[0-9.]+)Y(-?[0-9.]+)", line):
+            out.append((float(match.group(1)), float(match.group(2))))
+    return out
