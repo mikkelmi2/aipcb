@@ -1,7 +1,8 @@
 # 0009 — Copper pours: who fills the zones
 
-* **Status:** **Proposed — blocked.** M10 stopped before writing code and is
-  waiting on a decision from the project owner. Nothing in this ADR is implemented.
+* **Status:** **Accepted — Option 1**, decided by the project owner on 2026-08-21
+  with the conditions recorded under "The decision" below. M10 resumed on that
+  basis; this ADR amends [ADR 0001](0001-kicad-io.md).
 * **Date:** 2026-08-21
 * **Context:** milestone M10 ([`docs/milestones/m10-pours.md`](../milestones/m10-pours.md)),
   building on [ADR 0001](0001-kicad-io.md)
@@ -177,3 +178,58 @@ a deliberate amendment to ADR 0001 — narrowing "no `pcbnew`" to "no `pcbnew` i
 requirement changes for everyone.
 
 The decision is the owner's. M10 stopped here rather than pick.
+
+## The decision
+
+**Option 1 is approved: drive `pcbnew` in a subprocess**, recorded here as a
+deliberate amendment to [ADR 0001](0001-kicad-io.md) — narrowing "no `pcbnew`" to
+"no `pcbnew` in the `aipcb` package's own process" — and not as a quiet exception.
+Four conditions come with the approval; all four are binding on the
+implementation.
+
+### 1. Rationale
+
+ADR 0001's exclusion is half-stale. Its two stated reasons were that `pcbnew`
+"forces a KiCad runtime into CI" and "cannot run headless cleanly". Finding 2
+measured the second one false on 9.0.8 — the fill ran with no display. The first
+survives as a statement but not as a *cost*: the project already requires
+`kicad-cli` on `PATH`, so a KiCad installation is a standing prerequisite, and
+`pcbnew` ships inside it. The marginal cost of this decision is a system-python
+subprocess call, not a new runtime.
+
+What does not change: **reimplementing zone fill in `aipcb` stays rejected.**
+KiCad's fill is what DRC checks against, so a second implementation would be
+checked against the first, would differ, and the difference would be our bug on
+every board. And Finding 3's determinism measurement — byte-identical output
+across 8 runs on 2 boards — retires the last concern about depending on it.
+
+### 2. Version lock
+
+The subprocess **must verify that `pcbnew`'s version matches `kicad-cli`'s before
+filling.** On mismatch it stops with a clear message naming both versions. There
+are no silent cross-version fills: the whole point of using KiCad's engine is that
+it is the same engine DRC checks against, and a `pcbnew` from a different install
+than the `kicad-cli` running DRC quietly voids that.
+
+### 3. This is a bridge, not a turn
+
+This decision covers **the 9.0.8 situation specifically.** If a future KiCad ships
+`kicad-cli pcb fill` or equivalent, the subprocess is replaced by it and this ADR
+is superseded — the CLI is the preferred surface and remains so. **Re-measure at
+each KiCad major**: Finding 1 is a measurement with an expiry date, not a permanent
+property of the tool.
+
+### 4. Subprocess hygiene
+
+- **Explicit `python3` resolution, documented.** The interpreter that can import
+  `pcbnew` is the system one; the project venv cannot (`include-system-site-packages
+  = false`). How it is located must be written down, not inferred from `PATH` by
+  luck. Note that system Python and the venv being the same 3.14.4 on the machine
+  where this was measured is an accident, not something to rely on.
+- **Structured error propagation.** A fill failure must surface as a *check
+  failure* with `pcbnew`'s stderr attached. It must never silently produce an
+  unfilled board — an unfilled pour exports as no copper at all (Finding 1), so a
+  swallowed fill error is precisely the silent-corruption failure mode this project
+  exists to eliminate.
+- **A test that simulates `pcbnew` being absent**, asserting the failure is legible
+  and loud.

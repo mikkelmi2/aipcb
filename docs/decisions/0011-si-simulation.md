@@ -41,6 +41,14 @@ and no privileged group, so nothing about the host's security posture changes.
 > **Note for the maintainer:** this installed `podman`, `uidmap`, `slirp4netns`
 > and `fuse-overlayfs` system-wide via `apt`. Nothing was added to the project's
 > `.venv`, and neither `pyproject.toml` nor any lockfile was modified.
+>
+> **Why this matters on a new machine.** SI simulation therefore carries a *system*
+> dependency that `pip install -e .` will not satisfy and that no lockfile in this
+> repo records: a container runtime, plus the locally-built image below. On a fresh
+> host, `aipcb simulate` will fail until both exist. This is deliberate — the
+> alternative is vendoring a multi-hundred-megabyte FDTD toolchain into a Python
+> project — but it is invisible unless written down, which is what this note is
+> for. Nothing else in `aipcb` needs a container; only simulation does.
 
 ### The exact pin
 
