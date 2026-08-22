@@ -436,3 +436,97 @@ and M11e analysis **0.111 s (0.28 %)**. The report notes rule 1 is not separable
 it widens the A* corridor. It also corrects M10's "fixed ~2.5 s floor": measured
 0.88–4.17 s, tracking footprint-library count.
 
+## M12 — signal-integrity simulation
+
+Dispatched with the spec as updated against Phase 0's measurements, the assignment
+of the remaining export gaps, and the instruction that simulation is the natural
+discriminator for the two pairs M11 left open.
+
+**Second infrastructure failure of the run.** The implementation session was killed
+by an API 529 after committing all fourteen of its commits, but *before* finishing
+its report: `docs/reports/m12.md` twice pointed at a pcie-sata "batch table above"
+that did not exist, and its section on the two skew pairs established that Scd21 is
+the right metric and then stopped without numbers. That is a gate-3 failure, so the
+orchestrator spent its **one permitted M12 remediation pass** on the report gap.
+The surviving Touchstone data in the scratch directory made this recoverable
+without re-deriving anything by hand.
+
+| Gate | Result |
+|---|---|
+| 1 — suite, ruff, mypy | `pytest` exit 0 (**31 m 58 s**); `ruff` clean; `mypy --strict` clean on **85** source files |
+| 2 — acceptance checks | passed, measured by the orchestrator: **11/11 examples byte-stable**, **0 DRC errors** on all eleven, warning counts unchanged from before M12 (pcie-sata 10, overconstrained 3, qfn-fanout 1, usb-port 1) — the new work disturbed no prior example. One acceptance item was not run; see below |
+| 3 — delivery report | passes after remediation |
+| 4 — commit + push | fourteen M12 commits, plus `7c0b590` (remediation) and `db1f5ba` (orchestrator deviation row) — pushed |
+| 5 — this entry | written |
+
+The remediation ran **all eleven links** — roughly two hours of solver time — so
+nothing is marked not-simulated, and it verified the numbers come from the tool's
+own cache path rather than a parallel calculation.
+
+**The answer to the question M11 left open: simulation does not discriminate those
+two pairs — and on the reported verdict it does worse than not discriminating.**
+
+| Skew | Pair | Δτ | Worst \|Scd21\| | Verdict |
+|---|---|---|---|---|
+| 0.000 mm | `PCIE_TX` | 0.00 ps | −26.6 dB | pass |
+| **0.004 mm** | **`SATA3_RX`** | 0.03 ps | **−14.3 dB** | **warn** |
+| **0.042 mm** | **`SATA3_TX`** | 0.28 ps | **−15.7 dB** | **warn** |
+| **0.256 mm (over budget)** | **`PCIE_RX`** | 1.82 ps | **−25.2 dB** | **pass** |
+| **0.292 mm (over budget)** | **`REFCLK`** | 2.06 ps | **−23.0 dB** | **pass** |
+
+Every `warn` is a pair comfortably inside its budget; both budget-busting pairs
+pass. The cause is a mode-conversion floor spanning **more than 25 dB** across
+nominally identical links, in a quantity the skew under test moves by about 3 dB.
+Read across frequency rather than as a scalar, `REFCLK` *does* show a clean skew
+signature — climbing 17 dB from 1 to 7 GHz and tracking `|sin(πfΔτ)|` for its
+measured 2.06 ps to within 3.2 dB — so the physics is visible even though the
+published verdict is not. M11's own physical argument is corroborated; the
+acceptance question still gets a "no".
+
+**What this milestone found out about the milestone before it.** Simulated
+impedance sits **systematically below every declared target** — `REFCLK` at 50.9 Ω
+against 85 Ω (−40 %), `SATA3_TX` at 62.5 Ω against 100 Ω (−37.5 %), all eleven
+links low. The cause is not the router: every bundled example pours ground up to
+its pairs, while **both closed-form models aipcb derives widths from are bare
+microstrip** and know nothing about coplanar ground. The calibration pair on
+`examples/mcu-4layer` reads ≈74 Ω where those formulas predict 121–127 Ω. So M11's
+derived widths are systematically narrow for the boards this tool actually builds.
+Recorded in `docs/roadmap.md`, deliberately not fixed — fixing it means a CPWG
+model and regenerating every controlled-impedance example.
+
+**Deviations of consequence** (the report's table has 19 rows):
+
+- Eight `sata` links, identical in class, width, gap, layer and length to within
+  0.5 mm, **simulate 29 Ω apart** (62.5–91.9 Ω). The remediation pass could not
+  separate a real spread from an unconverged extraction, and says so. This is the
+  tightest honest bound in the report on what any single number is worth.
+- **11 of 22 insertion-loss figures are positive** — gain, i.e. truncation noise.
+  `insertion_loss` reads `pass` on all eleven because its threshold is ≥ −3 dB, so
+  that verdict means "no evidence of excess loss", not a measurement.
+- `mode_conversion_db` is a worst-in-band scalar over **each class's own band**, so
+  an 8 GHz `pcie` class and a 6 GHz `sata` class are not compared over the same
+  interval; 4 of 11 peak at the noisy bottom of the band.
+- The `.kicad_pcb` stackup disagrees with the source stackup (three equal 0.48 mm
+  dielectrics vs. the declared 0.2104/1.065/0.2104). Found here, deliberately not
+  fixed — it would change every existing board, which M12's guardrails forbid.
+  Simulation uses the source stackup and says so.
+- `aipcb export` now writes **two** drill files where it wrote one, deliberately:
+  gerber2ems globs `*-PTH.drl` and exits 1 on an empty glob.
+- **The "deliberately degraded case" acceptance item was not run**, and the report
+  did not list it. The orchestrator added the row (`db1f5ba`) rather than leave an
+  acceptance item that is neither delivered nor visible. What exists instead is an
+  *accidental* degraded case with a measured before/after (the collinear-launch
+  defect: peak \|Sdd21\| 7.26 → 1.14, impedance 436.6 Ω → 66.6 Ω) plus unit-level
+  checks. That shows the machinery discriminates a broken *slice*; it does not show
+  it discriminates a deliberately worsened *layout*, which is what was asked — and
+  it matters more than it would otherwise, given that the one real discrimination
+  question in this milestone was answered "no".
+
+**One open defect, reported not fixed:** `si/runner.py` cleans up its named
+container only on `subprocess.TimeoutExpired`. When the client is killed outright —
+which happened twice in this run — the container survives. The remediation pass
+found the dead session's container still running sixteen cores of FDTD, and its
+first relaunch had *two* containers writing the same `ems/` directory. A pre-flight
+check for a live `aipcb-si-*` container on the same work directory would cost
+nothing.
+
