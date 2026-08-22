@@ -220,26 +220,26 @@ about 37 minutes at the measured rate, so the seven that remain are four and a h
 hours, and on this evidence most of that would buy `usable: false`. **Answer this
 before running another batch.**
 
-**`REFCLKP/N`'s simulation is blocked, with a diagnosis.** M13.5 spent five
-reduced-settings runs on it and did not converge it. The signature is not a slow
-decay: energy falls about 9 dB in 7 000 timesteps and then sits flat for 42 000
-more, which is a trapped mode rather than a run that needs longer -- so M13's
-recorded hypothesis, "raise `max_steps` and watch the floor", is refuted. Foreign
-floating copper in the slice is not the cause (removing all seventeen items changes
-the trace by under 1 dB) and neither is boundary proximity (all three PCIe slices
-sit exactly 1.592 mm from their edge). The slice's *plane* structure is where it does
-come from, and only partly: `In2.Cu` carries `P3V3` and is tied to nothing at all --
-a floating plate between two grounded ones, with the pair's own via barrel passing
-through it. Grounding it in the slice moves the plateau from -10 dB to -15 dB, so it
-holds roughly two thirds of the trapped energy and something else holds the rest.
+**`REFCLKP/N` converges, and what was trapping it was the slice's return path.**
+Closed in M13.6, and the diagnosis M13.5 stopped at was two thirds of the answer.
+`In2.Cu` floating was one half: it carries `P3V3`, the slice cuts away the supply,
+the pads and the decoupling that make a supply plane a reference, and it reaches
+the solver as a plate at no defined potential. The other half is that a slice was
+losing the ground structure around it -- **22 of the 41 stitching vias inside the
+eleven slice windows never reached a slice**, because `_assemble` keeps a via only
+when its centre is inside the rectangle inset by 0.5 mm and a via in that band was
+dropped silently. `REFCLK`'s slice contained *none* of M10's stitching; the five
+`GND` vias M13.5 counted are 0.4 mm transition vias.
 
-The next experiment is a board question rather than a solver one, and it is why
-M13.5 stopped: REFCLK's slice has **five** `GND` stitching vias where
-`PCIE_RXP/N`'s -- same stack, same transition depth, and it converges to -50 dB --
-has **seven**. Testing it means changing copper. Note also that M12 simulated this
-same pair to -41.2 dB at a 50 um mesh on a wider trace, so a converging
-configuration of it exists. See
-[the M13.5 report](../reports/m13.md#4-refclk-blocked-with-a-diagnosis-and-m13s-hypothesis-refuted).
+Measured one change at a time at 32 000 steps: the control plateaus at -7 to
+-10 dB, a boundary fence alone at -9.5 to -10.8, tying `In2.Cu` alone at -13.6 to
+-15.1 (which reproduces M13.5's i5 independently), and **both together decay
+-9.8, -18.8, -29.3, -39.9 dB and keep falling**. Neither half works alone, which is
+what makes them one idea: a slice's return path has to be a single conductor. At
+full step count the link now reaches **-63.7 dB**, stops on energy decay rather than
+on the step limit, comes back `usable`, and does it in **325 s against the 474 s**
+the non-converging run cost. Its impedance did not move -- 49.5 ohm against 85 --
+because that is the layer-spanning estimator below, and not the physics.
 
 **The slicer cannot measure one side of a via transition.** M13.5 established that
 the two links which miss the +/-10 % band -- `PCIE_RXP/N` and `REFCLKP/N` -- are
@@ -254,14 +254,56 @@ sweep** -- at 8 GHz a TDR resolves about 4.5 mm and the F.Cu section is 2.6 mm, 
 the existing S-parameters cannot separate them, while 20 GHz would -- and then
 **port each side separately**, which is a slicer change.
 
-**Simulation cost outgrew the tool's own timeout.** M13 projected 9-13 minutes a
-SATA link under the M13b mesh. Measured in M13.5: a SATA pair is two excitations of
-87 336 steps and **exceeds the 1800 s default `--timeout`**, so the batch M13 left
-running could never have produced a result -- it reported `failed 1800.0 s` twice
-and would have done so eight times. Nothing warns before a batch starts that its
-per-pair budget is smaller than a pair. A cell-count-and-step estimate printed at
-slice time, and a default timeout derived from it rather than fixed, would both be
-cheap.
+M13.6 sharpened this rather than moving it. `REFCLK` now converges to -63.7 dB and
+still reads -41.7 % against its target, which removes the last alternative
+explanation: the number is not a truncated run and not a floating reference, it is
+an estimator applied to a structure it does not describe.
+
+**openEMS is using four or five of this machine's sixteen cores, and ADR 0011
+assumed it used all of them.** Measured in M13.6 on the pinned image (openEMS
+`v0.0.36-142-g32c5c6b`), from the solver's own log on every link in the batch:
+
+```
+Multithreaded Engine: Best performance found using 4 threads.
+Multithreaded Engine: Best performance found using 5 threads.
+Speed: 256-451 MC/s        (SATA1_TX, 252 samples)
+```
+
+[ADR 0011](decisions/0011-si-simulation.md) Decision 4 declined `--parallel N`
+because "openEMS already uses every core -- it reported 750-1270 MCells/s on this
+machine's sixteen -- so process-level parallelism divides the same cores between
+runs". Neither half of that premise still holds: the engine auto-tunes to 4-5
+threads and sustains a third to a half of the quoted throughput. This is the
+`CLAUDE.md` pattern arriving for a third time, and the ADR should be re-measured
+rather than trusted.
+
+Two things follow, both cheap to measure and neither measured yet:
+
+* **`--numThreads`.** The flag exists (`--numThreads arg (=0)`, needs
+  `--engine=multithreaded`). openEMS picks 4-5 from a short benchmark at startup,
+  and FDTD is memory-bandwidth-bound, so the auto-tuner may simply be right --
+  which is why this is a measurement and not a fix.
+* **Process-level parallelism, on its own merits.** Independent runs share no
+  synchronisation, which is where thread scaling inside one FDTD run usually goes,
+  so 2-3 concurrent links may scale where 16 threads did not. On an eleven-link
+  batch that is the difference between five hours and under two.
+
+**No GPU route exists in this solver.** Also measured rather than assumed: the
+image's `openEMS --engine` offers `basic`, `sse`, `sse-compressed` and
+`multithreaded` and nothing else, `strings` on the binary finds no CUDA, OpenCL,
+NVIDIA or HIP symbol, and `ldd` links no GPU library. FDTD suits a GPU very well
+and commercial solvers get 10-50x from one; getting it here means a different
+solver, not a flag.
+
+**A slice still cannot say what it will cost before it runs.** Half of this is
+closed: M13.6 made the per-pair budget a design parameter, `simulation.timeout_s`,
+raised the default from 1800 s to 7200 and wrote the three measurements it is sized
+from beside the constant. That stops the failure M13 hit -- a batch that reports
+`failed 1800.0 s` rather than a number, eight times, because a timeout writes no
+`result.json` and the next run re-slices from zero. What is still missing is the
+*estimate*: the cell count and the step limit are both known before the container
+starts, and the machine's own throughput is measurable, so a batch could say "this
+is five hours" instead of finding out.
 
 **REFCLK is in the wrong net class.** PCIe CEM r3.0 section 2.1.1 puts the
 reference clock at nominal **100 ohm** differential; `examples/pcie-sata` carries it
@@ -292,6 +334,13 @@ class's budget. It reports as a warning and stays one. Promotion is gated on the
 fit's false-positive behaviour being measured across a full board, and
 `docs/reports/m13.md` records how much of that measurement exists.
 [ADR 0012](decisions/0012-coplanar-impedance.md), Decision 5.
+
+**An insertion-loss verdict cannot fail on excess gain.** `si/results.py` reports
+insertion loss as `20*log10|Sdd21|` and compares it against a negative threshold, so
+an extraction with `|Sdd21| > 1` reports *positive* dB and passes -- M13.6 measured
+`SATA0_RXP/N` at +1.06 dB at 3 GHz with a `pass`. The `usable` gate catches the
+gross cases at 1.15, but between unity and that gate the loss verdict is not
+measuring anything. Surfaced by M13.6 and not caused by it.
 
 **Automatic fixes from simulation results.** Deliberately absent: the JSON exists so
 that an agent loop can read a finding and change the source, which is where a fix

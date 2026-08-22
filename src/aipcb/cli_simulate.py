@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Annotated
 import typer
 
 from aipcb.diagnostics import AipcbError, Report
-from aipcb.si.runner import DEFAULT_TIMEOUT_S
 from aipcb.source import SourceError
 
 if TYPE_CHECKING:  # pragma: no cover - imported only for annotations
@@ -65,8 +64,14 @@ def simulate(
                      "then stop. No container is started."),
     ] = False,
     timeout: Annotated[
-        int, typer.Option("--timeout", help="Seconds one pair may take.", min=1)
-    ] = DEFAULT_TIMEOUT_S,
+        int | None,
+        typer.Option(
+            "--timeout",
+            help="Seconds one pair may take. Defaults to the design's "
+            "`simulation.timeout_s`.",
+            min=1,
+        ),
+    ] = None,
     as_json: Annotated[
         bool, typer.Option("--json", help="Emit machine-readable JSON.")
     ] = False,

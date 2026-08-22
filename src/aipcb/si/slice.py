@@ -6,7 +6,7 @@ piece of copper that does not reach inside removed. It is exported by ``kicad-cl
 like any other board, which is what keeps ADR 0001 true -- aipcb never writes a
 Gerber itself, not even for a solver.
 
-Four things separate a slice from the board it came out of, and each is a deliberate
+Six things separate a slice from the board it came out of, and each is a deliberate
 approximation worth stating out loud:
 
 * **The coupling capacitors become copper.** A pair split by ``role: ac_coupling``
@@ -28,6 +28,18 @@ approximation worth stating out loud:
 * **Footprints are dropped.** No pads, no antipads, no thermal reliefs. The
   interior of the run -- which is what an impedance target is about -- is
   unaffected; the last few tenths of a millimetre at each end are not modelled.
+* **Every declared plane is tied to the reference net.** A supply plane is a
+  reference because it is decoupled to ground, and the slice cuts away the
+  decoupling along with the supply and the pads. See :func:`_grounded_planes`.
+* **The boundary is stitched.** The cut ends the pours in mid-air where the board
+  continues them; a ring of reference-net vias just inside the outline restores
+  the return path the cut removed. See :func:`_fence`.
+
+The last two arrived together in M13.6 and are one idea measured twice: **a slice's
+return path has to be a single conductor.** Before them ``examples/pcie-sata``'s
+``REFCLK`` slice held a tenth of its energy in a resonance for forty thousand
+timesteps; after them the same slice decays past -39 dB and is still falling. Each
+half alone leaves the plateau where it was, which is why neither is optional.
 
 Everything is a pure function of the routed board and the source, so a slice is a
 reproducible artifact: same inputs, byte-identical output.
@@ -225,6 +237,30 @@ class Slice:
 # ---------------------------------------------------------------------------
 
 
+def reference_net(netlist: Netlist) -> str | None:
+    """The net a slice ties every declared plane to, or ``None`` if it has no planes.
+
+    The net covering the most copper layers wins, counting both the planes the
+    stackup declares and the board-scope pours; ties break on name so the answer is
+    a function of the design rather than of dictionary order. On
+    ``examples/pcie-sata`` that is ``GND``, on three layers, against ``P3V3`` on one.
+    """
+    if netlist.layout is None or netlist.layout.stackup is None:
+        return None
+    stackup = netlist.layout.stackup
+    covered: dict[str, set[str]] = {}
+    for plane in stackup.planes:
+        covered.setdefault(plane.net, set()).add(plane.layer)
+    for pour in netlist.pours:
+        if pour.scope != "board":
+            continue
+        for layer in pour.copper_layers:
+            covered.setdefault(pour.net, set()).add(layer)
+    if not covered:
+        return None
+    return min(covered, key=lambda net: (-len(covered[net]), net))
+
+
 def _net_numbers(board: SNode) -> dict[str, int]:
     out: dict[str, int] = {}
     for node in board.children("net"):
@@ -263,9 +299,7 @@ def _vias(board: SNode) -> list[tuple[Point, float]]:
     """Every via as a centre and an outer radius, for collision tests."""
     out: list[tuple[Point, float]] = []
     for via in board.children("via"):
-        size = via.child("size")
-        radius = float(size.value() or 0.4) / 2 if size else 0.2
-        out.append((_point(via.child("at")), radius))
+        out.append((_point(via.child("at")), _via_radius(via)))
     return out
 
 
@@ -595,7 +629,7 @@ def build_slice(
             "planes; the impedance reported is the whole link, not either half"
         )
 
-    rect = _bounds([*all_pair, *stubs], settings.margin_mm)
+    rect = enclose_vias(_bounds([*all_pair, *stubs], settings.margin_mm), _vias(board))
     origin = (rect[0], rect[3])
     conductor_length = sum(t.length for t in all_pair)
 
@@ -613,9 +647,17 @@ def build_slice(
             + 2 * launch
         )
 
-    node, cleared, dropped = _assemble(
-        board, netlist, pair, rect, origin, ports, tracks, stubs, bridges, all_pair
+    node, cleared, dropped, tied = _assemble(
+        board, netlist, pair, rect, origin, ports, tracks, stubs, bridges, all_pair,
+        settings,
     )
+    if tied:
+        notes.append(
+            f"{', '.join(tied)} carries a plane the slice cannot connect -- its "
+            "supply, its pads and its decoupling are all outside the window -- so "
+            f"it is tied to {reference_net(netlist)} here. On the board it is a "
+            "reference plane; modelled floating it is a resonant plate instead"
+        )
     if cleared > _EPS or dropped:
         notes.append(
             f"{cleared:.2f} mm of other nets' track and {dropped} via(s) were removed "
@@ -677,6 +719,58 @@ def _bounds(tracks: list[Track], margin: float) -> tuple[float, float, float, fl
     )
 
 
+def enclose_vias(
+    rect: tuple[float, float, float, float], vias: list[tuple[Point, float]]
+) -> tuple[float, float, float, float]:
+    """Grow ``rect`` on all four sides so the vias inside it clear the outline.
+
+    :func:`_assemble` keeps a via only when its centre lies inside the rectangle
+    *inset* by :data:`_CLIP_INSET_MM`, so before M13.6 a via landing in that
+    half-millimetre band was dropped without a word -- unlike the launch corridor,
+    which drops vias too and says how many in the slice's own notes.
+
+    Counted on ``examples/pcie-sata`` against the routed board, over all eleven
+    slices: **92 GND vias lie inside a slice rectangle, 58 reached the slice, 4
+    were removed by the corridor and said so, and 30 went silently.**
+
+    The stitching vias are the ones that matter, and they fared worse than the
+    average because M10's grid is anchored to multiples of its 8 mm pitch in board
+    coordinates while a slice is cut to whatever the pair needs. Of 41 stitching
+    vias inside the eleven rectangles, **19 reached a slice**:
+
+    ==================  =========  =========  =============================
+    slice               in rect    in slice
+    ==================  =========  =========  =============================
+    ``PCIE_RXN/P``      2          **0**      converges, reads -14.4 %
+    ``REFCLKN/P``       2          **0**      the non-convergent one
+    ``SATA1_TXN/P``     4          **0**      no ground via of any size at all
+    ``SATA2_RXN/P``     3          **0**
+    ``SATA0_TXN/P``     8          3
+    ==================  =========  =========  =============================
+
+    ``SATA1_TX`` is the one that shows what it cost: its 7.638 mm window fell
+    between two rows of the grid, every via inside it was in the clip band, and the
+    model went to the solver with its two ground pours and both planes mutually
+    isolated -- four sheets of copper where the board has one conductor, under a
+    100 ohm microstrip whose reference was connected to nothing.
+
+    The growth is **uniform and fixed**, not fitted to where the vias are. A first
+    attempt grew each side to clear whichever vias it found and re-scanned, which
+    is a cascade: on ``PCIE_TX`` each expansion swept in another via and the window
+    came out 92 % larger than the pair needed. A constant instead -- the clip inset
+    plus the widest via's radius -- guarantees the property that matters (a via
+    whose centre is in the pair's own window is in the slice, clear of the edge) at
+    a cost that is the same 0.8 mm on every board and cannot run away.
+    """
+    pad = _CLIP_INSET_MM + max((radius for _, radius in vias), default=0.2)
+    return (
+        round(rect[0] - pad, 4),
+        round(rect[1] - pad, 4),
+        round(rect[2] + pad, 4),
+        round(rect[3] + pad, 4),
+    )
+
+
 # ---------------------------------------------------------------------------
 # writing the slice board
 # ---------------------------------------------------------------------------
@@ -732,6 +826,122 @@ def port_footprint(port: Port, pair: str, net: int) -> SNode:
     return node
 
 
+#: Wavelengths of via spacing along the slice boundary. A quarter wavelength at the
+#: top of the swept band is the usual rule of thumb for a via fence, and it is what
+#: M13.6 measured with: at 8 GHz in FR4 it comes to about 4.4 mm.
+_FENCE_WAVELENGTHS = 0.25
+
+#: Fallback fence via geometry, in millimetres, for a design that declares no
+#: ``stitching:`` of its own. Matches ``examples/pcie-sata``'s stitching via.
+_FENCE_VIA_MM = (0.6, 0.3)
+
+
+def fence_pitch_mm(stackup: Stackup, settings: ResolvedSimulation) -> float:
+    """How far apart the boundary vias sit: a quarter wavelength at the band's top.
+
+    Slower in the laminate than in air by ``sqrt(epsilon_r)``, so the number falls
+    as either the frequency or the dielectric constant rises. Rounded down to a
+    tenth of a millimetre, because it lands in the slice board and therefore in the
+    digest, and a cache key should not carry sixteen digits of float.
+    """
+    epsilon = max(stackup.epsilon_r_default, 1.0)
+    wavelength_mm = 299_792.458 / (settings.stop_hz / 1e6) / math.sqrt(epsilon)
+    return math.floor(wavelength_mm * _FENCE_WAVELENGTHS * 10) / 10
+
+
+def _fence(
+    rect: tuple[float, float, float, float],
+    pair: str,
+    net: int,
+    pitch: float,
+    via: tuple[float, float],
+    keep_clear: object,
+) -> list[SNode]:
+    """A ring of reference-net vias just inside the slice outline.
+
+    **What this is for.** The slice boundary is where the board's return path was
+    cut. On the board the pours run on past it and the stitching grid ties them
+    together every few millimetres; in the slice they stop in mid-air, tied only
+    wherever a stitching via happened to fall inside -- which on
+    ``examples/pcie-sata`` is anywhere from eight down to none, decided by where a
+    7.6 mm window lands on an 8 mm grid. The fence restores the continuity the cut
+    removed, and it does it at a spacing that does not depend on luck.
+
+    **It is copper the board does not have**, and so it is the sixth approximation
+    in the list at the top of this module. What earns it is the measurement.
+    ``REFCLKN+REFCLKP`` at 32 000 steps, one change at a time, on the same slice:
+
+    ===========================  ==================================================
+    slice                        energy
+    ===========================  ==================================================
+    as generated before M13.6    plateaus at -7 to -10 dB for 42 000 steps
+    fence only                   plateaus at -9.5 to -10.8 dB -- **no better**
+    ``In2.Cu`` tied only         plateaus at -14 to -15 dB (M13.5's i5)
+    fence **and** the tie        -9.8, -18.8, -29.3, **-39.9 dB and still falling**
+    ===========================  ==================================================
+
+    Neither half works alone and together they do, which is the reading that makes
+    them one idea rather than two fixes: what the slice was missing is a return
+    structure that is a *single conductor*. Tying the supply plane gives the fourth
+    sheet the same potential as the other three; the fence ties all four together
+    densely enough that no parallel-plate mode between them has anywhere to stand.
+
+    Positions that would land on somebody's copper are dropped rather than
+    negotiated, the same way :mod:`aipcb.route.stitch` drops them on a real board.
+    """
+    from shapely.geometry import Point as ShapelyPoint
+
+    diameter, drill = via
+    inset = _CLIP_INSET_MM + diameter / 2
+    x0, y0 = rect[0] + inset, rect[1] + inset
+    x1, y1 = rect[2] - inset, rect[3] - inset
+    if x1 <= x0 or y1 <= y0:
+        return []
+
+    def along(low: float, high: float) -> list[float]:
+        steps = max(1, round((high - low) / pitch))
+        return [low + index * (high - low) / steps for index in range(steps + 1)]
+
+    def at(x: float, y: float) -> Point:
+        return (round(x, 4), round(y, 4))
+
+    # A set, and both coordinates rounded the same way, so the four corners are one
+    # via each. Rounding only the coordinate that varies put two vias in the same
+    # hole at every corner, which is a drill file with a duplicate in it.
+    points = {at(x, y0) for x in along(x0, x1)} | {at(x, y1) for x in along(x0, x1)}
+    points |= {at(x0, y) for y in along(y0, y1)} | {at(x1, y) for y in along(y0, y1)}
+
+    out: list[SNode] = []
+    for index, (x, y) in enumerate(sorted(points)):
+        pad = ShapelyPoint((x, y)).buffer(diameter / 2 + _CLIP_INSET_MM, quad_segs=8)
+        if pad.intersects(keep_clear):
+            continue
+        node = SNode("via")
+        node.add(SNode("at").add(num(x), num(y)))
+        node.add(SNode("size").add(num(diameter)))
+        node.add(SNode("drill").add(num(drill)))
+        node.add(SNode("layers").add(quoted("F.Cu"), quoted("B.Cu")))
+        node.add(SNode("net").add(num(net)))
+        node.add(SNode("uuid").add(quoted(element_uuid("si-fence", pair, str(index)))))
+        out.append(node)
+    return out
+
+
+def _via_radius(via: SNode) -> float:
+    size = via.child("size")
+    return float(size.value() or 0.4) / 2 if size is not None else 0.2
+
+
+def _fence_via(netlist: Netlist, reference: str) -> tuple[float, float]:
+    """Diameter and drill for a fence via: the board's own stitching via if it has
+    one on the reference net, so the fence is drilled like the stitching it stands
+    in for rather than to a number invented here."""
+    for intent in netlist.stitching:
+        if intent.net == reference and intent.via is not None:
+            return (intent.via.diameter, intent.via.drill)
+    return _FENCE_VIA_MM
+
+
 def _edge(rect: tuple[float, float, float, float], pair: str) -> list[SNode]:
     corners = [
         (rect[0], rect[1]),
@@ -778,7 +988,8 @@ def _assemble(
     stubs: list[Track],
     bridges: list[Track],
     own: list[Track],
-) -> tuple[SNode, float, int]:
+    settings: ResolvedSimulation,
+) -> tuple[SNode, float, int, tuple[str, ...]]:
     root = SNode("kicad_pcb")
     for name in ("version", "generator", "generator_version", "general", "paper"):
         node = board.child(name)
@@ -810,6 +1021,7 @@ def _assemble(
     )
     from shapely.geometry import LineString
     from shapely.geometry import Point as ShapelyPoint
+    from shapely.ops import unary_union
 
     corridor = launch_corridor(stubs)
     mine = {id(t) for t in own}
@@ -844,13 +1056,46 @@ def _assemble(
         at = _point(via.child("at"))
         if not (inner[0] <= at[0] <= inner[2] and inner[1] <= at[1] <= inner[3]):
             continue
-        size = via.child("size")
-        radius = float(size.value() or 0.4) / 2 if size else 0.2
+        radius = _via_radius(via)
         if ShapelyPoint(at).buffer(radius, quad_segs=8).intersects(corridor):
             dropped += 1
             continue
         vias.append(via)
-    zones = list(board.children("zone"))
+    zones, tied = _grounded_planes(
+        list(board.children("zone")), netlist, _net_numbers(board)
+    )
+
+    # The boundary fence goes on last, so it can be kept off everything already
+    # placed. It carries the reference net, which is the net the tied planes now
+    # carry too -- the three together are what make the slice's return path one
+    # conductor rather than four sheets. See :func:`_fence` for the measurement.
+    numbers = _net_numbers(board)
+    reference = reference_net(netlist)
+    stackup = netlist.layout.stackup if netlist.layout else None
+    fenced: list[SNode] = []
+    if reference is not None and reference in numbers and stackup is not None:
+        occupied = unary_union(
+            [corridor]
+            + [
+                LineString([t.start, t.end]).buffer(t.width / 2)
+                for t in kept
+                if _net_names(board).get(t.net) != reference
+            ]
+            + [
+                ShapelyPoint(centre).buffer(radius)
+                for centre, radius in (
+                    (_point(v.child("at")), _via_radius(v)) for v in vias
+                )
+            ]
+        )
+        fenced = _fence(
+            rect,
+            pair.name,
+            numbers[reference],
+            fence_pitch_mm(stackup, settings),
+            _fence_via(netlist, reference),
+            occupied,
+        )
 
     # Renumber the nets. A slice carries a fraction of the board's nets, and KiCad
     # prunes the ones nothing references when it loads the file -- which shifts every
@@ -861,7 +1106,9 @@ def _assemble(
     # ground pour it sits in, and reported a short circuit with a clean exit code.
     names = _net_names(board)
     used = {t.net for t in kept} | {
-        int(n.value() or 0) for via in vias if (n := via.child("net")) is not None
+        int(n.value() or 0)
+        for via in (*vias, *fenced)
+        if (n := via.child("net")) is not None
     }
     used |= {int(n.value() or 0) for z in zones if (n := z.child("net")) is not None}
     order = sorted(names[c] for c in used if names.get(c))
@@ -874,14 +1121,75 @@ def _assemble(
         root.add(line)
     for index, track in enumerate(kept):
         root.add(_segment(track, pair.name, index, recode.get(track.net, 0)))
-    for via in vias:
+    for via in (*vias, *fenced):
         root.add(_recoded(via, recode))
     for zone in zones:
         root.add(_recoded(zone, recode))
     for port in ports:
         code = next((c for c, n in names.items() if n == port.net), 0)
         root.add(port_footprint(port, pair.name, recode.get(code, 0)))
-    return root, cleared, dropped
+    return root, cleared, dropped, tied
+
+
+def _grounded_planes(
+    zones: list[SNode], netlist: Netlist, numbers: dict[str, int]
+) -> tuple[list[SNode], tuple[str, ...]]:
+    """Tie every zone on a declared plane layer to the slice's reference net.
+
+    The defect this closes, measured on all eleven ``examples/pcie-sata`` slices in
+    M13.6: ``In2.Cu`` carries ``P3V3`` and, inside a slice, is **connected to
+    nothing at all** -- 79 to 367 mm2 of copper with no via, no pad and no port
+    touching it. The design declares that layer a plane and the ``pcie_rx`` class
+    names it as its ``reference:``, so on the board it is the return path for every
+    pair that lands on ``B.Cu``. What makes it one is its supply, its pads and the
+    decoupling across it, and the slice cuts away all three: a 5 x 25 mm plate
+    between two grounded planes, with the pair's own via barrel through its
+    antipad, is a parallel-plate resonator rather than a reference.
+
+    So the slice ties it. This is an approximation and it is the fifth in the list
+    at the top of this module: it models a well-decoupled supply plane as the AC
+    ground the board treats it as, and it cannot therefore tell anyone that the
+    decoupling is inadequate. What it replaces is not a more conservative model but
+    a *different board* -- one whose reference plane floats, which no assembled
+    board's does.
+
+    Only layers the stackup declares as planes are touched, and only zones lying
+    entirely on them, so a signal zone or a partial pour is left exactly as it is.
+    """
+    reference = reference_net(netlist)
+    if reference is None or netlist.layout is None or netlist.layout.stackup is None:
+        return zones, ()
+    planes = {p.layer for p in netlist.layout.stackup.planes}
+    if not planes:
+        return zones, ()
+
+    out: list[SNode] = []
+    tied: list[str] = []
+    for zone in zones:
+        layers = _zone_layers(zone)
+        name = zone.child("net_name")
+        carried = name.value() if name is not None else None
+        if not layers or not layers <= planes or carried == reference:
+            out.append(zone)
+            continue
+        fresh = SNode("zone")
+        for atom in zone.atoms():
+            fresh.add(atom)
+        for child in zone.children():
+            if child.name == "net":
+                fresh.add(SNode("net").add(num(numbers.get(reference, 0))))
+            elif child.name == "net_name":
+                fresh.add(SNode("net_name").add(quoted(reference)))
+            else:
+                fresh.add(child)
+        out.append(fresh)
+        tied.extend(sorted(layers))
+    return out, tuple(tied)
+
+
+def _zone_layers(zone: SNode) -> set[str]:
+    node = zone.child("layers") or zone.child("layer")
+    return {str(atom.value) for atom in node.atoms()} if node is not None else set()
 
 
 def _net_names(board: SNode) -> dict[int, str]:

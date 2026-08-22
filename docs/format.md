@@ -1033,6 +1033,7 @@ simulation:
   grid_optimal_um: 50.0    # target mesh cell size near copper
   grid_inter_layers: 8     # mesh cells through each dielectric
   max_steps: 40000
+  timeout_s: 7200          # wall clock one pair may take before it is killed
   impedance_tolerance: 0.10   # +/- this against the class target still passes
   return_loss_db: -10.0
   insertion_loss_db: -3.0
@@ -1072,7 +1073,13 @@ different material builds a different impedance, and no simulation here will kno
 This validates the layout; it does not replace an impedance coupon or a hardware
 measurement.
 
-Three approximations are deliberate and worth knowing about:
+**`timeout_s` is a budget, not an estimate.** A run that hits it is killed and
+writes nothing at all, so the next run re-slices and starts from zero — which makes
+a timeout set near the typical run far more expensive than one set well above it.
+Size it above the slowest link on the board: on `examples/pcie-sata` the slowest
+measured is 3 216 s, and the design writes 7200.
+
+Five approximations are deliberate and worth knowing about:
 
 * Each end of a pair grows a short straight **launch**, because a microstrip port
   has to run along an axis and a trace that ends on a diagonal has nowhere to be fed
@@ -1092,6 +1099,18 @@ Three approximations are deliberate and worth knowing about:
 * Series parts marked `role: ac_coupling` become **copper bridges**, which is what
   they are at signal frequencies. This is the part a geometric slicer cannot do,
   because only the source knows the capacitor is not a component under test.
+* **The slice's return path is made a single conductor.** Every layer the stackup
+  declares a `plane` is tied to the reference net, and a ring of reference-net vias
+  is added just inside the slice outline. Both are copper the board does not have,
+  and both are there because the cut removes what makes the board's return path
+  continuous: a supply plane is a reference *because* it is decoupled to ground, and
+  the slice keeps neither the decoupling nor the pads nor the supply, while the
+  pours themselves stop in mid-air where the board carries them on and stitches them.
+  Modelled without either, the planes are isolated plates and the slice is a
+  resonator: on this board `REFCLK` held a tenth of its energy for forty thousand
+  timesteps, and with both it decays past −39 dB. What it costs is the ability to
+  tell you that a supply plane is *badly* decoupled, which this was never able to
+  measure anyway.
 
 Running it needs a container runtime and a locally built gerber2ems image; see
 [ADR 0011](decisions/0011-si-simulation.md), which records the pinned commits. It is

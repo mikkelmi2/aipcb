@@ -256,6 +256,112 @@ class TestSlice:
                     "they are separated on, so they overlap"
                 )
 
+    def test_no_plane_in_a_slice_is_left_floating(self, routed_pcie) -> None:
+        """Every declared plane is tied to the reference net (M13.6).
+
+        The defect: `In2.Cu` carries `P3V3`, and inside a slice it is connected to
+        nothing at all -- no via, no pad, no port -- on all eleven pairs. The
+        `pcie_rx` class names that layer as its `reference:`, so the two links that
+        land on `B.Cu` were being simulated over a plate rather than over a plane.
+        """
+        from aipcb.si.slice import reference_net
+
+        netlist, _ = routed_pcie
+        assert reference_net(netlist) == "GND"
+        planes = {p.layer: p.net for p in netlist.layout.stackup.planes}
+        assert planes == {"In1.Cu": "GND", "In2.Cu": "P3V3"}, (
+            "this test is about a supply plane; the example stopped having one"
+        )
+
+        for pair in logical_pairs(netlist):
+            sliced = self._slice(routed_pcie, pair.name, ohm=50.0)
+            names = {
+                int(n.value(0)): n.value(1) for n in sliced.board.children("net")
+            }
+            for zone in sliced.board.children("zone"):
+                node = zone.child("layers") or zone.child("layer")
+                layers = {str(a.value) for a in node.atoms()} if node else set()
+                if not layers & set(planes):
+                    continue
+                carried = names.get(int(zone.child("net").value() or 0))
+                assert carried == "GND", (
+                    f"{pair.name}: the zone on {sorted(layers)} carries {carried}, "
+                    "which nothing in the slice connects to"
+                )
+
+    def test_a_stitching_via_inside_the_window_is_never_dropped(
+        self, routed_pcie
+    ) -> None:
+        """The slice window is grown to hold its vias, not trimmed past them.
+
+        `examples/pcie-sata` stitches on an 8 mm grid and its slices are 7.6 to
+        25 mm across, so where a window falls used to decide how many ties the
+        model got. Measured before the fix: 21 GND vias inside the eleven slice
+        rectangles were outside the 0.5 mm clip band and dropped, including all
+        five of `SATA1_TX`'s -- which left that model with its two ground pours and
+        both planes mutually isolated.
+        """
+        netlist, board = routed_pcie
+        on_board = [
+            (
+                float(v.child("at").value(0)),
+                float(v.child("at").value(1)),
+                int(v.child("net").value() or 0),
+            )
+            for v in board.children("via")
+        ]
+        codes = {n.value(1): int(n.value(0)) for n in board.children("net")}
+        ground = codes["GND"]
+
+        for pair in logical_pairs(netlist):
+            sliced = self._slice(routed_pcie, pair.name, ohm=50.0)
+            x0, y0, x1, y1 = sliced.rect
+            want = {
+                (round(x, 4), round(y, 4))
+                for x, y, net in on_board
+                if net == ground and x0 <= x <= x1 and y0 <= y <= y1
+            }
+            names = {
+                int(n.value(0)): n.value(1) for n in sliced.board.children("net")
+            }
+            got = {
+                (
+                    round(float(v.child("at").value(0)), 4),
+                    round(float(v.child("at").value(1)), 4),
+                )
+                for v in sliced.board.children("via")
+                if names.get(int(v.child("net").value() or 0)) == "GND"
+            }
+            # The launch corridor legitimately removes vias, and says so.
+            cleared = any("via(s) were removed" in n for n in sliced.notes)
+            missing = want - got
+            assert not missing or cleared, (
+                f"{pair.name}: {sorted(missing)} are inside the slice on the board "
+                "and absent from the slice, with no note saying why"
+            )
+
+    def test_every_slice_has_a_ground_reference(self, routed_pcie) -> None:
+        """The consequence, stated as the thing that actually has to be true.
+
+        A slice with no ground via in it has four mutually isolated sheets of
+        copper where the board has one conductor, and simulates a 100 ohm
+        microstrip over a reference connected to nothing. `SATA1_TX` was exactly
+        that: 0 GND vias, because its 7.6 mm window fell between two rows of an
+        8 mm grid.
+        """
+        netlist, _ = routed_pcie
+        for pair in logical_pairs(netlist):
+            sliced = self._slice(routed_pcie, pair.name, ohm=50.0)
+            names = {
+                int(n.value(0)): n.value(1) for n in sliced.board.children("net")
+            }
+            ties = [
+                v
+                for v in sliced.board.children("via")
+                if names.get(int(v.child("net").value() or 0)) == "GND"
+            ]
+            assert ties, f"{pair.name}: nothing in this slice ties its planes together"
+
     def test_the_launch_corridor_has_no_foreign_copper_left_in_it(
         self, routed_pcie
     ) -> None:
@@ -480,6 +586,51 @@ class TestSettings:
             REPO_ROOT / "examples" / "diff-pair" / "design.yaml", Report()
         )
         assert netlist.simulation.for_class("lvds").stop_hz > 0
+
+    def test_the_timeout_is_the_designs_and_the_flag_overrides_it(self) -> None:
+        """M13.6 made the per-pair budget a design parameter.
+
+        It was a constant, and the constant was 1800 s -- set from M12's measured
+        1 to 13 minutes a pair and left behind when M13b's narrower traces refined
+        the mesh and multiplied `max_steps`. Every SATA link on `pcie-sata` then
+        ran past it, and a timeout writes no `result.json` at all, so M13's
+        overnight batch reported `failed 1800.0 s` rather than a number.
+        """
+        netlist = compile_netlist(
+            REPO_ROOT / "examples" / "pcie-sata" / "design.yaml", Report()
+        )
+        assert netlist.simulation.for_class("sata").timeout_s == 7200
+        assert SimulationSettings().for_class("anything").timeout_s == 7200
+
+    def test_the_fence_pitch_falls_as_the_band_and_the_dielectric_rise(self) -> None:
+        """A quarter wavelength at the top of the band, slowed by the laminate."""
+        from aipcb.model.layout import Stackup
+        from aipcb.si.slice import fence_pitch_mm
+
+        stackup = Stackup.model_validate({"copper_layers": 4, "epsilon_r": 4.4})
+        settings = SimulationSettings()
+        at_8 = fence_pitch_mm(stackup, settings.for_class("x"))
+        assert 4.0 <= at_8 <= 5.0, at_8
+
+        slower = Stackup.model_validate({"copper_layers": 4, "epsilon_r": 9.9})
+        assert fence_pitch_mm(slower, settings.for_class("x")) < at_8
+
+        narrow = SimulationSettings(stop_ghz=4.0).for_class("x")
+        assert fence_pitch_mm(stackup, narrow) > at_8
+
+    def test_the_reference_net_is_the_one_covering_the_most_layers(self) -> None:
+        """`pcie-sata` declares two planes, one each, and pours GND on three layers.
+
+        The tie-break matters: without the pours, `GND` on `In1.Cu` and `P3V3` on
+        `In2.Cu` are one layer apiece, and which one a slice ties its planes to
+        would come down to sort order.
+        """
+        from aipcb.si.slice import reference_net
+
+        netlist = compile_netlist(
+            REPO_ROOT / "examples" / "pcie-sata" / "design.yaml", Report()
+        )
+        assert reference_net(netlist) == "GND"
 
 
 # ---------------------------------------------------------------------------

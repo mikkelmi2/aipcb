@@ -82,6 +82,14 @@ class SimulationSettings(Strict):
         "energy decay; a board with a plane cavity in it may never reach that, and "
         "this is what bounds the run when it does not.",
     )
+    timeout_s: int = Field(
+        default=7200,
+        gt=0,
+        description="Wall-clock seconds one pair may take before the run is killed "
+        "and its container reaped. This is a budget, not an estimate: a run that "
+        "hits it produces no result at all, so it is sized above the slowest link "
+        "on the board rather than near the typical one.",
+    )
     impedance_tolerance: float = Field(
         default=0.10,
         gt=0,
@@ -123,6 +131,7 @@ class SimulationSettings(Strict):
             grid_optimal_um=self.grid_optimal_um,
             grid_inter_layers=self.grid_inter_layers,
             max_steps=self.max_steps,
+            timeout_s=self.timeout_s,
             impedance_tolerance=self.impedance_tolerance,
             return_loss_db=self.return_loss_db,
             insertion_loss_db=self.insertion_loss_db,
@@ -140,6 +149,7 @@ class ResolvedSimulation(Strict):
     grid_optimal_um: float
     grid_inter_layers: int
     max_steps: int
+    timeout_s: int
     impedance_tolerance: float
     return_loss_db: float
     insertion_loss_db: float

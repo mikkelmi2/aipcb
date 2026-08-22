@@ -62,11 +62,32 @@ __all__ = [
 ]
 
 #: How long one pair may take before it is called a failure rather than a wait.
-#: Phase 0's 30 s - 2 min was measured on a two-layer slice with no pour; M12's
-#: boards are four-layer with planes on both sides of the signal, and the measured
-#: range at the shipped mesh density is 1 to 13 minutes a pair. Half an hour is
-#: comfortably clear of the worst of those and still bounds an unattended batch.
-DEFAULT_TIMEOUT_S = 1800
+#: The floor under :attr:`aipcb.model.simulation.SimulationSettings.timeout_s`,
+#: which is what a design and ``--timeout`` actually set; this is only what a
+#: direct call to :func:`run_gerber2ems` gets.
+#:
+#: **Raised from 1800 s at M13.6, and the old number is worth keeping in view.**
+#: 1800 was set from M12's measured 1 to 13 minutes a pair, which was honest for
+#: the boards M12 ran. M13b then narrowed `examples/pcie-sata`'s traces, which
+#: refined the mesh, which multiplied `max_steps` -- and every SATA link on that
+#: board moved past the limit. M13 left a batch running against it overnight and
+#: it reported ``failed 1800.0 s`` twice rather than a number, because a timeout
+#: produces no ``result.json`` at all: the next run re-slices and starts from zero.
+#:
+#: The measurements this is sized from, all on the same sixteen-core machine:
+#:
+#: ==========================  ===========  =============================
+#: link                        wall clock   conditions
+#: ==========================  ===========  =============================
+#: ``SATA0_RXN/P`` (M13.5)     3 216 s      test suite running beside it
+#: ``SATA0_RXN/P`` (projected) ~2 220 s     machine to itself, 79 steps/s
+#: ``REFCLKN/P`` (M13.6)       ~430 s       machine to itself, full steps
+#: ==========================  ===========  =============================
+#:
+#: 7200 s is a shade over twice the slowest thing anyone has measured here. It is
+#: deliberately not close to the typical run: the cost of setting it too high is
+#: waiting, and the cost of setting it too low is an empty directory after an hour.
+DEFAULT_TIMEOUT_S = 7200
 
 
 class ContainerMissing(RuntimeError):

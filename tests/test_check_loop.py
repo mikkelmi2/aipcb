@@ -601,17 +601,77 @@ class TestCheckIsAFunctionOfTheSource:
     touched between the two runs.
     """
 
-    def test_checking_twice_changes_nothing(self, tmp_path: Path) -> None:
+    def test_checking_three_times_changes_nothing(self, tmp_path: Path) -> None:
+        """Three runs, not two, and every number the accumulation moved.
+
+        Two runs is enough to catch the bug as it was; three is what says the
+        answer is *stationary* rather than merely equal on the first repeat. The
+        M13.5 measurement drifted further on every run -- 1108 mm, 1853 mm,
+        2462 mm -- so a fix that stopped only the first drift would have passed a
+        two-run test and still been wrong.
+        """
         design = REPO_ROOT / "examples" / "usb-port" / "design.yaml"
         board = tmp_path / "usb-port.kicad_pcb"
 
-        first = check_design(design, out_dir=tmp_path, report=Report())
-        copper = board.read_text(encoding="utf-8")
-        second = check_design(design, out_dir=tmp_path, report=Report())
+        runs = []
+        for _ in range(3):
+            result = check_design(design, out_dir=tmp_path, report=Report())
+            assert result.routing is not None
+            runs.append(
+                {
+                    "board": board.read_bytes(),
+                    "copper_mm": round(result.routing.total_length, 3),
+                    "routed": len(result.routing.connections),
+                    "failed": len(result.routing.failed),
+                    "vias": len(result.routing.vias),
+                    "routing": result.routing.summary(),
+                    "drc": result.drc.counts,
+                    "erc": result.erc.counts,
+                }
+            )
 
-        assert board.read_text(encoding="utf-8") == copper, (
-            "the second check changed the board it was given"
-        )
-        assert first.routing is not None and second.routing is not None
-        assert first.routing.summary() == second.routing.summary()
-        assert first.drc.counts == second.drc.counts
+        first = runs[0]
+        for index, run in enumerate(runs[1:], start=2):
+            assert run["board"] == first["board"], (
+                f"check {index} wrote a different board than check 1"
+            )
+            for key in ("copper_mm", "routed", "failed", "vias", "routing", "drc", "erc"):
+                assert run[key] == first[key], (
+                    f"check {index} disagrees with check 1 about {key}: "
+                    f"{run[key]!r} against {first[key]!r}"
+                )
+
+    def test_checking_the_flagship_board_three_times_changes_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        """The same invariant on the board the bug was found on.
+
+        `usb-port` above is the cheap version; `pcie-sata` is where M13.5 measured
+        the drift, and it is the only example carrying both routed copper and
+        declared zones -- the two item kinds `preserve.py` calls a human's. Skipped
+        with the rest of the slow corpus unless asked for, because it is 45 s a run.
+        """
+        if not self._slow_enabled():
+            pytest.skip("set AIPCB_FULL_CORPUS=1 to check the flagship board")
+        design = REPO_ROOT / "examples" / "pcie-sata" / "design.yaml"
+        board = tmp_path / "pcie-sata.kicad_pcb"
+
+        seen = set()
+        for _ in range(3):
+            result = check_design(design, out_dir=tmp_path, report=Report())
+            assert result.routing is not None
+            seen.add(
+                (
+                    board.read_bytes(),
+                    round(result.routing.total_length, 3),
+                    len(result.routing.connections),
+                    tuple(sorted(result.drc.counts.items())),
+                )
+            )
+        assert len(seen) == 1, "three checks of one design gave more than one answer"
+
+    @staticmethod
+    def _slow_enabled() -> bool:
+        import os
+
+        return os.environ.get("AIPCB_FULL_CORPUS") == "1"

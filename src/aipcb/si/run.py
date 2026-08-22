@@ -30,7 +30,6 @@ from aipcb.si.inputs import write_inputs
 from aipcb.si.pairs import LogicalPair, logical_pairs
 from aipcb.si.results import Metrics, analyse, read_sparameters, write_touchstone
 from aipcb.si.runner import (
-    DEFAULT_TIMEOUT_S,
     ContainerBusy,
     ContainerMissing,
     RunOutcome,
@@ -147,7 +146,7 @@ def simulate_pairs(
     net_class: str | None = None,
     force: bool = False,
     dry_run: bool = False,
-    timeout_s: int = DEFAULT_TIMEOUT_S,
+    timeout_s: int | None = None,
     image: str = IMAGE,
     progress: Callable[[PairResult], None] | None = None,
     geometric_skew: dict[str, float] | None = None,
@@ -223,7 +222,7 @@ def _one_pair(
     image: str,
     force: bool,
     dry_run: bool,
-    timeout_s: int,
+    timeout_s: int | None,
     geometric_skew: dict[str, float] | None = None,
 ) -> PairResult | None:
     work = out_dir / pair.name
@@ -330,7 +329,7 @@ def _one_pair(
             work,
             runtime=runtime,
             image=image,
-            timeout_s=timeout_s,
+            timeout_s=timeout_s if timeout_s is not None else settings.timeout_s,
             expect_ports=len(sliced.ports),
             expect_vias=expect_vias,
             log_path=work / "run.log",

@@ -633,6 +633,17 @@ simulation:
   # What `aipcb simulate` may assume (M12). None of it reaches the board; it is the
   # band each link is swept over and the thresholds a verdict is measured against.
   # The defaults are deliberately PCIe-shaped, so only SATA has to say anything.
+  #
+  # `timeout_s` is written here rather than defaulted because this board is the one
+  # that found the default wrong. M12 measured 1 to 13 minutes a pair and 1800 s was
+  # generous; M13b then narrowed the traces, which refined the mesh, which
+  # multiplied `max_steps` -- and every SATA link went past the limit. M13's
+  # overnight batch reported `failed 1800.0 s` twice and produced nothing, because a
+  # timeout writes no `result.json` at all and the next run starts from zero. The
+  # slowest link anyone has measured here is 3 216 s; two hours is a shade over
+  # twice that, and the cost of it being too high is waiting rather than an empty
+  # directory after an hour.
+  timeout_s: 7200
   classes:
     sata:
       stop_ghz: 6.0
