@@ -167,6 +167,14 @@ class Metrics:
     """
     max_skew_mm: float | None = None
     """The class's budget, so the fit has something to be a verdict against."""
+    spans_layers: bool = False
+    """Whether the measured span contains a layer change, and so is not one line.
+
+    Reported rather than acted on. The impedance verdict still compares the number
+    to the class target, because the number is a real measurement of the link; what
+    this says is that it is not a measurement of a *trace*, so a reader comparing it
+    to a fabricator's coupon is comparing two different things.
+    """
     usable: bool = True
     """False when the extraction is not physical, whatever the numbers say."""
     verdicts: dict[str, str] = field(default_factory=dict)
@@ -216,6 +224,7 @@ class Metrics:
             "target_ohm": self.target_ohm,
             "impedance_ohm": round(self.impedance_ohm, 2),
             "impedance_min_ohm": round(self.impedance_min_ohm, 2),
+            "spans_layers": self.spans_layers,
             "impedance_max_ohm": round(self.impedance_max_ohm, 2),
             "deviation": None if self.deviation is None else round(self.deviation, 4),
             "band_ghz": [round(f / 1e9, 3) for f in self.band_hz],
@@ -491,6 +500,7 @@ def analyse(
     geometric_skew_mm: float | None = None,
     max_skew_mm: float | None = None,
     slice_skew_mm: float | None = None,
+    spans_layers: bool = False,
 ) -> Metrics | None:
     """Turn one pair's S-matrix into numbers and verdicts."""
     mixed = _mixed_mode(sp)
@@ -566,9 +576,25 @@ def analyse(
                 "carries; the ports are not measuring the trace"
             )
 
+    if spans_layers:
+        # M13.5. The median below is the characteristic impedance of a *uniform*
+        # line, recovered from the ripple its own length puts on the input
+        # impedance. A pair that changes layer inside the measured span is not one
+        # line: it is two sections, referenced to two different planes, with a via
+        # barrel between them, and the median of what port 1 sees is not either
+        # section's Z0. The number is still reported -- it is a real measurement of
+        # the whole link -- but it stops being offered as a trace impedance.
+        notes.append(
+            "the two ends of this pair are on different layers, so the span "
+            "measured here contains a via transition and a change of reference "
+            "plane; the impedance below is the whole link's and is not the "
+            "characteristic impedance of either section"
+        )
+
     metrics = Metrics(
         pair=pair,
         net_class=net_class,
+        spans_layers=spans_layers,
         target_ohm=target_ohm,
         impedance_ohm=impedance,
         impedance_min_ohm=min(impedances),

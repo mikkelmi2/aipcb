@@ -296,7 +296,7 @@ net_classes:
     clearance_mm: 0.15
     diff_pair_gap_mm: 0.15       # an input to the derivation, not an output
     impedance_diff_ohm: 85       # with the stackup, this gives the pair's width
-    max_skew_mm: 0.125
+    max_skew_mm: 0.127           # PCIe CEM r3.0 4.7.7, add-in card
     coupling: tight
     standoff_k: 1.4
     reference: In1.Cu

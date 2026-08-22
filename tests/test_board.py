@@ -298,6 +298,16 @@ class TestAgainstKicad:
         "pcie-sata": {"lib_footprint_mismatch"}
     }
 
+    #: Schematic-parity findings that are the example saying something true about
+    #: itself. `footprint_filters_mismatch` became visible in M13.5, when the
+    #: generated project stopped inheriting KiCad's `ignore` default for it: `U1`'s
+    #: symbol is a connector stand-in, because KiCad ships no PCIe-to-SATA
+    #: controller, so its footprint filters do not admit the QFN-48 the part
+    #: declares. Documented in `examples/pcie-sata/design.yaml`'s own header.
+    KEPT_PARITY: ClassVar[dict[str, set[str]]] = {
+        "pcie-sata": {"footprint_filters_mismatch"}
+    }
+
     def test_board_loads_and_drc_is_clean(self, example_design: Path, tmp_path: Path) -> None:
         payload = self._drc(example_design, tmp_path)
         allowed = self.KEPT_VIOLATIONS.get(example_design.parent.name, set())
@@ -311,9 +321,11 @@ class TestAgainstKicad:
     def test_schematic_parity_is_clean(self, example_design: Path, tmp_path: Path) -> None:
         """Every footprint tied to its symbol, every pad on the net the source says."""
         payload = self._drc(example_design, tmp_path)
+        allowed = self.KEPT_PARITY.get(example_design.parent.name, set())
         issues = [
             f"[{v['severity']}] {v['type']}: {v['description']}"
             for v in payload["schematic_parity"]
+            if v["type"] not in allowed
         ]
         assert not issues, "\n".join(issues)
 

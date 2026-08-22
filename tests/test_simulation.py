@@ -164,6 +164,27 @@ class TestSlice:
         assert len({p.layer for p in sliced.ports}) == 2
         assert any("changes layer" in note for note in sliced.notes)
 
+    def test_which_pairs_span_layers_is_a_property_and_not_prose(
+        self, routed_pcie
+    ) -> None:
+        """M13.5. The two links that miss +/-10 % are exactly the two that span
+        layers, so whether a slice does needs to be readable rather than inferred
+        from a sentence in `notes`. `spans_planes` goes with it because a layer
+        change on this board is also a change of reference plane, and it is the
+        plane change that makes the reported impedance not a trace impedance.
+        """
+        spanning = {
+            name: (s.spans_layers, s.spans_planes)
+            for name in ("REFCLKN+REFCLKP", "PCIE_RXN+PCIE_RXP",
+                         "PCIE_TXN+PCIE_TXP", "SATA0_TXN+SATA0_TXP")
+            if (s := self._slice(routed_pcie, name))
+        }
+        assert spanning["REFCLKN+REFCLKP"] == (True, True)
+        assert spanning["PCIE_RXN+PCIE_RXP"] == (True, True)
+        assert spanning["PCIE_TXN+PCIE_TXP"] == (False, False)
+        assert spanning["SATA0_TXN+SATA0_TXP"] == (False, False)
+        assert self._slice(routed_pcie, "REFCLKN+REFCLKP").to_dict()["spans_layers"]
+
     def test_no_copper_reaches_the_slice_outline(self, routed_pcie) -> None:
         """gerber2ems frames every layer on Edge.Cuts; copper past it moves the frame."""
         sliced = self._slice(routed_pcie, "SATA0_TXN+SATA0_TXP")
@@ -587,6 +608,32 @@ class TestResults:
         assert metrics is not None
         assert metrics.impedance_ohm == pytest.approx(100.0, rel=1e-6)
         assert metrics.verdicts["impedance"] == "pass"
+
+    def test_a_layer_spanning_link_says_its_number_is_not_a_trace_impedance(
+        self,
+    ) -> None:
+        """M13.5. The estimator is a median input impedance, which is the
+        characteristic impedance of a *uniform* line. A link that changes layer is
+        a cascade of two sections and a via barrel referenced to two planes, so the
+        number is the whole link's. It is still published -- it is a real
+        measurement -- and it stops being offered as a trace impedance.
+        """
+        common = dict(
+            pair="X", net_class="c", port_impedance_ohm=50.0, target_ohm=100.0,
+            settings=self._settings(),
+        )
+        uniform = analyse(_ideal_pair(z0=50.0, zdiff=100.0), **common)
+        spanning = analyse(
+            _ideal_pair(z0=50.0, zdiff=100.0), spans_layers=True, **common
+        )
+        assert uniform is not None and spanning is not None
+        assert uniform.spans_layers is False
+        assert spanning.spans_layers is True
+        assert not any("different layers" in n for n in uniform.notes)
+        assert any("different layers" in n for n in spanning.notes)
+        # the number itself is untouched: this is a caveat, not a correction
+        assert spanning.impedance_ohm == uniform.impedance_ohm
+        assert spanning.to_dict()["spans_layers"] is True
 
     def test_a_line_off_target_is_measured_not_rounded_to_the_port(self) -> None:
         """Ports are set to half the target, so a 130 ohm line must read 130."""

@@ -174,6 +174,29 @@ class Slice:
         return abs(self.half_length_mm[0] - self.half_length_mm[1])
 
     @property
+    def spans_layers(self) -> bool:
+        """Whether the two ends of this slice sit on different copper layers.
+
+        A pair that changes layer part way along puts a via barrel, and usually a
+        change of reference plane, inside the span the ports measure. That matters
+        to whoever reads the impedance: the estimator in :func:`aipcb.si.results.
+        analyse` is a median input impedance, which is the characteristic impedance
+        of a *uniform* line and is not the characteristic impedance of anything when
+        the line is a cascade of two sections and a barrel.
+
+        Measured on `examples/pcie-sata` in M13.5: the two links whose ports span
+        layers -- `PCIE_RXP/N` and `REFCLKP/N` -- are exactly the two that miss
+        their +/-10 % band, at -14.4 % and -41.4 %, while `PCIE_TXP/N` and all eight
+        SATA links keep both ends on one layer.
+        """
+        return len({port.layer for port in self.ports}) > 1
+
+    @property
+    def spans_planes(self) -> bool:
+        """Whether the two ends are referenced to different planes."""
+        return len({port.plane_index for port in self.ports}) > 1
+
+    @property
     def size_mm(self) -> tuple[float, float]:
         return (
             round(self.rect[2] - self.rect[0], 4),
@@ -188,6 +211,8 @@ class Slice:
             "conductor_length_mm": round(self.conductor_length_mm, 4),
             "half_length_mm": [round(v, 4) for v in self.half_length_mm],
             "slice_skew_mm": round(self.slice_skew_mm, 4),
+            "spans_layers": self.spans_layers,
+            "spans_planes": self.spans_planes,
             "launch_mm": round(self.launch_mm, 4),
             "bridged_by": list(self.bridged),
             "ports": [p.to_dict() for p in self.ports],

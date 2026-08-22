@@ -143,6 +143,26 @@ suffixes rather than overwrites, `_accept` names copper by layer as well, and
 `route/invariant.py` asks the finished board whether any two nets overlap. See
 [`m13.md`](reports/m13.md).
 
+## Verification
+
+**Copper outside the board outline is not checked by anything.** Measured on KiCad
+9.0.8 in M13.5: two tracks of different nets laid across each other *outside*
+`Edge.Cuts` produce no `tracks_crossing`, no `clearance` and no
+`copper_edge_clearance` -- only `track_dangling`, which is about their ends rather
+than where they are. Nothing in aipcb puts copper there, and the cross-net invariant
+M13a added would catch an overlap wherever it was, so this is a standing gap rather
+than a live one. It is recorded because "DRC is clean" means less than it looks like
+on a board with copper off the edge, and a test now pins the behaviour so a change
+would be noticed.
+
+**KiCad's DRC severity defaults are a moving target aipcb now pins.**
+`compile/project.py::DRC_SEVERITIES` names a severity for the four rules KiCad 9.0.8
+holds at `ignore`, because `--severity-all` does not include `ignore` and a rule held
+there is dropped inside KiCad with nothing in the report saying a category went
+missing. The list is version-specific by construction. ADR 0009's rule applies: it
+wants re-measuring at each KiCad major, and `tests/test_check_loop.py` carries the
+60-rule catalogue with the version attached so the diff is visible when it moves.
+
 ## Generated files
 
 **Pads that share a number share a UUID.** A USB Micro-B receptacle has twelve pads
@@ -187,6 +207,78 @@ and with the same fix (key on the instance, not on a name that repeats).
 
 **Electromagnetic simulation** landed in M12 as `aipcb simulate`, so what is left
 here is what it deliberately does not do.
+
+**Three simulated links out of four are not physical, and it is not the coupling
+capacitors.** M13 recorded `|Sdd21| > 1` on the transmit link as one odd result with
+the slicer's capacitor bridges as the suspect. M13.5 measured a fourth link and the
+count is now `PCIE_TXP/N` 1.23, `REFCLKP/N` 1.13, `SATA0_RXP/N` 1.33 -- and the one
+link that passes, `PCIE_RXP/N`, is the one whose energy decayed furthest (-61 dB).
+More energy out than went in is what an FDTD run reports when it is truncated before
+the fields have left, so this belongs with the trapped-mode question above rather
+than with the bridges. It matters commercially as well as physically: a SATA link is
+about 37 minutes at the measured rate, so the seven that remain are four and a half
+hours, and on this evidence most of that would buy `usable: false`. **Answer this
+before running another batch.**
+
+**`REFCLKP/N`'s simulation is blocked, with a diagnosis.** M13.5 spent five
+reduced-settings runs on it and did not converge it. The signature is not a slow
+decay: energy falls about 9 dB in 7 000 timesteps and then sits flat for 42 000
+more, which is a trapped mode rather than a run that needs longer -- so M13's
+recorded hypothesis, "raise `max_steps` and watch the floor", is refuted. Foreign
+floating copper in the slice is not the cause (removing all seventeen items changes
+the trace by under 1 dB) and neither is boundary proximity (all three PCIe slices
+sit exactly 1.592 mm from their edge). The slice's *plane* structure is where it does
+come from, and only partly: `In2.Cu` carries `P3V3` and is tied to nothing at all --
+a floating plate between two grounded ones, with the pair's own via barrel passing
+through it. Grounding it in the slice moves the plateau from -10 dB to -15 dB, so it
+holds roughly two thirds of the trapped energy and something else holds the rest.
+
+The next experiment is a board question rather than a solver one, and it is why
+M13.5 stopped: REFCLK's slice has **five** `GND` stitching vias where
+`PCIE_RXP/N`'s -- same stack, same transition depth, and it converges to -50 dB --
+has **seven**. Testing it means changing copper. Note also that M12 simulated this
+same pair to -41.2 dB at a 50 um mesh on a wider trace, so a converging
+configuration of it exists. See
+[the M13.5 report](../reports/m13.md#4-refclk-blocked-with-a-diagnosis-and-m13s-hypothesis-refuted).
+
+**The slicer cannot measure one side of a via transition.** M13.5 established that
+the two links which miss the +/-10 % band -- `PCIE_RXP/N` and `REFCLKP/N` -- are
+exactly the two whose ports sit on different layers, and that
+`si/results.py::analyse` estimates impedance as a median input impedance, which is
+the characteristic impedance of a *uniform* line. A link that changes layer is a
+cascade of two sections and a barrel, referenced to two different planes, and the
+median is not either section's Z0. The output now says so
+(`Slice.spans_layers`, `Metrics.spans_layers`, and a note on the finding), but
+saying so is not measuring it. Two ways forward, cheapest first: **widen the
+sweep** -- at 8 GHz a TDR resolves about 4.5 mm and the F.Cu section is 2.6 mm, so
+the existing S-parameters cannot separate them, while 20 GHz would -- and then
+**port each side separately**, which is a slicer change.
+
+**Simulation cost outgrew the tool's own timeout.** M13 projected 9-13 minutes a
+SATA link under the M13b mesh. Measured in M13.5: a SATA pair is two excitations of
+87 336 steps and **exceeds the 1800 s default `--timeout`**, so the batch M13 left
+running could never have produced a result -- it reported `failed 1800.0 s` twice
+and would have done so eight times. Nothing warns before a batch starts that its
+per-pair budget is smaller than a pair. A cell-count-and-step estimate printed at
+slice time, and a default timeout derived from it rather than fixed, would both be
+cheap.
+
+**REFCLK is in the wrong net class.** PCIe CEM r3.0 section 2.1.1 puts the
+reference clock at nominal **100 ohm** differential; `examples/pcie-sata` carries it
+in `pcie_rx` at 85 ohm, because it shares that class's layer and reference plane.
+Giving it its own class is a geometry change, so M13.5 recorded it rather than made
+it. Until then every REFCLK impedance number in every report is being compared to a
+target the standard does not ask for.
+
+**Four pairs are over the PCIe intra-pair skew requirement, and it is not a
+budget error.** M13.5 checked the budget against PCI Express CEM r3.0 section 4.7.7
+-- under 0.127 mm on an add-in card -- and the class was already at 0.125 mm, so
+there is no specification fix available. `PCIE_TXP/N` (0.191 mm), `PCIE_TXP/N_C`
+(0.247 mm), `PCIE_RXP/N` (0.219 mm) and `REFCLKP/N` (0.359 mm) need geometric work,
+and the finding's own hint names it: move the end components so the two halves break
+out symmetrically. Note that section 4.7.7's rationale is common-mode conversion and
+therefore EMI, not timing -- so the "1-2 ps against a 125 ps unit interval"
+argument M11, M12 and M13 all reached for does not answer it.
 
 **Crosstalk between pairs, eye diagrams, IBIS driver models.** A slice carries its
 neighbours' copper, so their loading is in the answer, but nothing excites them and

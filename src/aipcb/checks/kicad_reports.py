@@ -55,7 +55,11 @@ _HINTS = {
     "move the parts apart with a `keep_apart` constraint",
     "copper_edge_clearance": "the part is too close to the board edge; enlarge "
     "`layout.outline` or increase `layout.placement.margin_mm`",
-    "courtyard_overlap": "two parts overlap; give the placer more room in "
+    # KiCad's rule is `courtyards_overlap`, plural. It was spelt singular here from
+    # M4 until M13.5, so the hint had never once been attached to the violation it
+    # was written for -- found by enumerating KiCad 9.0.8's rule names rather than
+    # by anybody hitting it.
+    "courtyards_overlap": "two parts overlap; give the placer more room in "
     "`layout.outline`",
     "track_width": "the track is narrower than the net class allows; check "
     "`trace_width_mm` for this class",
@@ -67,6 +71,16 @@ _HINTS = {
     "part declares; rebuild rather than editing the board's footprint",
     "footprint_symbol_mismatch": "the board and schematic disagree about this "
     "part's footprint; rebuild from source",
+    "tracks_crossing": "two nets' copper occupies the same place, which is a short; "
+    "this is a router defect rather than a design one -- report the board",
+    "shorting_items": "two nets are joined by copper; if the router laid it, report "
+    "the board, and if it is a net-tie, say so in the source",
+    "missing_courtyard": "this footprint declares no courtyard, so KiCad cannot "
+    "check it for overlap; the fix belongs in the footprint library",
+    "pth_inside_courtyard": "a through-hole lands inside a part's courtyard; move "
+    "the parts apart with a `keep_apart` constraint",
+    "npth_inside_courtyard": "a non-plated hole lands inside a part's courtyard; "
+    "move the mounting hole, or the part",
 }
 
 
