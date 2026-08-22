@@ -37,8 +37,14 @@ from aipcb.elaborate import elaborate
 from aipcb.highspeed import controlled_classes, target_for
 from aipcb.impedance import (
     DEFAULT_EPSILON_R,
+    FAR_GAP_MM,
     ImpedanceUnreachable,
+    coplanar_odd_factor,
+    cpwg_differential,
+    cpwg_microstrip,
     differential_impedance,
+    elliptic_ratio,
+    grounded_cpw,
     hammerstad_microstrip,
     ipc2141_microstrip,
     solve_width,
@@ -119,6 +125,92 @@ class TestImpedance:
         near = differential_impedance(0.3, 0.1, PREPREG_MM, COPPER_MM, PREPREG_ER)
         far = differential_impedance(0.3, 0.6, PREPREG_MM, COPPER_MM, PREPREG_ER)
         assert far > near
+
+
+class TestCoplanarGround:
+    """M13b. The model M12 measured the absence of, and the one it did not choose."""
+
+    def test_ground_alongside_lowers_the_impedance(self) -> None:
+        bare = differential_impedance(0.25, 0.2, 0.48, COPPER_MM, DEFAULT_EPSILON_R)
+        poured = cpwg_differential(
+            0.25, 0.2, 0.48, COPPER_MM, DEFAULT_EPSILON_R, pour_gap=0.2
+        )
+        assert poured < bare
+        # And the closer it is, the further down it pulls.
+        tighter = cpwg_differential(
+            0.25, 0.2, 0.48, COPPER_MM, DEFAULT_EPSILON_R, pour_gap=0.1
+        )
+        assert tighter < poured
+
+    def test_a_pour_far_away_is_the_bare_microstrip_exactly(self) -> None:
+        """The property that keeps every pre-M13 board's geometry where it was."""
+        for width, gap, height in ((0.25, 0.2, 0.48), (0.322, 0.2, 0.2104)):
+            bare = differential_impedance(
+                width, gap, height, COPPER_MM, DEFAULT_EPSILON_R
+            )
+            assert cpwg_differential(
+                width, gap, height, COPPER_MM, DEFAULT_EPSILON_R, FAR_GAP_MM
+            ) == pytest.approx(bare, rel=1e-9)
+
+    def test_the_factor_is_between_a_half_and_one(self) -> None:
+        for gap in (0.05, 0.1, 0.15, 0.2, 0.5, 2.0):
+            factor = coplanar_odd_factor(0.15, gap, 0.2104)
+            assert 0.3 < factor <= 1.0
+            assert coplanar_odd_factor(0.15, gap, 0.2104) >= coplanar_odd_factor(
+                0.15, gap / 2, 0.2104
+            )
+
+    def test_a_single_ended_trace_gets_two_neighbours_not_one(self) -> None:
+        """Ground on both sides loads the trace twice as much as one neighbour."""
+        bare = ipc2141_microstrip(0.25, 0.48, COPPER_MM, DEFAULT_EPSILON_R)
+        one_side = bare * (1 - 0.48 * math.exp(-0.96 * 0.2 / 0.48))
+        both = cpwg_microstrip(0.25, 0.2, 0.48, COPPER_MM, DEFAULT_EPSILON_R)
+        assert both < one_side < bare
+
+    def test_the_solver_hits_its_target_under_the_coplanar_model(self) -> None:
+        for target in (85.0, 100.0):
+            geometry = solve_width(
+                target, 0.15, PREPREG_MM, COPPER_MM, PREPREG_ER, pour_gap=0.15
+            )
+            assert geometry.model == "cpwg"
+            assert geometry.pour_gap_mm == 0.15
+            assert cpwg_differential(
+                geometry.width_mm, 0.15, PREPREG_MM, COPPER_MM, PREPREG_ER, 0.15
+            ) == pytest.approx(target, abs=0.05)
+
+    def test_the_coplanar_model_derives_a_narrower_trace(self) -> None:
+        """M12 said the derived widths were 'systematically narrow'. They were wide.
+
+        Impedance falls as a trace widens, so a board reading *below* its target was
+        built too wide, and correcting the model has to narrow it. This is the
+        direction, asserted, because the chain report has it the other way round.
+        """
+        bare = solve_width(85.0, 0.15, PREPREG_MM, COPPER_MM, PREPREG_ER)
+        poured = solve_width(
+            85.0, 0.15, PREPREG_MM, COPPER_MM, PREPREG_ER, pour_gap=0.15
+        )
+        assert poured.width_mm < bare.width_mm
+        assert poured.width_mm == pytest.approx(0.1846, abs=0.0005)
+        assert bare.width_mm == pytest.approx(0.2888, abs=0.0005)
+
+    def test_the_published_conformal_form_is_kept_and_says_what_it_is(self) -> None:
+        """The measurement that chose against the Wadell/Simons closed form.
+
+        Both numbers are in `impedance.py`'s docstrings; asserting them here is what
+        stops the ADR's reasoning becoming a claim nobody can check.
+        """
+        # Inside its domain -- a real 50 ohm conductor-backed CPW on RO4350.
+        assert grounded_cpw(1.0, 0.25, 0.508, 3.48) == pytest.approx(50.0, abs=2.0)
+        # Outside it: an isolated trace should read what a microstrip reads, and
+        # this reads twenty percent high, because its er_eff tends to er.
+        isolated = grounded_cpw(0.2888, FAR_GAP_MM, PREPREG_MM, PREPREG_ER)
+        microstrip = ipc2141_microstrip(0.2888, PREPREG_MM, COPPER_MM, PREPREG_ER)
+        assert isolated > microstrip * 1.2
+
+    def test_the_elliptic_ratio_is_exact_at_the_self_complementary_point(self) -> None:
+        """``K(k)/K(k') = 1`` at ``k = 1/sqrt(2)``, where ``k = k'``."""
+        assert elliptic_ratio(1 / math.sqrt(2)) == pytest.approx(1.0, abs=1e-12)
+        assert elliptic_ratio(0.3) < 1.0 < elliptic_ratio(0.9)
 
 
 def _four_layer_stack() -> Stackup:
@@ -244,6 +336,154 @@ def impedance_codes(extra: str, write_design) -> dict[str, str]:
     return {d.code: d.message for d in fresh.diagnostics}
 
 
+def _source_with(extra: str, pours: str, clearance: float | None) -> str:
+    source = CLASS_BASE.format(extra=extra, library=LIBRARY) + pours
+    if clearance is not None:
+        source = source.replace("    clearance_mm: 0.15\n", f"    clearance_mm: {clearance}\n")
+    return source
+
+
+def impedance_target(extra: str, write_design, pours: str = "", clearance=None):
+    """Resolve one class's target from a source, pours and all (M13b)."""
+    source = _source_with(extra, pours, clearance)
+    report = Report()
+    design = load_design(write_design(source), report=report)
+    netlist = elaborate(design, report)
+    return netlist, target_for(netlist, "hs")
+
+
+F_CU_POUR = """  - net: GND
+    layer: F.Cu
+    scope: board
+"""
+
+#: The same pour, hugging the pair. Both clearances have to be tight for the gap to
+#: be: KiCad enforces the larger of the two, so a tight net class beside a pour that
+#: keeps its distance is still a comfortable gap.
+F_CU_POUR_TIGHT = """  - net: GND
+    layer: F.Cu
+    scope: board
+    clearance: 0.05
+"""
+
+
+@needs_kicad_libraries
+class TestImpedanceModelSelection:
+    """Which model a class gets, and why. M13b.
+
+    The choice is made from the `pours:` block rather than from a flag, because
+    what decides it is a fact about the board: is there ground beside this pair or
+    is there not. M11 solved every class as a bare microstrip on boards that all
+    poured ground up to their pairs, and M12 measured the 40 % that cost.
+    """
+
+    HS = (
+        "    impedance_diff_ohm: 85\n    reference: In1.Cu\n"
+        "    prefer_layers: [F.Cu]\n"
+    )
+
+    def test_no_pour_on_the_pairs_layer_is_a_microstrip(self, write_design) -> None:
+        _, target = impedance_target(self.HS, write_design)
+        assert target is not None
+        assert target.model == "microstrip"
+        assert target.pour_gap_mm is None
+        assert target.gap_sensitivity is None
+
+    def test_a_pour_on_the_pairs_layer_is_a_coplanar_waveguide(
+        self, write_design
+    ) -> None:
+        _, target = impedance_target(self.HS, write_design, pours=F_CU_POUR)
+        assert target is not None
+        assert target.model == "cpwg"
+        assert target.pour_gap_mm is not None
+
+    def test_the_gap_is_the_larger_of_the_two_clearances(self, write_design) -> None:
+        """KiCad enforces the larger, so the derivation has to predict the larger."""
+        _, wide = impedance_target(
+            self.HS, write_design, pours=F_CU_POUR, clearance=0.35
+        )
+        _, narrow = impedance_target(
+            self.HS, write_design, pours=F_CU_POUR, clearance=0.1
+        )
+        assert wide is not None and narrow is not None
+        assert wide.pour_gap_mm == pytest.approx(0.35)
+        # 0.1 is narrower than the ground class's own default clearance, so the
+        # pour's figure wins rather than the signal's.
+        assert narrow.pour_gap_mm is not None
+        assert narrow.pour_gap_mm > 0.1
+
+    def test_the_coplanar_class_derives_a_narrower_trace(self, write_design) -> None:
+        _, bare = impedance_target(self.HS, write_design)
+        _, poured = impedance_target(self.HS, write_design, pours=F_CU_POUR)
+        assert bare is not None and poured is not None
+        assert poured.geometry.width_mm < bare.geometry.width_mm
+
+    def test_the_model_reaches_the_targets_own_dictionary(self, write_design) -> None:
+        _, target = impedance_target(self.HS, write_design, pours=F_CU_POUR)
+        assert target is not None
+        published = target.to_dict()
+        assert published["model"] == "cpwg"
+        assert published["pour_gap_mm"] == target.pour_gap_mm
+        assert published["gap_sensitivity"] is not None
+
+
+@needs_kicad_libraries
+class TestPourGapSensitivity:
+    """The coupling M13b introduced, surfaced before a board is made.
+
+    The pour clearance used to be a DRC number and nothing else. Now it is an input
+    to the width derivation, so a class whose pour sits tight enough that one etch
+    tolerance moves the impedance materially has spent part of its budget on a
+    fabrication tolerance rather than on the trace.
+    """
+
+    HS = (
+        "    impedance_diff_ohm: 85\n    reference: In1.Cu\n"
+        "    prefer_layers: [F.Cu]\n"
+    )
+
+    def _codes(
+        self, extra: str, write_design, pours: str = "", clearance: float | None = None
+    ) -> dict[str, str]:
+        source = _source_with(extra, pours, clearance)
+        report = Report()
+        design = load_design(write_design(source), report=report)
+        netlist = elaborate(design, report)
+        fresh = Report()
+        run_impedance_checks(netlist, fresh)
+        return {d.code: d.message for d in fresh.diagnostics}
+
+    def test_a_comfortable_pour_gap_says_nothing(self, write_design) -> None:
+        codes = self._codes(self.HS, write_design, pours=F_CU_POUR, clearance=0.15)
+        assert "impedance-pour-gap-sensitive" not in codes
+
+    def test_a_tight_pour_gap_is_reported(self, write_design) -> None:
+        codes = self._codes(
+            self.HS, write_design, pours=F_CU_POUR_TIGHT, clearance=0.05
+        )
+        assert "impedance-pour-gap-sensitive" in codes, codes
+        message = codes["impedance-pour-gap-sensitive"]
+        assert "0.05" in message and "85 ohm" in message
+
+    def test_the_threshold_is_the_classs_own_to_set(self, write_design) -> None:
+        assert "impedance-pour-gap-sensitive" in self._codes(
+            self.HS, write_design, pours=F_CU_POUR_TIGHT, clearance=0.05
+        )
+        assert "impedance-pour-gap-sensitive" not in self._codes(
+            self.HS + "    pour_gap_sensitivity: 0.2\n",
+            write_design, pours=F_CU_POUR_TIGHT, clearance=0.05,
+        )
+
+    def test_a_class_with_no_pour_beside_it_is_not_asked(self, write_design) -> None:
+        codes = self._codes(self.HS, write_design, clearance=0.05)
+        assert "impedance-pour-gap-sensitive" not in codes
+
+    def test_the_gap_is_the_pours_own_when_it_is_the_larger(self, write_design) -> None:
+        """A tight net class beside a pour that keeps its distance is not tight."""
+        codes = self._codes(self.HS, write_design, pours=F_CU_POUR, clearance=0.05)
+        assert "impedance-pour-gap-sensitive" not in codes
+
+
 @needs_kicad_libraries
 class TestImpedanceValidation:
     def test_a_class_without_a_target_says_nothing(self, write_design) -> None:
@@ -329,17 +569,40 @@ class TestImpedanceValidation:
 
 @needs_kicad_libraries
 class TestDerivedGeometry:
-    def test_the_example_derives_the_widths_the_adr_records(self) -> None:
+    def test_the_example_derives_the_widths_the_adrs_record(self) -> None:
+        """ADR 0010's numbers, and what ADR 0012 changed them to.
+
+        M11 derived these against a bare microstrip and M12 measured every one of
+        them below its target, because the board pours ground 0.15 mm from each
+        pair. Both sets are asserted here rather than the old ones simply being
+        replaced: the *change* is the finding, and a test that only knew the new
+        numbers would let the model quietly drift back.
+        """
         report = Report()
         netlist = elaborate(load_design(PCIE_SATA, report=report), report)
         targets = controlled_classes(netlist)
         assert set(targets) == {"pcie_rx", "pcie_tx", "sata"}
-        assert targets["sata"].geometry.width_mm == pytest.approx(0.239, abs=0.001)
+
+        # Every class on this board is solved coplanar, because every one of them
+        # has ground poured beside it at the class clearance.
+        for name in ("pcie_rx", "pcie_tx", "sata"):
+            assert targets[name].model == "cpwg", name
+            assert targets[name].pour_gap_mm == pytest.approx(0.15)
+
+        assert targets["sata"].geometry.width_mm == pytest.approx(0.1379, abs=0.001)
         assert targets["sata"].gap_mm == 0.2
-        assert targets["pcie_tx"].geometry.width_mm == pytest.approx(0.2888, abs=0.001)
+        assert targets["pcie_tx"].geometry.width_mm == pytest.approx(0.1846, abs=0.001)
         assert targets["pcie_tx"].reference == "In1.Cu"
         assert targets["pcie_rx"].reference == "In2.Cu"
         assert targets["pcie_rx"].layer == "B.Cu"
+
+        # ADR 0010's own numbers, still reachable: the same targets on the same
+        # stackup with nothing poured alongside.
+        bare_sata = solve_width(100.0, 0.2, PREPREG_MM, COPPER_MM, PREPREG_ER)
+        bare_pcie = solve_width(85.0, 0.15, PREPREG_MM, COPPER_MM, PREPREG_ER)
+        assert bare_sata.width_mm == pytest.approx(0.239, abs=0.001)
+        assert bare_pcie.width_mm == pytest.approx(0.2888, abs=0.001)
+        assert bare_sata.model == "microstrip"
 
     def test_the_derivation_uses_the_declared_prepreg_not_a_uniform_stack(
         self,

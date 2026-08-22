@@ -29,7 +29,7 @@ from dataclasses import dataclass, replace
 from itertools import pairwise
 from typing import Any
 
-from aipcb.diagnostics import Report
+from aipcb.diagnostics import Report, Severity
 from aipcb.netlist import Netlist
 from aipcb.route.diffpair import DiffPair, split_centre_line
 from aipcb.route.geometry import (
@@ -176,12 +176,24 @@ def measure_skew(
     pairs: list[DiffPair],
     connections: list[RoutedConnection],
     report: Report,
+    netlist: Netlist | None = None,
 ) -> dict[str, float]:
     """How far out of length each routed pair ended up, reported against its budget.
 
     Length here is the whole conductor, via barrels included. Meandering has already
     had its chance by the time this runs; what is left is what could not be closed,
     and saying so is the point.
+
+    **This is the one place a pair's skew is reported (M13c).** It used to be three.
+    `REFCLKP/N` on `examples/pcie-sata` came back as `diff-pair-skew` at 0.251 mm
+    from the meander pass, `diff-pair-skew` again at 0.292 mm from here, and
+    `hs-skew` at 0.292 mm from the M11e report -- one pair, three findings, two
+    numbers, and nothing saying why they differed. They differed because the first
+    counts only the tracks and runs *before* the meander, while the other two count
+    the whole conductor and run after; a reader had no way to know that. The meander
+    pass now says what it is (an attempt that found no room) at info level without
+    a verdict attached, the M11e report reads the number from here rather than
+    re-reporting it, and the sentence below names its own provenance.
     """
     skew: dict[str, float] = {}
     for pair in pairs:
@@ -199,15 +211,30 @@ def measure_skew(
         first, second = (halves[net] for net in (pair.positive, pair.negative))
         out_of_length = abs(first - second)
         skew[pair.key()] = out_of_length
-        if pair.max_skew is not None and out_of_length > pair.max_skew:
-            report.warning(
-                "diff-pair-skew",
-                f"{pair.key()} is {out_of_length:.3f} mm out of length, against a "
-                f"{pair.max_skew:.3f} mm budget",
-                hint="the mismatch comes from the outside of each bend being longer; "
-                "shorten the run, straighten it, or raise `max_skew_mm`",
-                net=pair.positive,
-            )
+        if pair.max_skew is None or out_of_length <= pair.max_skew:
+            continue
+        severity = Severity.WARNING
+        loc = None
+        if netlist is not None:
+            rules = netlist.net_classes.get(pair.net_class)
+            if rules is not None and rules.verify == "error":
+                severity = Severity.ERROR
+            loc = netlist.locs.get(("net_classes", pair.net_class))
+        report.add(
+            severity,
+            "hs-skew",
+            f"{pair.key()} is {out_of_length:.3f} mm out of length against its "
+            f"{pair.max_skew:g} mm budget, measured over the whole conductor -- "
+            "both halves' tracks and via barrels -- after meanders",
+            loc=loc,
+            path=("net_classes", pair.net_class),
+            hint="the mismatch comes from the outside of each bend being longer; "
+            "shorten the run, straighten it, or raise `max_skew_mm`",
+            net=pair.positive,
+            pair=pair.key(),
+            net_class=pair.net_class,
+            skew_mm=round(out_of_length, 4),
+        )
     return skew
 
 
@@ -445,14 +472,12 @@ def _uncoupled_lengths(
 ) -> tuple[float, ...]:
     """How much of each half is not coupled to the other, in millimetres.
 
-    The coupled run carries the pair's own width and the fan-out does not, so the
-    legs say which is which without anything having to remember. Measured *after*
-    length matching, because a meander is added to a fan-out leg and a budget
-    checked before it is a budget checked against the wrong number.
+    Each leg says which it is. Measured *after* length matching, because a meander
+    is added to a fan-out leg and a budget checked before it is a budget checked
+    against the wrong number.
     """
     return tuple(
-        sum(leg.length for leg in half.legs if leg.width != pair.width)
-        for half in results
+        sum(leg.length for leg in half.legs if not leg.coupled) for half in results
     )
 
 
@@ -519,7 +544,7 @@ def _wall_hugging(
     runs: list[LineString] = []
     for half in results:
         for leg in half.legs:
-            if leg.width == pair.width and len(leg.points) >= 2:
+            if leg.coupled and len(leg.points) >= 2:
                 runs.append(LineString(leg.points))
     if not runs:
         return ()
@@ -649,6 +674,20 @@ def _split_pair(
         start_key = base.resolve_pad(start_pad) or start_pad
         end_key = base.resolve_pad(end_pad) or end_pad
         half_rules = rules_for(netlist, net, congestion)
+        if half_rules.track_width > pair.width:
+            # A fan-out cannot be wider than the run it feeds. The two halves are
+            # offset from one centre-line at the *pair's* pitch, so a fan-out drawn
+            # wider than the pair eats into the gap the pitch was built to hold --
+            # measured on `examples/pcie-sata` as twelve 0.1423 mm clearances
+            # against a 0.15 mm rule, every one of them a pair against itself.
+            #
+            # Until M13b this could not happen: every controlled-impedance class on
+            # every board here declares a single-ended width *narrower* than its
+            # pair's, deliberately, because the fan-out is what necks down into a
+            # fine-pitch pad. The coplanar model derives narrower pairs and inverted
+            # it. Clamping states the invariant instead of relying on the source to
+            # keep it, and changes nothing on a board that already did.
+            half_rules = replace(half_rules, track_width=pair.width)
         try:
             head, body, tail = _fan_out(
                 base,
@@ -693,6 +732,7 @@ def _split_pair(
         legs.append(
             StretchResult(
                 net=net, layer=layer, points=body, width=pair.width,
+                coupled=True,
                 crossings=len(centre),
                 start=f"{net}<" if len(head) > 1 else start_key,
                 end=f"{net}>" if len(tail) > 1 else end_key,
@@ -716,10 +756,10 @@ def _split_pair(
         # exactly what should hold between them. So the first half's fan-out, and
         # only its fan-out, is fed back.
         for leg in legs:
-            if leg.width != pair.width:
+            if not leg.coupled:
                 mate.extend(
                     track_obstacles(
-                        leg, f"pair:{net}/{leg.start}>{leg.end}", leg.width / 2
+                        leg, f"pair:{net}@{leg.layer}/{leg.start}>{leg.end}", leg.width / 2
                     )
                 )
 
@@ -821,7 +861,7 @@ def _match_lengths(
         obstacle
         for leg in longer.legs
         for obstacle in track_obstacles(
-            leg, f"pair:{longer.net}/{leg.start}>{leg.end}", leg.width / 2
+            leg, f"pair:{longer.net}@{leg.layer}/{leg.start}>{leg.end}", leg.width / 2
         )
     ]
     geometry = geometry_for(
@@ -844,7 +884,7 @@ def _match_lengths(
 
     # Longest fan-out leg first: the more room there is, the gentler the meander.
     for leg in sorted(
-        (leg for leg in shorter.legs if leg.width != pair.width),
+        (leg for leg in shorter.legs if not leg.coupled),
         key=lambda leg: -leg.length,
     ):
         folded = lengthen(leg.points, skew, fits, rules.corridor)
@@ -859,11 +899,17 @@ def _match_lengths(
         )
         return
 
-    report.warning(
-        "diff-pair-skew",
-        f"{pair.key()} is {skew:.3f} mm out of length, against a "
-        f"{pair.max_skew:.3f} mm budget, and there is no room in "
-        f"{shorter.net}'s own corridor to meander the difference away",
+    # Not a verdict. This is the meander pass saying it found nowhere to fold, on a
+    # number that counts only the two halves' *tracks* and is taken *before* the
+    # via barrels are added -- so it is neither the same quantity as the pair's
+    # skew nor measured at the same moment. `measure_skew` reports the one that
+    # is, once, at the end. M13c.
+    report.info(
+        "diff-pair-meander-refused",
+        f"{pair.key()}: {skew:.3f} mm of track-length mismatch, and no room in "
+        f"{shorter.net}'s own corridor to meander it away. That figure is the "
+        "tracks alone before the via barrels are counted; the pair's skew against "
+        "its budget is reported once, at the end, as `hs-skew`",
         hint="the mismatch comes from the fan-out at the ends; moving the end "
         "components so the two halves break out symmetrically is the fix that does "
         "not cost board area",
@@ -922,6 +968,17 @@ def _fan_out(
     # from each end to the first point that is genuinely free trims exactly the part
     # that was never usable, and the fan-out replaces it.
     body = _clear_span(coupled, coupled_geometry)
+    if body is not None:
+        # And the point the fan-out hands over at has to be legal for the *fan-out*
+        # too, which is a different width and therefore a different free space.
+        # Until M13b every controlled-impedance pair was wider than its own fan-out,
+        # so the coupled view was the stricter of the two and this was free. The
+        # coplanar model derives narrower pairs -- `sata` went from 0.239 mm to
+        # 0.138 mm against a 0.2 mm fan-out -- and the assumption inverted: every
+        # pair on `examples/pcie-sata` refused with "the end is not in the routable
+        # area", naming a junction point the coupled run could reach and the fan-out
+        # could not.
+        body = _junction_span(body, geometry)
     if body is None:
         raise StretchError(
             f"{net}: the coupled run never reaches clear space, so there is nothing "
@@ -973,6 +1030,31 @@ def _clear_span(
     if best is None or length < 2:
         return None
     first, last = best
+    return simplify(samples[first : last + 1])
+
+
+def _junction_span(
+    points: list[Point], geometry: LayerGeometry
+) -> list[Point] | None:
+    """Trim a coupled run's two ends back to where its fan-out can reach them.
+
+    Only the ends. The interior of the run is drawn at the pair's own width and is
+    legal at that width by construction; what has to hold in the *fan-out's* free
+    space is the single point where the two tracks meet, because that is where the
+    fan-out is tightened from. Trimming the whole run against the wider view would
+    shorten the coupled length for no reason, which is the one thing on a
+    controlled-impedance pair worth not doing.
+    """
+    samples = resample(points, _TRIM_STEP)
+    free = [geometry.triangulation.locate(p) is not None for p in samples]
+    first = 0
+    while first < len(free) and not free[first]:
+        first += 1
+    last = len(free) - 1
+    while last > first and not free[last]:
+        last -= 1
+    if last - first < 1:
+        return None
     return simplify(samples[first : last + 1])
 
 

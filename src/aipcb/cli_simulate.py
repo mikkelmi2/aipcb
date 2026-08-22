@@ -87,6 +87,10 @@ def simulate(
             if not report.ok:
                 raise AipcbError(f"{design}: validation failed", report)
             parsed = parse(board.read_text(encoding="utf-8"))
+            # A board handed in on the command line carries no routing record, so
+            # there is no geometric skew to compare the fit against. Said here
+            # rather than left as an empty column nobody can explain.
+            geometric_skew = {}
         else:
             # `aipcb export` builds into a throwaway directory and therefore ships a
             # board with no tracks on it (ADR 0011, gap 10). Simulation needs the
@@ -95,6 +99,11 @@ def simulate(
                 done = route_design(design, Path(tmp), report)
                 netlist = done.build.netlist
                 parsed = done.board
+                # M11e's geometric skew, so M13c's frequency-domain fit has
+                # something to be checked against. Two verification layers
+                # agreeing is worth more than either alone; the point of putting
+                # them side by side is that they can disagree.
+                geometric_skew = dict(done.routed.skew)
     except SourceError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2) from exc
@@ -135,6 +144,7 @@ def simulate(
         dry_run=dry_run,
         timeout_s=timeout,
         progress=announce,
+        geometric_skew=geometric_skew,
     )
     _emit_findings(batch, report)
 
@@ -193,16 +203,46 @@ def _emit_findings(batch: SimulationBatch, report: Report) -> None:
                 path=path,
                 pair=metrics.pair,
             )
-        if metrics.verdicts.get("mode_conversion") == "warn":
+        if metrics.verdicts.get("mode_conversion") == "warn-low-confidence":
             report.warning(
                 "si-mode-conversion",
                 f"{metrics.pair} converts {metrics.mode_conversion_db:.1f} dB of its "
                 f"differential signal to common mode at "
-                f"{metrics.mode_conversion_hz / 1e9:.2f} GHz",
-                hint="intra-pair skew is what does this; M11e's `hs-skew` measures "
-                "the same defect as a length",
+                f"{metrics.mode_conversion_hz / 1e9:.2f} GHz -- **low confidence as "
+                "a skew finding**",
+                hint="this is a worst-in-band maximum, and on the boards measured so "
+                "far what it reads is the mode-conversion floor rather than the "
+                "skew: M12 found it flagging the three best-matched pairs on an "
+                "eleven-link board and passing both mismatched ones. The skew "
+                "verdict is `si-skew-fit`, which reads the same data across "
+                "frequency",
                 path=path,
                 pair=metrics.pair,
+            )
+        if metrics.verdicts.get("skew_fit") == "warn" and metrics.skew_fit is not None:
+            geometric = (
+                f"{metrics.geometric_skew_mm:.3f} mm"
+                if metrics.geometric_skew_mm is not None
+                else "not measured"
+            )
+            report.warning(
+                "si-skew-fit",
+                f"{metrics.pair}: the mode-conversion curve fits "
+                f"{metrics.skew_fit.delay_ps:.2f} ps of intra-pair delay, which at "
+                f"this pair's measured {metrics.ps_per_mm or 0:.2f} ps/mm is "
+                f"{metrics.fitted_skew_mm or 0:.3f} mm against a "
+                f"{metrics.max_skew_mm:g} mm budget (M11e measured {geometric} on "
+                "the copper)",
+                hint="fitted against |sin(pi f dt)| across the band rather than "
+                "read off a single worst point, so the flat mode-conversion floor "
+                "is a fitted term rather than the answer. A warning and not an "
+                "error: promoting it needs the fit's false-positive behaviour "
+                "measured first",
+                path=path,
+                pair=metrics.pair,
+                fitted_ps=round(metrics.skew_fit.delay_ps, 3),
+                fitted_mm=round(metrics.fitted_skew_mm or 0.0, 4),
+                geometric_mm=metrics.geometric_skew_mm,
             )
         if metrics.verdicts.get("insertion_loss") == "warn":
             worst = min(metrics.insertion_loss_db.items(), key=lambda kv: kv[1])
@@ -230,6 +270,21 @@ def _render(batch: SimulationBatch) -> str:
             f"[{metrics.impedance_min_ohm:.0f}-{metrics.impedance_max_ohm:.0f}]  "
             f"RL {metrics.worst_return_loss_db:6.1f} dB  {verdict}"
         )
+        # The two verification layers on one line, because the interesting thing
+        # about them is whether they agree (M13c).
+        if metrics.skew_fit is not None and metrics.fitted_skew_mm is not None:
+            geometric = (
+                f"{metrics.geometric_skew_mm:.3f}"
+                if metrics.geometric_skew_mm is not None
+                else "    -"
+            )
+            rows.append(
+                f"  {'':<24}   skew: fitted {metrics.skew_fit.delay_ps:6.2f} ps "
+                f"= {metrics.fitted_skew_mm:.3f} mm, geometric {geometric} mm, "
+                f"floor {metrics.skew_fit.floor_db:.1f} dB "
+                f"(+{metrics.skew_fit.peak_over_floor_db:.1f} dB), "
+                f"fit residual {metrics.skew_fit.residual_db:.1f} dB"
+            )
     for name, why in batch.skipped:
         rows.append(f"  {name:<24} not simulated: {why}")
     tally = ", ".join(f"{v} {k}" for k, v in counts.items()) or "nothing"

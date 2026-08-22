@@ -30,6 +30,7 @@ from aipcb.si.pairs import LogicalPair, logical_pairs
 from aipcb.si.results import Metrics, analyse, read_sparameters, write_touchstone
 from aipcb.si.runner import (
     DEFAULT_TIMEOUT_S,
+    ContainerBusy,
     ContainerMissing,
     RunOutcome,
     container_digest,
@@ -148,6 +149,7 @@ def simulate_pairs(
     timeout_s: int = DEFAULT_TIMEOUT_S,
     image: str = IMAGE,
     progress: Callable[[PairResult], None] | None = None,
+    geometric_skew: dict[str, float] | None = None,
 ) -> SimulationBatch:
     """Slice, solve and analyse every selected pair on a routed board."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -186,6 +188,7 @@ def simulate_pairs(
             force=force,
             dry_run=dry_run,
             timeout_s=timeout_s,
+            geometric_skew=geometric_skew,
         )
         if result is None:
             continue
@@ -220,6 +223,7 @@ def _one_pair(
     force: bool,
     dry_run: bool,
     timeout_s: int,
+    geometric_skew: dict[str, float] | None = None,
 ) -> PairResult | None:
     work = out_dir / pair.name
     settings = netlist.simulation.for_class(pair.net_class)
@@ -266,7 +270,10 @@ def _one_pair(
     if cached.exists() and not force and not dry_run:
         stored = json.loads(cached.read_text(encoding="utf-8"))
         if stored.get("digest") == digest:
-            metrics = _analyse(work, pair, settings, port_ohm, target, sliced)
+            metrics = _analyse(
+                work, pair, settings, port_ohm, target, sliced,
+                netlist, geometric_skew,
+            )
             return PairResult(
                 pair=pair, status="cached", directory=work, digest=digest,
                 sliced=sliced, metrics=metrics, seconds=0.0,
@@ -309,15 +316,28 @@ def _one_pair(
 
     drill = next(iter(sorted(fab.glob("*-PTH.drl"))), None)
     expect_vias = _hole_count(drill) if drill else 0
-    outcome = run_gerber2ems(
-        work,
-        runtime=runtime,
-        image=image,
-        timeout_s=timeout_s,
-        expect_ports=len(sliced.ports),
-        expect_vias=expect_vias,
-        log_path=work / "run.log",
-    )
+    try:
+        outcome = run_gerber2ems(
+            work,
+            runtime=runtime,
+            image=image,
+            timeout_s=timeout_s,
+            expect_ports=len(sliced.ports),
+            expect_vias=expect_vias,
+            log_path=work / "run.log",
+        )
+    except ContainerBusy as exc:
+        # M13d. Refusing is the answer: this directory already has a writer, and
+        # the chain's own worst simulation hour was two of them.
+        report.error(
+            "si-directory-busy",
+            f"{pair.name}: {exc}",
+            hint="a container outliving the client that started it is what M13d "
+            "closed; one left over from before that is reaped by hand",
+            path=pair.source_path,
+        )
+        return PairResult(pair=pair, status="failed", directory=work, digest=digest,
+                          sliced=sliced, message=str(exc))
     if not outcome.ok:
         report.warning(
             "si-simulation-failed",
@@ -329,7 +349,9 @@ def _one_pair(
                           sliced=sliced, outcome=outcome, seconds=outcome.seconds,
                           message=outcome.message)
 
-    metrics = _analyse(work, pair, settings, port_ohm, target, sliced)
+    metrics = _analyse(
+        work, pair, settings, port_ohm, target, sliced, netlist, geometric_skew,
+    )
     cached.write_text(
         json.dumps(
             {
@@ -349,6 +371,27 @@ def _one_pair(
         pair=pair, status="simulated", directory=work, digest=digest, sliced=sliced,
         outcome=outcome, metrics=metrics, seconds=outcome.seconds,
     )
+
+
+def _geometric_skew(
+    pair: LogicalPair, measured: dict[str, float] | None
+) -> float | None:
+    """What M11e measured on the copper for this logical link, worst-case.
+
+    A logical link can be more than one declared pair -- `PCIE_TX` and
+    `PCIE_TX_C` are one run through two capacitors -- and the router measures each
+    declared pair separately. The link's skew is the *worst* of them: the two sides
+    of a series capacitor are one conductor, and a mismatch on either side is a
+    mismatch on the link.
+    """
+    if not measured:
+        return None
+    found = [
+        measured[key]
+        for declared in pair.declared
+        if (key := "+".join(sorted(declared))) in measured
+    ]
+    return max(found) if found else measured.get(pair.name)
 
 
 def _hole_count(drill: Path) -> int:
@@ -371,6 +414,8 @@ def _analyse(
     port_ohm: float,
     target: float | None,
     sliced: Slice,
+    netlist: Netlist | None = None,
+    geometric_skew: dict[str, float] | None = None,
 ) -> Metrics | None:
     sp = read_sparameters(work / "ems" / "simulation", ports=len(sliced.ports))
     if not sp.frequencies:
@@ -384,4 +429,11 @@ def _analyse(
         target_ohm=target,
         settings=settings,
         length_mm=sliced.conductor_length_mm,
+        geometric_skew_mm=_geometric_skew(pair, geometric_skew),
+        slice_skew_mm=sliced.slice_skew_mm,
+        max_skew_mm=(
+            netlist.net_classes[pair.net_class].max_skew_mm
+            if netlist is not None and pair.net_class in netlist.net_classes
+            else None
+        ),
     )

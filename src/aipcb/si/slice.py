@@ -139,7 +139,39 @@ class Slice:
     conductor_length_mm: float
     launch_mm: float
     bridged: tuple[str, ...]
+    half_length_mm: tuple[float, float] = (0.0, 0.0)
+    """``(positive, negative)`` conductor in the slice, launches included.
+
+    Carried so that the *slice's own* skew is a measurement rather than an
+    assumption. M13c fits an intra-pair delay out of the mode-conversion curve and
+    compares it to what M11e measured on the board -- and the two are only
+    comparable if the structure that was simulated has the same length mismatch the
+    board does. It does not always: the slicer grows a 1.5 mm launch at each of the
+    four ends and trims each one to where there is room, so a slice can carry skew
+    the routed pair does not. This is the number that says how much.
+    """
     notes: list[str] = field(default_factory=list)
+
+    @property
+    def pair_gap_mm(self) -> float | None:
+        """Edge-to-edge gap between the two halves, measured at the driven end.
+
+        Read off the ports rather than off the net class, because what the mesh has
+        to resolve is the geometry that was sliced. Ports 1 and 3 are the two halves
+        of the driven end, so the distance between their launch centres less one
+        trace width is the gap the solver has to put cells into.
+        """
+        at_end = [p for p in self.ports if p.number in (1, 3)]
+        if len(at_end) != 2:
+            return None
+        pitch = math.dist(at_end[0].at, at_end[1].at)
+        gap = pitch - (at_end[0].width_mm + at_end[1].width_mm) / 2
+        return gap if gap > 0 else None
+
+    @property
+    def slice_skew_mm(self) -> float:
+        """How far out of length the *sliced* structure is, both launches included."""
+        return abs(self.half_length_mm[0] - self.half_length_mm[1])
 
     @property
     def size_mm(self) -> tuple[float, float]:
@@ -154,6 +186,8 @@ class Slice:
             "slice_mm": list(self.size_mm),
             "origin_mm": [round(self.origin[0], 4), round(self.origin[1], 4)],
             "conductor_length_mm": round(self.conductor_length_mm, 4),
+            "half_length_mm": [round(v, 4) for v in self.half_length_mm],
+            "slice_skew_mm": round(self.slice_skew_mm, 4),
             "launch_mm": round(self.launch_mm, 4),
             "bridged_by": list(self.bridged),
             "ports": [p.to_dict() for p in self.ports],
@@ -432,6 +466,7 @@ def build_slice(
     tracks = _tracks(board)
     sides: dict[str, list[Track]] = {}
     bridges: list[Track] = []
+    bridged_by_side: dict[str, list[Track]] = {}
     notes: list[str] = []
 
     for side, nets in (("p", pair.positive), ("n", pair.negative)):
@@ -453,7 +488,9 @@ def build_slice(
             missing = len(nets) - len(groups)
             notes.append(f"{missing} net(s) on the {side} side carry no copper")
         for a, b, width, layer in _nearest_bridge(groups):
-            bridges.append(Track(a, b, width, layer, 0))
+            bridge = Track(a, b, width, layer, 0)
+            bridges.append(bridge)
+            bridged_by_side.setdefault(side, []).append(bridge)
         sides[side] = [t for group in groups for t in group]
 
     ends: dict[str, list[Point]] = {}
@@ -537,6 +574,20 @@ def build_slice(
     origin = (rect[0], rect[3])
     conductor_length = sum(t.length for t in all_pair)
 
+    def half(side: str) -> float:
+        """One conductor's total length, its two launches included.
+
+        The launches are the same length on all four ends by construction, so they
+        cancel in the difference -- they are counted anyway, because what this
+        measures is the structure the solver was handed rather than the part of it
+        the router drew.
+        """
+        return (
+            sum(t.length for t in sides[side])
+            + sum(t.length for t in bridged_by_side.get(side, []))
+            + 2 * launch
+        )
+
     node, cleared, dropped = _assemble(
         board, netlist, pair, rect, origin, ports, tracks, stubs, bridges, all_pair
     )
@@ -554,6 +605,7 @@ def build_slice(
         ports=tuple(ports),
         metals=metals,
         conductor_length_mm=conductor_length,
+        half_length_mm=(half("p"), half("n")),
         launch_mm=launch,
         bridged=pair.bridged_by,
         notes=notes,

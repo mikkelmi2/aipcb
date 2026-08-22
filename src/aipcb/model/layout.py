@@ -85,6 +85,14 @@ class NetClass(Strict):
         "minimum, so the environment around the pair stays constant. Defaults to "
         "3 for a class with `impedance_diff_ohm`, and is ignored without it.",
     )
+    pour_gap_sensitivity: float | None = Field(
+        default=None,
+        gt=0,
+        description="How much of the impedance target one etch tolerance on the "
+        "pour-to-track gap may move before validation says so, as a fraction. "
+        "Defaults to 0.05, and is ignored without `impedance_diff_ohm` or a pour "
+        "beside the class's layer.",
+    )
     verify: Literal["warn", "error"] | None = Field(
         default=None,
         description="Severity for this class's high-speed findings. Warning by "

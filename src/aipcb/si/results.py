@@ -30,9 +30,14 @@ from pathlib import Path
 from aipcb.model.simulation import ResolvedSimulation
 
 __all__ = [
+    "MAX_FIT_PS",
+    "SKEW_FIT_FLOOR_DB",
+    "SKEW_FIT_IMPROVEMENT_DB",
     "Metrics",
     "SParameters",
+    "SkewFit",
     "analyse",
+    "fit_skew",
     "read_sparameters",
     "write_touchstone",
 ]
@@ -142,9 +147,26 @@ class Metrics:
     insertion_loss_db: dict[str, float]
     """Differential insertion loss at the class's key frequencies, keyed by label."""
     delay_ns: float | None
+    conductor_mm: float = 0.0
+    """Total conductor in the slice, both halves, as the slicer measured it."""
     mode_conversion_db: float = -300.0
     """Worst differential-to-common conversion in the band. Skew is what makes it."""
     mode_conversion_hz: float = 0.0
+    skew_fit: SkewFit | None = None
+    """The frequency-domain read of the same data (M13c). Where the verdict lives."""
+    geometric_skew_mm: float | None = None
+    """What M11e measured on the copper, for the two layers to be compared."""
+    slice_skew_mm: float | None = None
+    """How far out of length the *sliced* structure is, which need not be the same.
+
+    The slicer bridges capacitors, clips to an outline and grows a launch at each
+    of the four ends. What the solver sees is therefore not quite what the router
+    drew, and a fitted delay is a measurement of what the solver saw. Carrying this
+    beside the other two is what turns "the fit and the router disagree" into a
+    number with a candidate explanation attached.
+    """
+    max_skew_mm: float | None = None
+    """The class's budget, so the fit has something to be a verdict against."""
     usable: bool = True
     """False when the extraction is not physical, whatever the numbers say."""
     verdicts: dict[str, str] = field(default_factory=dict)
@@ -156,6 +178,36 @@ class Metrics:
         if not self.target_ohm:
             return None
         return (self.impedance_ohm - self.target_ohm) / self.target_ohm
+
+    @property
+    def ps_per_mm(self) -> float | None:
+        """The pair's own measured propagation, for turning a delay into a length.
+
+        Measured rather than assumed: the group delay comes from this pair's
+        transmission phase and the conductor length from its own slice, so the
+        conversion between the two verification layers uses no constant either of
+        them had to agree on beforehand.
+
+        ``conductor_mm`` counts *both* halves, because that is what the slicer
+        measures; the signal travels one of them, so the delay is over half of it.
+        """
+        if self.delay_ns is None or self.conductor_mm <= 0:
+            return None
+        return self.delay_ns * 1000.0 / (self.conductor_mm / 2)
+
+    @property
+    def fitted_skew_mm(self) -> float | None:
+        """The fitted delay expressed as a length mismatch, or ``None``.
+
+        This is the number the class's `max_skew_mm` budget is written in, so it
+        is the one the verdict is taken on.
+        """
+        if self.skew_fit is None:
+            return None
+        rate = self.ps_per_mm
+        if not rate:
+            return None
+        return self.skew_fit.delay_ps / rate
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -175,6 +227,20 @@ class Metrics:
             "delay_ns": None if self.delay_ns is None else round(self.delay_ns, 4),
             "mode_conversion_db": round(self.mode_conversion_db, 2),
             "mode_conversion_ghz": round(self.mode_conversion_hz / 1e9, 3),
+            "skew_fit": None if self.skew_fit is None else self.skew_fit.to_dict(),
+            "fitted_skew_mm": (
+                None if self.fitted_skew_mm is None else round(self.fitted_skew_mm, 4)
+            ),
+            "geometric_skew_mm": (
+                None
+                if self.geometric_skew_mm is None
+                else round(self.geometric_skew_mm, 4)
+            ),
+            "slice_skew_mm": (
+                None if self.slice_skew_mm is None else round(self.slice_skew_mm, 4)
+            ),
+            "max_skew_mm": self.max_skew_mm,
+            "ps_per_mm": None if self.ps_per_mm is None else round(self.ps_per_mm, 3),
             "usable": self.usable,
             "verdicts": dict(sorted(self.verdicts.items())),
             "notes": list(self.notes),
@@ -233,6 +299,186 @@ def _mixed_mode(
     return gamma, sdd11, sdd21, scd21
 
 
+#: The longest skew the frequency-domain fit will look for, in picoseconds. Beyond
+#: ``1 / (2 f_max)`` the ``sin(pi f dt)`` model has already turned over inside the
+#: band and a longer delay is indistinguishable from a shorter one -- so the fit is
+#: bounded at the point where it would stop being a measurement. At an 8 GHz stop
+#: that is 62.5 ps, which is thirty times the largest skew any board here carries.
+MAX_FIT_PS = 62.5
+
+#: Coarse and fine grid steps for the fit, in picoseconds. A grid rather than a
+#: solver: the objective is not convex in ``dt``, a seeded optimiser would make the
+#: answer depend on the seed, and the whole search costs a few tens of thousands of
+#: multiplications.
+_COARSE_PS = 0.25
+_FINE_PS = 0.005
+
+#: How far above the fitted floor the skew term has to reach, in dB, before the
+#: fitted delay is called a measurement rather than an upper bound. Below this the
+#: conversion the skew produces is buried in everything else the board converts, and
+#: M12 measured that floor varying by more than 25 dB between pairs on one board --
+#: so "the fit says 0.4 ps" has to mean "no more than 0.4 ps", not "0.4 ps".
+SKEW_FIT_FLOOR_DB = 3.0
+
+#: How much better the two-term fit has to be than a flat floor alone, in dB of
+#: sum-of-squares, before the fitted delay is believed. Set from the measured
+#: noise: see `docs/reports/m13.md` for the per-link table this came out of.
+SKEW_FIT_IMPROVEMENT_DB = 3.0
+
+
+@dataclass(slots=True)
+class SkewFit:
+    """What the mode-conversion curve says the pair's intra-pair delay is.
+
+    M12 asked whether simulation can see the skew M11 delivered over budget, and
+    the answer through the published scalar was no -- worse than no, since the
+    three links it flagged were the three best-matched ones. The reason was not
+    that the physics is invisible; it is that a *worst-in-band scalar* reads a
+    floor, and the floor on that board ran from -29 dB to -14 dB while the skew
+    under test moved the number by about 3 dB.
+
+    Read across frequency the two separate cleanly, because they have different
+    shapes. Skew converts as ``|sin(pi f dt)|`` -- zero at DC, rising 6 dB per
+    octave -- while the floor (launch asymmetry, via barrels, the pour's asymmetry
+    around each trace, truncation noise) is broadly flat. Fitting the two-term
+    model ``|Scd21|^2 = |Sdd21|^2 sin^2(pi f dt) + floor^2`` therefore recovers
+    ``dt`` from the *slope* rather than the level, which is the part the floor
+    cannot fake.
+    """
+
+    delay_ps: float
+    """The fitted intra-pair delay."""
+    floor_db: float
+    """The flat term the fit had to add underneath, as 10 log10 of its power."""
+    residual_db: float
+    """RMS distance between the fitted curve and the measurement, in dB."""
+    peak_over_floor_db: float
+    """How far the fitted skew term rises above the fitted floor inside the band."""
+    improvement_db: float
+    """How much better the two-term fit is than a flat floor with no skew at all.
+
+    The one number that says whether the *shape* is there. A pair whose conversion
+    is flat gets no improvement from a ``sin^2`` term however large a delay the
+    scan picks, and this is what separates "the fit measured 2 ps" from "the fit
+    had to put 2 ps somewhere".
+    """
+    points: int
+
+    @property
+    def confident(self) -> bool:
+        """Whether the delay is a measurement rather than an upper bound.
+
+        Both tests, because they fail in different ways. The improvement test
+        catches a flat curve the scan has fitted anyway; the peak-over-floor test
+        catches a curve with the right shape whose skew term is still small
+        against everything else the board converts.
+        """
+        return (
+            self.improvement_db >= SKEW_FIT_IMPROVEMENT_DB
+            and self.peak_over_floor_db >= SKEW_FIT_FLOOR_DB
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "delay_ps": round(self.delay_ps, 4),
+            "floor_db": round(self.floor_db, 2),
+            "residual_db": round(self.residual_db, 2),
+            "peak_over_floor_db": round(self.peak_over_floor_db, 2),
+            "improvement_db": round(self.improvement_db, 2),
+            "points": self.points,
+            "confident": self.confident,
+        }
+
+
+def fit_skew(
+    frequencies: list[float],
+    sdd21: list[complex],
+    scd21: list[complex],
+    band: list[int],
+) -> SkewFit | None:
+    """Fit ``|Scd21|^2 = |Sdd21|^2 sin^2(pi f dt) + floor^2`` over the band.
+
+    Two parameters, and only one of them is searched. For any candidate ``dt`` the
+    best flat floor is the mean of what the skew term does not account for, in
+    power -- a closed form, not a search -- so what is left is a one-dimensional
+    scan over ``dt``. Coarse then fine, on a fixed grid, so the answer is a
+    function of the data alone: no seed, no tolerance, and the same on any machine.
+
+    A measured amplitude rather than a fitted one: how much energy arrives at the
+    far end is data, and letting the fit choose it lets a lossy link and a big skew
+    trade against each other.
+    """
+    if len(band) < 8:
+        return None
+    measured = [abs(scd21[i]) ** 2 for i in band]
+    # The amplitude is the total power that got through, differential *and*
+    # converted. A pair with skew dt transmits cos(pi f dt) differentially and
+    # converts sin(pi f dt), so the two together are what the line delivered and
+    # what the sin^2 term is a fraction of. Using |Sdd21| alone would make a link
+    # that converts a lot look like one that lost a lot, and the fit would buy the
+    # difference back as extra delay.
+    through = [abs(sdd21[i]) ** 2 + abs(scd21[i]) ** 2 for i in band]
+    hz = [frequencies[i] for i in band]
+
+    def residual(delay_s: float) -> tuple[float, float]:
+        """``(sum of squares, floor power)`` for one candidate delay."""
+        skewed = [
+            t * math.sin(math.pi * f * delay_s) ** 2 for f, t in zip(hz, through, strict=True)
+        ]
+        floor = sum(m - s for m, s in zip(measured, skewed, strict=True)) / len(measured)
+        floor = max(floor, 0.0)
+        total = sum(
+            (m - s - floor) ** 2 for m, s in zip(measured, skewed, strict=True)
+        )
+        return total, floor
+
+    def scan(low: float, high: float, step: float) -> float:
+        best_delay, best_total = low, math.inf
+        steps = max(round((high - low) / step), 1)
+        for index in range(steps + 1):
+            delay = low + index * step
+            total, _ = residual(delay * 1e-12)
+            if total < best_total:
+                best_total, best_delay = total, delay
+        return best_delay
+
+    coarse = scan(0.0, MAX_FIT_PS, _COARSE_PS)
+    delay_ps = scan(
+        max(0.0, coarse - _COARSE_PS), min(MAX_FIT_PS, coarse + _COARSE_PS), _FINE_PS
+    )
+    best, floor = residual(delay_ps * 1e-12)
+    flat, _ = residual(0.0)
+
+    fitted = [
+        t * math.sin(math.pi * f * delay_ps * 1e-12) ** 2 + floor
+        for f, t in zip(hz, through, strict=True)
+    ]
+    errors = [
+        abs(_db_power(m) - _db_power(v)) for m, v in zip(measured, fitted, strict=True)
+    ]
+    rms = math.sqrt(sum(e * e for e in errors) / len(errors))
+    peak = max(
+        t * math.sin(math.pi * f * delay_ps * 1e-12) ** 2
+        for f, t in zip(hz, through, strict=True)
+    )
+    # A floor the fit drove to zero is not an infinitely quiet board; it is a fit
+    # that had nothing flat left to explain. Bounding it by the smallest measured
+    # conversion keeps `peak_over_floor` a number rather than an artefact.
+    floor = max(floor, min(measured))
+    return SkewFit(
+        delay_ps=delay_ps,
+        floor_db=_db_power(floor),
+        residual_db=rms,
+        peak_over_floor_db=_db_power(peak) - _db_power(floor),
+        improvement_db=_db_power(flat) - _db_power(best) if best > 0 else 0.0,
+        points=len(band),
+    )
+
+
+def _db_power(value: float) -> float:
+    return 10 * math.log10(value) if value > 1e-30 else -300.0
+
+
 def analyse(
     sp: SParameters,
     *,
@@ -242,6 +488,9 @@ def analyse(
     target_ohm: float | None,
     settings: ResolvedSimulation,
     length_mm: float | None = None,
+    geometric_skew_mm: float | None = None,
+    max_skew_mm: float | None = None,
+    slice_skew_mm: float | None = None,
 ) -> Metrics | None:
     """Turn one pair's S-matrix into numbers and verdicts."""
     mixed = _mixed_mode(sp)
@@ -329,8 +578,13 @@ def analyse(
         worst_return_loss_hz=sp.frequencies[worst_rl_index],
         insertion_loss_db=insertion,
         delay_ns=delay,
+        conductor_mm=length_mm or 0.0,
         mode_conversion_db=_db(scd21[worst_cd_index]),
         mode_conversion_hz=sp.frequencies[worst_cd_index],
+        skew_fit=fit_skew(sp.frequencies, sdd21, scd21, wide),
+        geometric_skew_mm=geometric_skew_mm,
+        slice_skew_mm=slice_skew_mm,
+        max_skew_mm=max_skew_mm,
         usable=usable,
         notes=notes,
     )
@@ -417,10 +671,51 @@ def _verdicts(metrics: Metrics, settings: ResolvedSimulation) -> None:
     metrics.verdicts["insertion_loss"] = (
         "pass" if worst >= settings.insertion_loss_db else "warn"
     )
+    # Stays a warn, and stays labelled. M12 measured this scalar picking the wrong
+    # three pairs out of eleven -- the three best-matched ones -- because what a
+    # worst-in-band maximum reads on these boards is the mode-conversion *floor*,
+    # not the skew. It is kept because it is a real, reproducible measurement of
+    # how much differential energy leaves as common mode; what it is not is a skew
+    # verdict, and until M13c nothing in the output said so.
     metrics.verdicts["mode_conversion"] = (
         "pass"
         if metrics.mode_conversion_db <= settings.mode_conversion_db
-        else "warn"
+        else "warn-low-confidence"
+    )
+    _skew_verdict(metrics)
+
+
+def _skew_verdict(metrics: Metrics) -> None:
+    """The frequency-domain skew verdict (M13c), and what it is allowed to claim.
+
+    Three outcomes, and the third is the honest one that a scalar could not
+    express:
+
+    * **pass** -- the fitted delay is inside the class's budget.
+    * **warn** -- it is outside. A warn and never an error: promoting this needs
+      the fit's false-positive behaviour measured across a full board first, which
+      M13c put out of scope on purpose.
+    * **under-floor** -- the skew term never rises far enough above the fitted
+      floor for the delay to be a measurement. The fit still returns a number, and
+      that number is an *upper bound*: whatever the skew is, it is small enough to
+      be buried in what the rest of the board converts. Calling that a pass would
+      be claiming a measurement nobody made.
+    """
+    fit = metrics.skew_fit
+    fitted = metrics.fitted_skew_mm
+    if fit is None or fitted is None or metrics.max_skew_mm is None:
+        metrics.verdicts["skew_fit"] = "no-fit"
+        return
+    if not fit.confident:
+        metrics.verdicts["skew_fit"] = "under-floor"
+        metrics.notes.append(
+            f"the fitted skew term peaks only {fit.peak_over_floor_db:.1f} dB above "
+            f"the {fit.floor_db:.1f} dB mode-conversion floor, so the fitted "
+            f"{fit.delay_ps:.2f} ps is an upper bound rather than a measurement"
+        )
+        return
+    metrics.verdicts["skew_fit"] = (
+        "pass" if fitted <= metrics.max_skew_mm else "warn"
     )
 
 

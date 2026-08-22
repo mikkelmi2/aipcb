@@ -11,7 +11,7 @@ neither has to import the other to get at them.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from itertools import pairwise
 
@@ -48,6 +48,7 @@ __all__ = [
     "tighten_leg",
     "track_obstacles",
     "via_obstacles",
+    "with_copper",
 ]
 
 Point = tuple[float, float]
@@ -174,6 +175,39 @@ def via_obstacles(via: Via, stack: RoutingStack, name: str) -> list[Obstacle]:
     ]
 
 
+def with_copper(
+    base: RoutingEnvironment,
+    placed: list[Obstacle],
+    keepouts: Sequence[Obstacle] = (),
+) -> RoutingEnvironment:
+    """``base`` plus every piece of copper laid so far, with nothing able to hide.
+
+    The obstacle set is a dict keyed by name, and finished copper is a *list* --
+    so merging one into the other loses any piece whose name a later piece
+    repeats. That is not hypothetical: a differential pair split across two layers
+    by a via transition produces one ``RoutedConnection`` per layer, and both name
+    their coupled leg after the same two pair terminals. On `examples/pcie-sata`
+    four pieces of copper vanished from every obstacle set built after them --
+    silently, because a dict assignment cannot fail -- and a repair pass duly
+    routed straight through the B.Cu half of `REFCLKP/N`.
+
+    So a name that is already taken is *suffixed* rather than overwritten. Copper
+    can only ever be added here, never replaced, whatever it is called: the
+    invariant this restores is a property of the merge rather than of everybody's
+    naming discipline. :func:`aipcb.route.invariant.crossing_nets` is the check
+    that would have caught it, and now does.
+    """
+    environment = replace(base, obstacles=dict(base.obstacles))
+    for index, obstacle in enumerate(placed):
+        name = obstacle.name
+        if environment.obstacles.get(name, obstacle) is not obstacle:
+            name = f"{name}~{index}"
+        environment.obstacles[name] = obstacle
+    for obstacle in keepouts:
+        environment.obstacles[obstacle.name] = obstacle
+    return environment
+
+
 def geometry_for(
     base: RoutingEnvironment,
     placed: list[Obstacle],
@@ -193,13 +227,13 @@ def geometry_for(
     hugging inflated, to see whether the pair will stand off from it. Empty for
     every other route, which is why every board built before M11 is unchanged.
     """
-    environment = replace(base, obstacles=dict(base.obstacles))
-    for obstacle in placed:
-        environment.obstacles[obstacle.name] = obstacle
-    for obstacle in keepout_obstacles(
-        netlist.layout, netlist.layout.origin_mm if netlist.layout else (0.0, 0.0)
-    ):
-        environment.obstacles[obstacle.name] = obstacle
+    environment = with_copper(
+        base,
+        placed,
+        keepout_obstacles(
+            netlist.layout, netlist.layout.origin_mm if netlist.layout else (0.0, 0.0)
+        ),
+    )
 
     floors = clearance_floor or {}
 

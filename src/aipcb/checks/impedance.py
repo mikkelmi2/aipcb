@@ -10,7 +10,13 @@ are M11e's and live in :mod:`aipcb.checks.highspeed`.
 from __future__ import annotations
 
 from aipcb.diagnostics import Report
-from aipcb.highspeed import GEOMETRY_TOLERANCE, ImpedanceTarget, controlled_classes
+from aipcb.highspeed import (
+    GAP_TOLERANCE_MM,
+    GEOMETRY_TOLERANCE,
+    POUR_SENSITIVITY,
+    ImpedanceTarget,
+    controlled_classes,
+)
 from aipcb.model.layout import Stackup, copper_layer_names
 from aipcb.netlist import Netlist
 from aipcb.source import Loc
@@ -36,6 +42,7 @@ def run_impedance_checks(netlist: Netlist, report: Report) -> None:
         _check_geometry_override(netlist, name, target, report)
         _check_reference(netlist, name, target, stackup, report)
         _check_uncoupled_budget(netlist, name, target, report)
+        _check_pour_sensitivity(netlist, name, target, report)
 
 
 def _check_orphan_fields(netlist: Netlist, report: Report) -> None:
@@ -202,4 +209,41 @@ def _check_uncoupled_budget(
         hint="`coupling: tight` makes `max_uncoupled_mm` a hard budget; without "
         "one the pair falls back to the ordinary fan-out fraction limit",
         net_class=name,
+    )
+
+
+def _check_pour_sensitivity(
+    netlist: Netlist, name: str, target: ImpedanceTarget, report: Report
+) -> None:
+    """A pour close enough that etching it decides the impedance (M13b).
+
+    Before M13 the pour clearance was a DRC number: keep this far from that, and
+    nothing else depended on it. Now it is an input to the width derivation, and a
+    class whose pour sits tight enough that one etch tolerance moves the impedance
+    by a chunk of its own budget has spent that budget before a single track is
+    drawn. Saying so at validation is the cheap place; the alternative is finding
+    out from a coupon.
+    """
+    sensitivity = target.gap_sensitivity
+    if target.unreachable is not None or sensitivity is None:
+        return
+    rules = netlist.net_classes[name]
+    threshold = rules.pour_gap_sensitivity or POUR_SENSITIVITY
+    if sensitivity <= threshold:
+        return
+    report.warning(
+        "impedance-pour-gap-sensitive",
+        f"net class {name!r} is derived against ground poured "
+        f"{target.pour_gap_mm} mm away, where one {GAP_TOLERANCE_MM} mm etch "
+        f"tolerance on that gap moves the differential impedance by "
+        f"{sensitivity:.1%} of the {target.target_ohm:.0f} ohm target -- more than "
+        f"the {threshold:.0%} this class allows",
+        loc=_loc(netlist, name, "clearance_mm"),
+        path=("net_classes", name, "clearance_mm"),
+        hint="open the pour clearance for this class, or raise "
+        "`pour_gap_sensitivity` if the coupon says the process holds it",
+        net_class=name,
+        model=target.model,
+        pour_gap_mm=target.pour_gap_mm,
+        gap_sensitivity=round(sensitivity, 4),
     )

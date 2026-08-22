@@ -46,8 +46,10 @@ from aipcb.route.geometry import (
     tighten_leg,
     track_obstacles,
     via_obstacles,
+    with_copper,
 )
 from aipcb.route.graph import RoutePath, Terminal, search_path
+from aipcb.route.invariant import Crossing, check_no_crossings
 from aipcb.route.model import RouteTopology
 from aipcb.route.negotiate import Connection, Negotiation, default_priority, negotiate
 from aipcb.route.obstacles import (
@@ -143,6 +145,8 @@ class RoutedBoard:
     transitions: TransitionResult | None = None
     """The pair via transitions laid before routing began (M11c)."""
     total_length: float = 0.0
+    crossings: list[Crossing] = field(default_factory=list)
+    """Places two nets' finished copper overlaps. Empty on any board worth having."""
 
     @property
     def ok(self) -> bool:
@@ -177,6 +181,7 @@ class RoutedBoard:
             "transitions": (
                 self.transitions.summary() if self.transitions is not None else None
             ),
+            "crossings": [c.describe() for c in self.crossings],
         }
 
 
@@ -373,7 +378,10 @@ def route_board(
                 connection, path, base, placed, netlist, stack, congestion
             )
         except (StretchError, FreeSpaceError) as exc:
-            _retry(connection, exc, base, placed, netlist, stack, congestion, outcome, report)
+            _retry(
+                connection, exc, base, placed, netlist, stack, field_,
+                congestion, outcome, report,
+            )
             continue
         _accept(outcome, placed, realized, stack)
 
@@ -383,7 +391,7 @@ def route_board(
         _retry(
             by_key[key],
             StretchError(reason),
-            base, placed, netlist, stack, congestion, outcome, report,
+            base, placed, netlist, stack, field_, congestion, outcome, report,
             kind="no_path",
         )
 
@@ -410,7 +418,22 @@ def route_board(
             "fabricator, and two overlapping drill hits to KiCad",
         )
 
-    outcome.skew = measure_skew(outcome.pairs, outcome.connections, report)
+    outcome.skew = measure_skew(outcome.pairs, outcome.connections, report, netlist)
+    # The invariant, last: everything above builds copper inside free space that
+    # already has the other nets removed from it, so this should never find
+    # anything -- and it is exactly because it should never find anything that it
+    # is worth asking. M11 shipped a repair pass that crossed two REFCLK tracks
+    # and nothing noticed for a milestone and a half.
+    outcome.crossings = check_no_crossings(
+        outcome.connections,
+        report,
+        barrel_layers={
+            f"{a}/{b}": stack.barrel_span(a, b)
+            for a in stack.copper
+            for b in stack.copper
+            if a != b
+        },
+    )
     return outcome
 
 
@@ -434,9 +457,15 @@ def _accept(
         outcome.connections.append(connection)
         outcome.total_length += connection.copper_length
         for leg in connection.legs:
+            # The layer is part of the name because it is part of the identity: a
+            # pair split by a via transition names its coupled leg after the same
+            # two pair terminals on both layers, and an obstacle set keyed by name
+            # alone kept only the second of them.
             placed.extend(
                 track_obstacles(
-                    leg, f"track:{leg.net}/{leg.start}>{leg.end}", leg.width / 2
+                    leg,
+                    f"track:{leg.net}@{leg.layer}/{leg.start}>{leg.end}",
+                    leg.width / 2,
                 )
             )
         for index, via in enumerate(connection.vias):
@@ -1057,6 +1086,7 @@ def _retry(
     placed: list[Obstacle],
     netlist: Netlist,
     stack: RoutingStack,
+    field_: LayeredField,
     congestion: float,
     outcome: RoutedBoard,
     report: Report,
@@ -1071,7 +1101,7 @@ def _retry(
     walled in by two tracks that were laid while the repair waited its turn.
     """
     if not _repair(
-        connection, base, placed, netlist, stack, congestion, outcome, report
+        connection, base, placed, netlist, stack, field_, congestion, outcome, report
     ):
         _fail(outcome, report, connection, exc, kind)
 
@@ -1082,6 +1112,7 @@ def _repair(
     placed: list[Obstacle],
     netlist: Netlist,
     stack: RoutingStack,
+    field_: LayeredField,
     congestion: float,
     outcome: RoutedBoard,
     report: Report,
@@ -1105,9 +1136,7 @@ def _repair(
     rules = rules_for(netlist, connection.net, congestion)
     demand = rules.track_width + rules.clearance
 
-    environment = replace(base, obstacles=dict(base.obstacles))
-    for obstacle in placed:
-        environment.obstacles[obstacle.name] = obstacle
+    environment = with_copper(base, placed)
 
     def blocking_for(layer: str) -> list[Obstacle]:
         return environment.blocking(
@@ -1164,6 +1193,11 @@ def _repair(
     except (StretchError, FreeSpaceError):
         return False
     _accept(outcome, placed, realized, stack)
+    # The repair searched its own private field, so its demand was never booked
+    # against the shared one. Charging it here is what keeps the congestion
+    # figures -- and every route that negotiates or searches after it -- looking
+    # at a board that has this copper on it.
+    _charge(field_, realized, netlist, congestion)
     report.info(
         "route-repaired",
         f"{connection.net} from {connection.source.name} to "
