@@ -293,6 +293,16 @@ class TestCheckLoop:
                 "diff-pair-skew",
                 "hs-skew",
                 "kicad-lib-footprint-mismatch",
+                # Newly visible in M13.5, and correct. `footprint_filters_mismatch`
+                # is `ignore` by default in KiCad 9.0.8; pinning it to `warning`
+                # surfaced exactly one finding across all eleven examples, and it is
+                # this one: U1's *symbol* is a connector stand-in, because KiCad
+                # ships none for a PCIe-to-SATA controller, and its footprint
+                # filters therefore say `Connector*:*_1x??_*` while the part
+                # declares a QFN-48. The example's own header says the symbols are
+                # stand-ins; this is KiCad saying the same thing, and it is the only
+                # thing four unpinned rules were hiding.
+                "kicad-footprint-filters-mismatch",
             }
         ),
     }
@@ -408,3 +418,200 @@ class TestCheckCli:
 
     def test_unreadable_input_exits_two(self, tmp_path: Path) -> None:
         assert self._run(str(tmp_path / "nope.yaml")).returncode == 2
+
+
+# ---------------------------------------------------------------------------
+# what DRC can and cannot see (M13.5)
+# ---------------------------------------------------------------------------
+
+
+@needs_kicad_cli
+@needs_kicad_libraries
+class TestNothingIsSilentlyFiltered:
+    """M13a fixed a router defect that produced two `tracks_crossing` violations.
+
+    M13.5 asked the verification-integrity question behind it: *why did `check`
+    never say so?* The answer turned out to be that it does -- the crossing only
+    ever existed on a board carrying a strap the shipped example leaves off, so no
+    board `check` ran on had one. These tests hold that answer in place, because
+    "the pipeline can see it" is exactly the kind of claim that rots quietly.
+
+    What the same investigation did find is one level down, in `kicad-cli` rather
+    than here: ``--severity-all`` means error, warning and exclusion, and *not*
+    ``ignore``, so a rule KiCad defaults to ``ignore`` never reaches us and the
+    report does not admit that a category was dropped. See
+    :data:`aipcb.compile.project.DRC_SEVERITIES`.
+    """
+
+    def _built(self, tmp_path: Path, name: str = "routing-demo") -> tuple[Path, Path]:
+        report = Report()
+        result = build_design(
+            REPO_ROOT / "examples" / name / "design.yaml",
+            out_dir=tmp_path / "out",
+            report=report,
+        )
+        board = next(p for p in result.written if p.suffix == ".kicad_pcb")
+        return board, result.netlist
+
+    def _drc(self, board: Path, netlist, tmp_path: Path) -> Report:
+        from aipcb.checks.kicad_reports import run_drc
+
+        report = Report()
+        run_drc(board, build_index(netlist), report, work=tmp_path)
+        return report
+
+    def test_two_crossing_tracks_are_reported_as_an_error(self, tmp_path: Path) -> None:
+        """The milestone's own test: lay copper of two nets in one place.
+
+        The tracks go on `routing-demo`, inside its outline, on one layer, at right
+        angles. Nothing subtle -- the point is that the *whole* path from board file
+        to diagnostic carries the category through at error severity.
+        """
+        board, netlist = self._built(tmp_path)
+        _cross(board, at=(135.0, 122.5))
+        report = self._drc(board, netlist, tmp_path)
+
+        crossing = [d for d in report if d.code == "kicad-tracks-crossing"]
+        assert crossing, [f"{d.severity.value} {d.code}" for d in report]
+        assert crossing[0].severity is Severity.ERROR
+        assert crossing[0].hint  # and it says what to do about it
+
+    def test_copper_outside_the_outline_is_invisible_to_drc(
+        self, tmp_path: Path
+    ) -> None:
+        """The same two tracks, off the board, are reported by nothing.
+
+        Measured on KiCad 9.0.8: copper outside `Edge.Cuts` gets no
+        `tracks_crossing`, no `clearance` and no `copper_edge_clearance` -- only
+        `track_dangling`, which is about its ends rather than about where it is.
+        Nothing in aipcb puts copper there, and this is here so that a change which
+        starts to would not be checked by a DRC that cannot see it.
+        """
+        board, netlist = self._built(tmp_path)
+        _cross(board, at=(20.0, 20.0))  # outline is 100..170 x 100..145
+        codes = {d.code for d in self._drc(board, netlist, tmp_path)}
+        assert "kicad-tracks-crossing" not in codes
+        assert "kicad-clearance" not in codes
+
+    def test_a_footprint_without_a_courtyard_is_reported(self, tmp_path: Path) -> None:
+        """The gap that *was* real, and is closed.
+
+        `missing_courtyard` is `ignore` in KiCad 9.0.8, so a footprint with no
+        courtyard silently opted out of `courtyards_overlap` -- the rule that says
+        whether a placement is legal. The project file now pins it.
+        """
+        board, netlist = self._built(tmp_path, "led-blinker")
+        board.write_text(
+            board.read_text(encoding="utf-8").replace('"F.CrtYd"', '"F.Fab"'),
+            encoding="utf-8",
+        )
+        codes = [d.code for d in self._drc(board, netlist, tmp_path)]
+        assert "kicad-missing-courtyard" in codes
+
+    def test_the_project_pins_the_rules_kicad_would_ignore(
+        self, tmp_path: Path
+    ) -> None:
+        """Every generated project names a severity for each rule KiCad silences.
+
+        `--severity-all` does not include `ignore`, so this is the only place the
+        decision can be made. Asserting it on a design that needs no rule changes
+        at all is deliberate: the pins are unconditional.
+        """
+        from aipcb.compile.project import DRC_SEVERITIES
+
+        build_design(REPO_ROOT / "examples" / "usb-port" / "design.yaml", out_dir=tmp_path)
+        project = json.loads(
+            next(tmp_path.glob("*.kicad_pro")).read_text(encoding="utf-8")
+        )
+        assert project["board"]["design_settings"]["rule_severities"] == DRC_SEVERITIES
+        assert "ignore" not in set(DRC_SEVERITIES.values())
+
+    def test_every_hint_names_a_rule_kicad_actually_has(self) -> None:
+        """A hint keyed on a misspelt rule is a hint nobody ever sees.
+
+        `courtyard_overlap` was spelt singular from M4 to M13.5 and KiCad's rule is
+        `courtyards_overlap`, so it never fired once. The rule names below are the
+        ones KiCad 9.0.8 writes into its own shipped project templates.
+        """
+        from aipcb.checks.kicad_reports import _HINTS
+
+        # ERC rules live in a different namespace from DRC's and are checked by
+        # `TestErcReport` instead; these are the board ones.
+        erc_only = {"power_pin_not_driven", "pin_not_connected"}
+        for rule in set(_HINTS) - erc_only:
+            assert rule in KICAD_DRC_RULES, f"{rule} is not a KiCad DRC rule name"
+
+
+#: KiCad 9.0.8's DRC rule names, read off the `rule_severities` maps in the project
+#: templates and demos KiCad ships (37 of them, 60 distinct rules). Written down
+#: rather than derived at test time so the list is reviewable, and dated so the next
+#: person can tell how old it is -- ADR 0009's rule, applied to a different tool
+#: surface.
+KICAD_DRC_RULES = frozenset({
+    "annular_width", "clearance", "connection_width", "copper_edge_clearance",
+    "copper_sliver", "courtyards_overlap", "creepage", "diff_pair_gap_out_of_range",
+    "diff_pair_uncoupled_length_too_long", "drill_out_of_range",
+    "duplicate_footprints", "extra_footprint", "footprint",
+    "footprint_filters_mismatch", "footprint_symbol_mismatch",
+    "footprint_type_mismatch", "hole_clearance", "hole_near_hole", "hole_to_hole",
+    "holes_co_located", "invalid_outline", "isolated_copper",
+    "item_on_disabled_layer", "items_not_allowed", "length_out_of_range",
+    "lib_footprint_issues", "lib_footprint_mismatch", "malformed_courtyard",
+    "microvia_drill_out_of_range", "mirrored_text_on_front_layer",
+    "missing_courtyard", "missing_footprint", "net_conflict",
+    "nonmirrored_text_on_back_layer", "npth_inside_courtyard", "overlapping_pads",
+    "padstack", "pth_inside_courtyard", "shorting_items", "silk_edge_clearance",
+    "silk_over_copper", "silk_overlap", "skew_out_of_range", "solder_mask_bridge",
+    "starved_thermal", "text_height", "text_on_edge_cuts", "text_thickness",
+    "through_hole_pad_without_hole", "too_many_vias", "track_angle",
+    "track_dangling", "track_segment_length", "track_width", "tracks_crossing",
+    "unconnected_items", "unresolved_variable", "via_dangling",
+    "zone_has_empty_net", "zones_intersect",
+})
+
+
+def _cross(board: Path, *, at: tuple[float, float]) -> None:
+    """Lay two tracks of different nets across each other, centred on ``at``."""
+    x, y = at
+    segment = (
+        '\t(segment\n\t\t(start {sx} {sy})\n\t\t(end {ex} {ey})\n\t\t(width 0.25)\n'
+        '\t\t(layer "F.Cu")\n\t\t(net {net})\n\t\t(uuid "{uuid}")\n\t)\n'
+    )
+    copper = segment.format(
+        sx=x - 3, sy=y, ex=x + 3, ey=y, net=1,
+        uuid="aaaaaaaa-0000-4000-8000-000000000001",
+    ) + segment.format(
+        sx=x, sy=y - 3, ex=x, ey=y + 3, net=3,
+        uuid="aaaaaaaa-0000-4000-8000-000000000002",
+    )
+    text = board.read_text(encoding="utf-8")
+    close = text.rstrip().rfind(")")
+    board.write_text(text[:close] + copper + text[close:], encoding="utf-8")
+
+
+@needs_kicad_cli
+@needs_kicad_libraries
+class TestCheckIsAFunctionOfTheSource:
+    """Checking twice into one directory must give the same answer twice.
+
+    It did not. `check` routes the board it builds and writes the copper into it;
+    the next build read that copper back as a human's hand routing, kept it, and
+    routed the board again on top of it. Copper accumulated, connections started
+    failing, and a clearance error appeared out of nothing -- on a design nobody had
+    touched between the two runs.
+    """
+
+    def test_checking_twice_changes_nothing(self, tmp_path: Path) -> None:
+        design = REPO_ROOT / "examples" / "usb-port" / "design.yaml"
+        board = tmp_path / "usb-port.kicad_pcb"
+
+        first = check_design(design, out_dir=tmp_path, report=Report())
+        copper = board.read_text(encoding="utf-8")
+        second = check_design(design, out_dir=tmp_path, report=Report())
+
+        assert board.read_text(encoding="utf-8") == copper, (
+            "the second check changed the board it was given"
+        )
+        assert first.routing is not None and second.routing is not None
+        assert first.routing.summary() == second.routing.summary()
+        assert first.drc.counts == second.drc.counts

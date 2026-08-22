@@ -17,6 +17,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from aipcb.compile.export import export_board
 from aipcb.diagnostics import Report
@@ -274,6 +275,14 @@ def _one_pair(
                 work, pair, settings, port_ohm, target, sliced,
                 netlist, geometric_skew,
             )
+            # The metrics are recomputed on every hit, because the *analysis* can
+            # change when the solver's output has not -- M13.5 added a caveat that
+            # a layer-spanning link now carries, and every cached `result.json` on
+            # this machine was still claiming the old one. So the file is refreshed
+            # too, and it stops being a record that quietly disagrees with what the
+            # tool would say today. `digest` and `run` are the run and do not move.
+            _write_result(cached, digest, stored.get("seconds", 0.0),
+                          stored.get("run"), metrics)
             return PairResult(
                 pair=pair, status="cached", directory=work, digest=digest,
                 sliced=sliced, metrics=metrics, seconds=0.0,
@@ -352,24 +361,35 @@ def _one_pair(
     metrics = _analyse(
         work, pair, settings, port_ohm, target, sliced, netlist, geometric_skew,
     )
-    cached.write_text(
+    _write_result(cached, digest, outcome.seconds, outcome.to_dict(), metrics)
+    for note in outcome.warnings:
+        report.warning("si-convergence", f"{pair.name}: {note}", path=pair.source_path)
+    return PairResult(
+        pair=pair, status="simulated", directory=work, digest=digest, sliced=sliced,
+        outcome=outcome, metrics=metrics, seconds=outcome.seconds,
+    )
+
+
+def _write_result(
+    path: Path,
+    digest: str,
+    seconds: float,
+    run: dict[str, Any] | None,
+    metrics: Metrics | None,
+) -> None:
+    """Write a pair's `result.json`: the run as it happened, the metrics as read now."""
+    path.write_text(
         json.dumps(
             {
                 "digest": digest,
-                "seconds": round(outcome.seconds, 2),
-                "run": outcome.to_dict(),
+                "seconds": round(seconds, 2),
+                "run": run,
                 "metrics": metrics.to_dict() if metrics else None,
             },
             indent=2,
         )
         + "\n",
         encoding="utf-8",
-    )
-    for note in outcome.warnings:
-        report.warning("si-convergence", f"{pair.name}: {note}", path=pair.source_path)
-    return PairResult(
-        pair=pair, status="simulated", directory=work, digest=digest, sliced=sliced,
-        outcome=outcome, metrics=metrics, seconds=outcome.seconds,
     )
 
 
@@ -431,6 +451,7 @@ def _analyse(
         length_mm=sliced.conductor_length_mm,
         geometric_skew_mm=_geometric_skew(pair, geometric_skew),
         slice_skew_mm=sliced.slice_skew_mm,
+        spans_layers=sliced.spans_layers,
         max_skew_mm=(
             netlist.net_classes[pair.net_class].max_skew_mm
             if netlist is not None and pair.net_class in netlist.net_classes

@@ -691,7 +691,10 @@ class TestEmission:
         project = json.loads(
             next(tmp_path.glob("*.kicad_pro")).read_text(encoding="utf-8")
         )
-        assert project["board"]["design_settings"] == {}
+        # `rule_severities` is unconditional since M13.5 -- it is not a constraint
+        # the design asked for, it is the set of rules KiCad would otherwise not
+        # report at all. `rules` is the part a comfortable board leaves alone.
+        assert "rules" not in project["board"]["design_settings"]
 
     def test_a_tight_net_class_relaxes_kicads_minimums(self, tmp_path: Path) -> None:
         design = REPO_ROOT / "examples" / "qfn-fanout" / "design.yaml"

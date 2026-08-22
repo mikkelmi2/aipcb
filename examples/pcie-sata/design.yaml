@@ -87,7 +87,20 @@ net_classes:
     via_drill_mm: 0.2
     diff_pair_gap_mm: 0.15
     impedance_diff_ohm: 85
-    max_skew_mm: 0.125
+    # PCI Express Card Electromechanical Specification, Revision 3.0 (2013-07-21),
+    # section 4.7.7 "Skew within the Differential Pair": the pair "shall be routed
+    # such that the skew within differential pairs is less than 0.127 mm (5 mils)
+    # for the add-in card and 0.254 mm (10 mils) for the system board". This board
+    # is an add-in card, so 0.127 mm is the number, and it is written here rather
+    # than the 0.125 mm it carried through M13 -- which was the same figure rounded,
+    # with nothing recording what it was rounded from. Checked in M13.5: the change
+    # moves no copper.
+    #
+    # The rationale in 4.7.7 is common-mode conversion and therefore EMI, not
+    # timing. That matters, because 0.127 mm here is about 0.8 ps and the argument
+    # M11 and M12 both reached for -- "1-2 ps against a 125 ps unit interval is
+    # absorbable" -- answers a question the standard is not asking.
+    max_skew_mm: 0.127
     coupling: tight
     standoff_k: 1.4
     reference: In1.Cu
@@ -112,7 +125,13 @@ net_classes:
     via_drill_mm: 0.2
     diff_pair_gap_mm: 0.15
     impedance_diff_ohm: 85
-    max_skew_mm: 0.125
+    # PCIe CEM r3.0 section 4.7.7, as for `pcie_tx` above: 0.127 mm on an add-in
+    # card. REFCLK rides in this class and the standard treats it separately --
+    # section 4.7's budgets are the Link's, and section 2.1.1 puts the reference
+    # clock at *nominal 100 ohm* rather than this class's 85. Splitting REFCLK into
+    # its own class is a geometry change M13.5 had no mandate to make; it is on the
+    # roadmap with the measurement attached.
+    max_skew_mm: 0.127
     coupling: tight
     standoff_k: 1.4
     reference: In2.Cu
@@ -133,6 +152,17 @@ net_classes:
     via_drill_mm: 0.2
     diff_pair_gap_mm: 0.2
     impedance_diff_ohm: 100
+    # Serial ATA Revision 3.5 Gold (2020-07-01) gives no intra-pair skew figure for
+    # a PCB trace, which is the first thing worth knowing: the number usually quoted
+    # as "the SATA skew spec" is one of three other things. Table 54 bounds tskewTx,
+    # the transmitter's own differential skew measured at the mated connector, at
+    # 20 ps for Gen1i, Gen2i and Gen3i alike; Table 57 requires a Gen3i receiver to
+    # tolerate 30 ps of tskewRx; and section 6.12 holds a mated cable assembly to
+    # 10 ps. A board trace between silicon and connector spends out of the first of
+    # those. 0.25 mm is about 1.6 ps in this laminate, so this class takes under a
+    # twelfth of the transmitter's whole budget for its routing -- deliberately
+    # conservative, and confirmed in M13.5 rather than loosened, because all eight
+    # pairs meet it with room to spare (0.000-0.041 mm as built).
     max_skew_mm: 0.25
     coupling: tight
     standoff_k: 1.4
@@ -144,14 +174,9 @@ net_classes:
     description: SATA III, 100 ohm differential, which on this stackup with ground
       poured 0.15 mm away on each side is a 0.138 mm trace at the same 0.2 mm gap -
       0.239 mm before M13b gave the derivation a coplanar model. Eight of these, four
-      ports, all on the front layer over the ground plane. The skew budget is 0.25 mm and not the 0.127 mm that
-      the five-mil rule of thumb would give. A SATA III unit interval is 200 ps and
-      the standard allows a good fraction of that within a pair, which in this
-      laminate is well over a millimetre. 0.25 mm is still an order of magnitude
-      tighter than the link needs, and it is a budget a pair that has to turn fifty
-      degrees between two connectors at different heights can actually meet. The
-      first draft of this class said 0.127 mm and one of the eight pairs missed it
-      by 49 microns, which the report said and this comment records.
+      ports, all on the front layer over the ground plane. The first draft of this
+      class said 0.127 mm and one of the eight pairs missed it by 49 microns, which
+      the report said and this comment records.
 
   power:
     trace_width_mm: 0.25

@@ -1,6 +1,12 @@
 {
   "board": {
     "design_settings": {
+      "rule_severities": {
+        "footprint_filters_mismatch": "warning",
+        "missing_courtyard": "warning",
+        "npth_inside_courtyard": "warning",
+        "pth_inside_courtyard": "warning"
+      },
       "rules": {
         "min_through_hole_diameter": 0.2,
         "min_via_diameter": 0.4

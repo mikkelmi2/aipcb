@@ -17,6 +17,7 @@ from aipcb.kicad.sexpr import SNode, dump, quoted, sym
 from aipcb.model.layout import NetClass
 
 __all__ = [
+    "DRC_SEVERITIES",
     "build_fp_lib_table",
     "build_project",
     "build_sym_lib_table",
@@ -41,6 +42,39 @@ KICAD_DEFAULT_CONSTRAINTS = {
     "min_via_diameter": 0.5,
     "min_through_hole_diameter": 0.3,
     "min_copper_edge_clearance": 0.5,
+}
+
+#: DRC rules KiCad silences by default, promoted so that ``check`` can see them.
+#:
+#: ``kicad-cli pcb drc --severity-all`` includes ``error``, ``warning`` and
+#: ``exclusion`` -- and *not* ``ignore``. A rule KiCad defaults to ``ignore`` is
+#: therefore dropped inside KiCad, before any report reaches us, and nothing in the
+#: report says a category was suppressed: the ``included_severities`` field still
+#: reads ``["error", "warning", "exclusion"]``. That is a silent hole in an
+#: otherwise exact pipeline, so this closes it by naming the severity we want
+#: rather than inheriting whatever the tool happens to default to.
+#:
+#: Measured on KiCad 9.0.8 (M13.5), by building a board that violates each rule and
+#: running DRC with and without the pin:
+#:
+#: * ``missing_courtyard`` -- six footprints stripped of their courtyard, zero
+#:   violations reported; pinned, six. This one matters most: ``courtyards_overlap``
+#:   is how a placement is checked, and a footprint with no courtyard opts out of it
+#:   without saying so.
+#: * ``pth_inside_courtyard`` -- fourteen through-hole pads inside a courtyard, zero
+#:   reported; pinned, fourteen.
+#: * ``npth_inside_courtyard`` and ``footprint_filters_mismatch`` -- no example in
+#:   the corpus can violate these, so they are pinned on the evidence of KiCad's own
+#:   shipped project templates rather than on a measurement here.
+#:
+#: ``warning`` and not ``error``: all four are advisory about how a board was drawn,
+#: not statements that it is wrong. Re-measure at each KiCad major, as ADR 0009 says
+#: -- the defaults are the tool's, not ours, and they move.
+DRC_SEVERITIES = {
+    "footprint_filters_mismatch": "warning",
+    "missing_courtyard": "warning",
+    "npth_inside_courtyard": "warning",
+    "pth_inside_courtyard": "warning",
 }
 
 
@@ -98,6 +132,9 @@ def build_project(
     keeps copper that far from the outline and from every cutout, and this is what
     makes KiCad check the same figure. A design that states nothing leaves the rule
     alone, so KiCad uses its own default and the two tools still agree.
+
+    Every project also pins :data:`DRC_SEVERITIES`, so the rules KiCad silences by
+    default reach ``check`` instead of vanishing inside ``kicad-cli``.
     """
     classes = [_default_net_class()]
     for name in sorted(net_classes):
@@ -113,7 +150,9 @@ def build_project(
     if edge_clearance is not None:
         rules["min_copper_edge_clearance"] = edge_clearance
     rules.update(_tighter_than_default(net_classes))
-    settings: dict[str, Any] = {"rules": dict(sorted(rules.items()))} if rules else {}
+    settings: dict[str, Any] = {"rule_severities": dict(DRC_SEVERITIES)}
+    if rules:
+        settings["rules"] = dict(sorted(rules.items()))
 
     return {
         "board": {

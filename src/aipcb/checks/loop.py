@@ -92,7 +92,10 @@ def check_design(
     """Build a design, route it, and run KiCad's checks against the result.
 
     Output goes to ``out_dir`` when given, and to a temporary directory otherwise,
-    so checking a design never leaves artefacts beside the source unless asked.
+    so checking a design never leaves artefacts beside the source unless asked. The
+    build is always a *fresh* one: checking the same design twice into one directory
+    has to give the same answer twice, and before M13.5 it did not -- see
+    :func:`_check_into`.
 
     Routing before DRC is deliberate. A check that reports zero violations on a
     board with no copper on it has checked almost nothing, and the question an agent
@@ -117,7 +120,23 @@ def _check_into(
     board: bool,
     route: bool,
 ) -> CheckResult:
-    build = build_design(design_path, out_dir=target, report=report)
+    # `fresh=True` and not the default incremental merge, since M13.5. A check is a
+    # question about the *source*, so it has to be a function of the source alone --
+    # and it was not. `check` routes the board it builds and writes the copper into
+    # it; a second check into the same `--out` directory then read that copper back
+    # as somebody's hand routing, preserved it, and routed the board again on top.
+    # Measured on `examples/pcie-sata`, checking three times into one directory:
+    #
+    #     run 1   1108 mm of copper, 90/90 routed, 0 DRC errors
+    #     run 2   1853 mm,           68/90,        1 clearance error
+    #     run 3   2462 mm,           59/90,        1 clearance error
+    #
+    # `preserve.py` calls `segment`, `via` and `zone` items "never generated, and so
+    # always belong to a human". That was true when it was written and stopped being
+    # true when M7 started routing and M10 started pouring; nothing noticed, because
+    # nothing checked twice into one place. Preserving a human's copper across a
+    # rebuild is still `aipcb build`'s job and is untouched.
+    build = build_design(design_path, out_dir=target, report=report, fresh=True)
     index = build_index(build.netlist)
     result = CheckResult(netlist=build.netlist, build=build)
 

@@ -1,6 +1,13 @@
 {
   "board": {
-    "design_settings": {},
+    "design_settings": {
+      "rule_severities": {
+        "footprint_filters_mismatch": "warning",
+        "missing_courtyard": "warning",
+        "npth_inside_courtyard": "warning",
+        "pth_inside_courtyard": "warning"
+      }
+    },
     "layer_presets": [],
     "viewports": []
   },
