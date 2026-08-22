@@ -420,6 +420,9 @@ class TestRoutedBoardsPassDrc:
         routed, drc = self._route(name, tmp_path)
         assert not routed.failed, [f"{f.key()}: {f.reason}" for f in routed.failed]
         assert not drc["unconnected_items"], "every connection should be copper"
+        # M13a's invariant, asserted per example rather than only inside the router:
+        # two nets' copper in one place is a short circuit, and no board here has one.
+        assert not routed.crossings, [c.describe() for c in routed.crossings]
 
     def test_routing_is_byte_stable(self, tmp_path: Path) -> None:
         boards = []
@@ -679,3 +682,243 @@ class TestDifferentialPairs:
         environment = extract_obstacles(board)
         pairs = find_pairs(result.netlist, environment, report)
         assert [p.key() for p in pairs] == ["DIFF_N+DIFF_P"]
+
+
+# ---------------------------------------------------------------------------
+# M13a: no route crosses another net
+# ---------------------------------------------------------------------------
+
+
+def _leg(net: str, layer: str, points, *, width: float = 0.2, name: str = "a>b"):
+    from aipcb.route.stretch import StretchResult
+
+    start, end = name.split(">")
+    return StretchResult(
+        net=net, layer=layer, points=list(points), width=width, start=start, end=end
+    )
+
+
+class TestCrossNetInvariant:
+    """The check that would have caught M11's `_repair` defect the day it landed.
+
+    Everything the router builds is tightened inside free space that already has
+    the other nets' copper removed from it, so this should never find anything.
+    That is the point: the construction is only as good as its inputs, and M13
+    found an input that had been quietly losing polygons since M11c.
+    """
+
+    def test_two_nets_in_one_place_on_one_layer_is_a_crossing(self) -> None:
+        from aipcb.route.invariant import crossing_nets
+        from aipcb.route.stretch import RoutedConnection
+
+        connections = [
+            RoutedConnection(
+                net="A", start="a", end="b",
+                legs=[_leg("A", "F.Cu", [(0.0, 0.0), (10.0, 0.0)])],
+            ),
+            RoutedConnection(
+                net="B", start="c", end="d",
+                legs=[_leg("B", "F.Cu", [(5.0, -5.0), (5.0, 5.0)])],
+            ),
+        ]
+        found = crossing_nets(connections)
+        assert len(found) == 1
+        assert {found[0].first, found[0].second} == {"A", "B"}
+        assert found[0].layer == "F.Cu"
+        assert found[0].area_mm2 == pytest.approx(0.04, rel=0.05)
+
+    def test_the_same_crossing_on_two_layers_is_not_one(self) -> None:
+        """Copper crosses in plan view all the time; only on one layer is it a short."""
+        from aipcb.route.invariant import crossing_nets
+        from aipcb.route.stretch import RoutedConnection
+
+        connections = [
+            RoutedConnection(
+                net="A", start="a", end="b",
+                legs=[_leg("A", "F.Cu", [(0.0, 0.0), (10.0, 0.0)])],
+            ),
+            RoutedConnection(
+                net="B", start="c", end="d",
+                legs=[_leg("B", "B.Cu", [(5.0, -5.0), (5.0, 5.0)])],
+            ),
+        ]
+        assert crossing_nets(connections) == []
+
+    def test_a_net_may_cross_itself(self) -> None:
+        from aipcb.route.invariant import crossing_nets
+        from aipcb.route.stretch import RoutedConnection
+
+        connections = [
+            RoutedConnection(
+                net="A", start="a", end="b",
+                legs=[_leg("A", "F.Cu", [(0.0, 0.0), (10.0, 0.0)])],
+            ),
+            RoutedConnection(
+                net="A", start="c", end="d",
+                legs=[_leg("A", "F.Cu", [(5.0, -5.0), (5.0, 5.0)])],
+            ),
+        ]
+        assert crossing_nets(connections) == []
+
+    def test_a_via_barrel_crosses_every_layer_it_passes(self) -> None:
+        from aipcb.route.invariant import crossing_nets
+        from aipcb.route.stretch import RoutedConnection, Via
+
+        connections = [
+            RoutedConnection(
+                net="A", start="a", end="b",
+                legs=[_leg("A", "In1.Cu", [(0.0, 0.0), (10.0, 0.0)])],
+            ),
+            RoutedConnection(
+                net="B", start="c", end="d",
+                vias=[
+                    Via(
+                        net="B", point=(5.0, 0.0), from_layer="F.Cu",
+                        to_layer="B.Cu", diameter=0.6, drill=0.3, name="v",
+                    )
+                ],
+            ),
+        ]
+        spans = {"F.Cu/B.Cu": ("F.Cu", "In1.Cu", "B.Cu")}
+        assert crossing_nets(connections, barrel_layers=spans)
+        # The same via declared as reaching only the front never meets In1.Cu.
+        assert crossing_nets(connections, barrel_layers={"F.Cu/B.Cu": ("F.Cu",)}) == []
+
+    def test_touching_at_a_boundary_is_not_a_crossing(self) -> None:
+        """Two tracks exactly one clearance apart share a boundary, not an area."""
+        from aipcb.route.invariant import crossing_nets
+        from aipcb.route.stretch import RoutedConnection
+
+        connections = [
+            RoutedConnection(
+                net="A", start="a", end="b",
+                legs=[_leg("A", "F.Cu", [(0.0, 0.0), (10.0, 0.0)])],
+            ),
+            RoutedConnection(
+                net="B", start="c", end="d",
+                legs=[_leg("B", "F.Cu", [(0.0, 0.2), (10.0, 0.2)])],
+            ),
+        ]
+        assert crossing_nets(connections) == []
+
+
+class TestFinishedCopperIsNeverHidden:
+    """The root cause of M11's `_repair` defect, at the level it actually lives.
+
+    Finished copper is a *list* of obstacles and the free-space calculation wants a
+    *dict* keyed by name. Two pieces that share a name therefore used to become
+    one, and the loser disappeared from every triangulation built afterwards. A
+    differential pair split across two layers by a via transition produces exactly
+    that: one `RoutedConnection` per layer, both naming their coupled leg after the
+    same two pair terminals.
+    """
+
+    def test_a_name_clash_does_not_lose_a_polygon(self) -> None:
+        from aipcb.route.geometry import track_obstacles, with_copper
+        from aipcb.route.obstacles import RoutingEnvironment
+
+        base = RoutingEnvironment(outline=((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)))
+        placed = [
+            *track_obstacles(
+                _leg("N", "F.Cu", [(1.0, 1.0), (9.0, 1.0)]), "track:N/x>y", 0.1
+            ),
+            *track_obstacles(
+                _leg("N", "B.Cu", [(1.0, 5.0), (9.0, 5.0)]), "track:N/x>y", 0.1
+            ),
+        ]
+        assert len({o.name for o in placed}) == 1, "the fixture must actually clash"
+        environment = with_copper(base, placed)
+        kept = [o for o in environment.obstacles.values() if o.kind == "track"]
+        assert len(kept) == len(placed)
+        assert {next(iter(o.layers)) for o in kept} == {"F.Cu", "B.Cu"}
+
+    def test_the_router_names_copper_by_layer_as_well(self, tmp_path: Path) -> None:
+        """Belt and braces: the names the router hands out no longer clash at all."""
+        import collections
+
+        from aipcb.route.plan import _accept
+        from aipcb.route.stack import stack_for
+        from aipcb.route.stretch import RoutedConnection
+
+        placed: list = []
+        outcome = type("Outcome", (), {"connections": [], "total_length": 0.0})()
+        stack = stack_for(None)
+        for layer in ("F.Cu", "B.Cu"):
+            _accept(
+                outcome,
+                placed,
+                RoutedConnection(
+                    net="N", start="x", end="y",
+                    legs=[_leg("N", layer, [(1.0, 1.0), (9.0, 1.0)], name="x>y")],
+                ),
+                stack,
+                trim=False,
+            )
+        counts = collections.Counter(o.name for o in placed)
+        assert not [n for n, c in counts.items() if c > 1], counts
+
+
+@needs_kicad_libraries
+@needs_kicad_cli
+class TestRepairDoesNotCrossAnotherNet:
+    """M11's open defect, reproduced and closed.
+
+    `examples/pcie-sata` deliberately leaves the A1-to-B17 presence-detect strap
+    off the netlist, because routing it means crossing all three lane pairs. M11
+    had it on the board briefly, and the second-pass repair in
+    ``route/plan.py::_repair`` routed it straight through two already-placed
+    `REFCLK` tracks -- two `tracks_crossing` errors from KiCad's own DRC.
+
+    Putting the strap back is what reproduces it, so that is what this does. The
+    board it produces is not a board anybody should ship; what matters is that the
+    router either routes the strap legally or hands it over, and never lays copper
+    on top of somebody else's.
+    """
+
+    def _with_strap(self, tmp_path: Path) -> Path:
+        source = (REPO_ROOT / "examples" / "pcie-sata" / "design.yaml").read_text(
+            encoding="utf-8"
+        )
+        library = (REPO_ROOT / "examples" / "library").as_posix()
+        source = source.replace("../library/", f"{library}/")
+        source = source.replace(
+            "  P12V:\n    class: power",
+            "  PRSNT:\n    class: signal\n"
+            "    reason: the A1-B17 presence-detect strap, which has to cross the lane\n"
+            "  P12V:\n    class: power",
+        )
+        source = source.replace(
+            "      A13: REFCLKP", "      A1: PRSNT\n      B17: PRSNT\n      A13: REFCLKP"
+        )
+        assert "PRSNT" in source and "A1: PRSNT" in source
+        design = tmp_path / "design.yaml"
+        design.write_text(source, encoding="utf-8")
+        return design
+
+    def test_the_strap_never_crosses_the_lane(self, tmp_path: Path) -> None:
+        from aipcb.kicad.cli import run_kicad
+
+        report = Report()
+        result = build_design(
+            self._with_strap(tmp_path), out_dir=tmp_path / "out", report=report
+        )
+        board_path = next(p for p in result.written if p.suffix == ".kicad_pcb")
+        board = parse(board_path.read_text(encoding="utf-8"))
+        topologies = tuple(result.netlist.layout.routes) if result.netlist.layout else ()
+        routed = route_board(board, result.netlist, report, topologies=topologies)
+
+        assert any(d.code == "route-repaired" and d.context.get("net") == "PRSNT"
+                   for d in report), "the strap should still take the repair path"
+        assert not routed.crossings, [c.describe() for c in routed.crossings]
+
+        attach_copper(board, routed.connections, sorted(result.netlist.nets))
+        board_path.write_text(dump(board), encoding="utf-8")
+        drc_path = tmp_path / "drc.json"
+        run = run_kicad(
+            "pcb", "drc", "--format", "json", "--severity-all",
+            "-o", str(drc_path), str(board_path),
+        )
+        assert run.returncode == 0, f"{run.stdout}{run.stderr}"
+        drc = json.loads(drc_path.read_text(encoding="utf-8"))
+        crossing = [v for v in drc["violations"] if v["type"] == "tracks_crossing"]
+        assert not crossing, [v["description"] for v in crossing]

@@ -19,6 +19,7 @@ disagreement itself is a finding, recorded in the M12 report.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -166,7 +167,7 @@ def simulation_json(sliced: Slice, settings: ResolvedSimulation) -> dict[str, An
     return {
         "format_version": "1.2",
         "frequency": {"start": settings.start_hz, "stop": settings.stop_hz},
-        "max_steps": settings.max_steps,
+        "max_steps": max_steps(sliced, settings),
         "pixel_size": PIXEL_SIZE_UM,
         "ports": ports,
         "differential_pairs": [
@@ -181,14 +182,87 @@ def simulation_json(sliced: Slice, settings: ResolvedSimulation) -> dict[str, An
         ],
         "grid": {
             "inter_layers": settings.grid_inter_layers,
-            "optimal": settings.grid_optimal_um,
-            "diagonal": max(settings.grid_optimal_um, 50.0),
+            "optimal": grid_optimal_um(sliced, settings),
+            "diagonal": max(grid_optimal_um(sliced, settings), 50.0),
             "perpendicular": 100.0,
             "max": 400.0,
             "cell_ratio": {"xy": 1.2, "z": 1.5},
             "margin": {"xy": 1000.0, "z": 2000.0, "from_trace": True},
         },
     }
+
+
+#: How many cells the mesh must put across the narrowest feature under test --
+#: the trace, and the gap between the two halves.
+#:
+#: M13b's coplanar model derives narrower traces than the bare-microstrip one did,
+#: and the fixed 50 um default M12 calibrated on `examples/mcu-4layer`'s 0.25 mm
+#: pair turned out to be **silently catastrophic** on the 0.185 mm one it now
+#: derives for `examples/pcie-sata`. Measured, on the same slice, sweeping the cell
+#: size and changing nothing else:
+#:
+#: ===========  =============  ==============
+#: cell size    x grid lines   Zdiff read
+#: ===========  =============  ==============
+#: 50 um        47             **12.2 ohm**
+#: 45 um        61             **48.2 ohm**
+#: 40 um        64             74.5 ohm
+#: 35 um        72             74.5 ohm
+#: 25 um        112            78.9 ohm
+#: ===========  =============  ==============
+#:
+#: The answer is stable from 40 um down and collapses above it, and every one of
+#: those runs decayed to -70 dB and exited zero. That is the failure mode phase 0
+#: named -- a confident wrong answer at a zero exit code -- arriving through the
+#: mesh rather than through the export, and a fixed cell size cannot catch it
+#: because whether 50 um is fine depends on the geometry it is meshing.
+#:
+#: Six across the trace and five across the gap puts the cliff (4.1 cells across
+#: the trace, 3.3 across the gap) a comfortable distance below the default rather
+#: than just outside it.
+CELLS_ACROSS_TRACE = 6.0
+CELLS_ACROSS_GAP = 5.0
+
+
+def grid_optimal_um(sliced: Slice, settings: ResolvedSimulation) -> float:
+    """The cell size this slice actually needs, in micrometres.
+
+    Never *coarser* than the setting, so a design that asks for a fine mesh gets
+    one; finer whenever the geometry demands it. Rounded down to a tenth of a
+    micrometre so the number in ``simulation.json`` -- and therefore the slice
+    digest, and therefore the cache -- is a function of the geometry alone.
+    """
+    widths = [port.width_mm for port in sliced.ports if port.width_mm > 0]
+    if not widths:
+        return settings.grid_optimal_um
+    narrowest = min(widths)
+    needed = [settings.grid_optimal_um, narrowest * 1000.0 / CELLS_ACROSS_TRACE]
+    gap = sliced.pair_gap_mm
+    if gap:
+        needed.append(gap * 1000.0 / CELLS_ACROSS_GAP)
+    return math.floor(min(needed) * 10) / 10
+
+
+def max_steps(sliced: Slice, settings: ResolvedSimulation) -> int:
+    """The step limit, scaled to hold the simulated *duration* constant.
+
+    ``max_steps`` bounds a run that never decays -- a slice with two plane layers
+    and an artificial boundary is a resonant cavity, and some of them ring forever.
+    What it is really bounding is simulated time, and an FDTD timestep is set by
+    the cell size: halve the cell and the same physical settling needs twice the
+    steps. Leaving the limit fixed while :func:`grid_optimal_um` refines the mesh
+    therefore does not make a run cheaper, it makes it *stop earlier*, and a run
+    stopped early comes back with energy still bouncing around -- which is visible
+    as ``|Sdd21|`` above unity and, on `examples/pcie-sata`'s transmit pair,
+    reached 1.23 where the same slice at the coarse mesh reached 1.06.
+
+    So the limit follows the mesh. A design that names its own ``max_steps`` still
+    gets what it asked for at the cell size it asked for.
+    """
+    cell = grid_optimal_um(sliced, settings)
+    if cell <= 0 or cell >= settings.grid_optimal_um:
+        return settings.max_steps
+    return int(settings.max_steps * settings.grid_optimal_um / cell)
 
 
 def netinfo_json(sliced: Slice) -> dict[str, Any]:

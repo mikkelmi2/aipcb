@@ -9,6 +9,17 @@ the slice board, ``simulation.json`` and ``stackup.json``. Re-running an unchang
 pair costs nothing, which is what makes an edit-and-resimulate loop usable at
 30 seconds to two minutes a pair.
 
+**Reaping the container, whatever happens to the client.** The solver runs for
+minutes on every core the machine has, and it is a *container* -- a child of the
+runtime's daemon, not of this process, so nothing about this process dying stops
+it. M12 shipped cleanup on the timeout path only, and the M10-M12 chain paid for
+that twice: a killed session left a sixteen-core FDTD run going eleven minutes
+later, and a relaunch then had two containers writing one working directory. M13d
+closes it three ways -- a context manager that reaps on any exit, signal and
+`atexit` handlers that reap on interruption, and a *pre-flight* check that refuses
+to start a second run against a directory something is already writing. The last
+of the three is the one that survives ``SIGKILL``, which nothing can catch.
+
 **Asserting the inputs were seen.** Phase 0 found two failure modes that produce a
 confident wrong answer rather than an error: a placement file the consumer never
 finds (so no ports), and drill coordinates it cannot parse (so no vias). Both fail
@@ -20,25 +31,33 @@ is happy.
 
 from __future__ import annotations
 
+import atexit
 import hashlib
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from aipcb.si import IMAGE
 
 __all__ = [
+    "ContainerBusy",
     "ContainerMissing",
     "RunOutcome",
     "container_digest",
+    "containers_on",
     "find_container",
     "nets_in_gerbers",
+    "reap_containers",
     "run_gerber2ems",
+    "running_container",
     "slice_digest",
 ]
 
@@ -52,6 +71,17 @@ DEFAULT_TIMEOUT_S = 1800
 
 class ContainerMissing(RuntimeError):
     """No container runtime, or no image. Carries what to do about it."""
+
+
+class ContainerBusy(RuntimeError):
+    """Something is already solving in this working directory."""
+
+
+#: The label every container this module starts carries, holding the absolute
+#: working directory it was given. A *label* rather than a name, because the name
+#: has to be unique per run and the question the pre-flight asks is "who else is
+#: writing here", which is a property of the directory.
+WORK_LABEL = "aipcb.si.work"
 
 
 @dataclass(slots=True)
@@ -153,6 +183,123 @@ def _parse_log(log: str) -> tuple[int | None, int | None, int, int, float | None
     return cells, timesteps, ports, vias, (max(energies) if energies else None)
 
 
+# ---------------------------------------------------------------------------
+# container lifetime
+# ---------------------------------------------------------------------------
+
+#: Containers this process has started and not yet reaped. Kept so that a signal
+#: handler, which cannot be handed arguments, still knows what to kill.
+_LIVE: dict[str, str] = {}
+
+_HANDLERS_INSTALLED = False
+
+
+def reap_containers(runtime: str | None = None) -> list[str]:
+    """Force-remove every container this process started and has not finished.
+
+    Returns what it reaped, so a caller -- or a test -- can say so. Safe to call
+    twice, and safe to call when there is nothing to reap.
+    """
+    reaped: list[str] = []
+    for name, started_with in list(_LIVE.items()):
+        _LIVE.pop(name, None)
+        try:
+            subprocess.run(
+                [runtime or started_with, "rm", "-f", name],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError):  # pragma: no cover - best effort
+            continue
+        reaped.append(name)
+    return reaped
+
+
+def _install_handlers() -> None:
+    """Reap on ``atexit`` and on the two signals a person or a batch system sends.
+
+    ``SIGKILL`` cannot be caught, and that is exactly the case the pre-flight check
+    in :func:`run_gerber2ems` exists for. What these catch is the common one: a
+    Ctrl-C, or a supervisor stopping the job.
+    """
+    global _HANDLERS_INSTALLED
+    if _HANDLERS_INSTALLED:
+        return
+    _HANDLERS_INSTALLED = True
+    atexit.register(reap_containers)
+
+    def on_signal(number: int, frame: object) -> None:
+        reap_containers()
+        previous = _PREVIOUS.get(number)
+        if callable(previous):
+            previous(number, frame)
+            return
+        # Re-raise as the default would have, so the exit status still says the
+        # process was signalled rather than that it chose to stop.
+        signal.signal(number, signal.SIG_DFL)
+        os.kill(os.getpid(), number)
+
+    for number in (signal.SIGINT, signal.SIGTERM):
+        try:
+            _PREVIOUS[number] = signal.getsignal(number)
+            signal.signal(number, on_signal)
+        except (ValueError, OSError):  # pragma: no cover - not the main thread
+            _PREVIOUS.pop(number, None)
+
+
+_PREVIOUS: dict[int, object] = {}
+
+
+def containers_on(runtime: str, work: Path) -> list[str]:
+    """Names of running containers this tool started against ``work``.
+
+    The pre-flight. Two solvers writing one ``ems/`` produce results that belong to
+    neither, and the second one to arrive has no way to tell -- the files simply
+    change under it. Asking the runtime costs about ten milliseconds.
+    """
+    run = subprocess.run(
+        [
+            runtime,
+            "ps",
+            "--filter",
+            f"label={WORK_LABEL}={work.resolve()}",
+            "--format",
+            "{{.Names}}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if run.returncode != 0:
+        return []
+    return [line.strip() for line in run.stdout.splitlines() if line.strip()]
+
+
+@contextmanager
+def running_container(runtime: str, name: str) -> Iterator[None]:
+    """Own one container for the duration of a block, and reap it on the way out.
+
+    On *any* way out: a return, an exception, a timeout, a ``KeyboardInterrupt``.
+    ``podman run --rm`` already removes a container that exits on its own; what
+    this covers is every path where it does not get to.
+    """
+    _install_handlers()
+    _LIVE[name] = runtime
+    try:
+        yield
+    finally:
+        if _LIVE.pop(name, None) is not None:
+            subprocess.run(
+                [runtime, "rm", "-f", name],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+
+
 def run_gerber2ems(
     work: Path,
     *,
@@ -163,11 +310,26 @@ def run_gerber2ems(
     expect_vias: int = 0,
     log_path: Path | None = None,
 ) -> RunOutcome:
-    """Geometry, both excitations and post-processing, in one container run."""
+    """Geometry, both excitations and post-processing, in one container run.
+
+    Raises :class:`ContainerBusy` when something is already solving in ``work``.
+    That is a refusal rather than a wait on purpose: the other run is minutes from
+    finishing, its results are about to land in this directory, and starting a
+    second writer produces a directory whose contents belong to neither.
+    """
     started = time.monotonic()
-    # Named, so a timeout can clean up after itself. Killing the client is not the
-    # same as stopping the container, and an unattended batch that leaves a
-    # sixteen-core FDTD run behind on every timeout takes the machine down with it.
+    busy = containers_on(runtime, work)
+    if busy:
+        raise ContainerBusy(
+            f"{', '.join(busy)} is already solving in {work}; a second solver "
+            "writing the same directory produces results that belong to neither. "
+            f"Wait for it, or `{runtime} rm -f {busy[0]}` if it is an orphan left "
+            "by a killed run."
+        )
+    # Named, so a timeout can clean up after itself; labelled with the working
+    # directory, so the pre-flight above can find it whoever started it. Killing
+    # the client is not the same as stopping the container, and an unattended batch
+    # that leaves a sixteen-core FDTD run behind takes the machine down with it.
     name = f"aipcb-si-{os.getpid()}-{abs(hash(str(work))) % 10**8:08d}"
     command = [
         runtime,
@@ -175,6 +337,8 @@ def run_gerber2ems(
         "--rm",
         "--name",
         name,
+        "--label",
+        f"{WORK_LABEL}={work.resolve()}",
         "--userns=keep-id",
         "-v",
         f"{work.resolve()}:/work",
@@ -185,23 +349,17 @@ def run_gerber2ems(
         "--log",
         "DEBUG",
     ]
-    try:
-        run = subprocess.run(
-            command, capture_output=True, text=True, check=False, timeout=timeout_s
-        )
-    except subprocess.TimeoutExpired:
-        subprocess.run(
-            [runtime, "rm", "-f", name],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
-        )
-        return RunOutcome(
-            ok=False,
-            seconds=time.monotonic() - started,
-            message=f"the solver did not finish inside {timeout_s} s",
-        )
+    with running_container(runtime, name):
+        try:
+            run = subprocess.run(
+                command, capture_output=True, text=True, check=False, timeout=timeout_s
+            )
+        except subprocess.TimeoutExpired:
+            return RunOutcome(
+                ok=False,
+                seconds=time.monotonic() - started,
+                message=f"the solver did not finish inside {timeout_s} s",
+            )
     seconds = time.monotonic() - started
     log = run.stdout + run.stderr
     if log_path is not None:

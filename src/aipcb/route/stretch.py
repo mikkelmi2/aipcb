@@ -111,6 +111,19 @@ class StretchResult:
     """How many triangulation diagonals the reduced homotopy class crosses."""
     start: str = ""
     end: str = ""
+    coupled: bool = False
+    """Whether this leg is a differential pair's coupled run rather than its fan-out.
+
+    Recorded rather than inferred. Until M13b it *was* inferred, from the leg
+    carrying the pair's own width where the fan-out carried the class's -- which
+    held on every board here because every controlled-impedance class declared a
+    single-ended width narrower than its pair's. The coplanar model derives
+    narrower pairs, the fan-out is now clamped to the pair's width so it cannot eat
+    the pair's gap, and the two widths became equal. Four separate measurements
+    keyed off that inference: the uncoupled-length budget, the wall-hugging scan,
+    which copper is fed back between the two halves, and which leg a meander may be
+    folded into.
+    """
 
     @property
     def length(self) -> float:

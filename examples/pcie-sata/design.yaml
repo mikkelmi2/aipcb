@@ -49,6 +49,15 @@ net_classes:
   # that derivation rather than an output, because a gap is a manufacturing choice
   # and solving for width and gap together has no unique answer.
   #
+  # Since M13b the derivation also reads the `pours:` block, because this board pours
+  # ground on F.Cu and B.Cu right up to its pairs at the class clearance. A trace with
+  # ground beside it as well as under it is a coplanar waveguide with ground, and the
+  # bare-microstrip formula M11 used was wrong about it by the amount M12 measured:
+  # every simulated link on this board came back below its declared target, REFCLK at
+  # 50.9 ohm against 85. The widths below are therefore narrower than they were --
+  # 0.185 mm where M11 derived 0.289, 0.138 mm where it derived 0.239 -- and `aipcb
+  # check` prints which model each class used.
+  #
   # `standoff_k` is 1.4 and not the default 3. M11d rule 1 tightens a
   # controlled-impedance pair against `clearance x k` rather than the bare minimum,
   # and on this board 3 is not available: the pair's centre-line leaves the
@@ -60,12 +69,17 @@ net_classes:
   # loudly; 1.4 is what the package will give, and it is written here rather than
   # defaulted so that the number is somebody's decision.
   #
-  # `trace_width_mm` is the *single-ended* width, and it is deliberately narrower
-  # than the pair's: it is what the fan-out at the controller's 0.5 mm pitch is
-  # drawn with. Half of 0.2 mm, plus a 0.2 mm via radius, plus 0.15 mm of clearance
-  # comes to 0.45 mm and the escape fits; at the pair's own 0.32 mm it does not.
-  # Necking a pair down into a fine-pitch pad is what a layout engineer does, and
-  # M11d's coupling budget is what says how much of it is affordable.
+  # `trace_width_mm` is the *single-ended* width, and it is the width the fan-out at
+  # the controller's 0.5 mm pitch is drawn with. Half of 0.2 mm, plus a 0.2 mm via
+  # radius, plus 0.15 mm of clearance comes to 0.45 mm and the escape fits. Necking a
+  # pair down into a fine-pitch pad is what a layout engineer does, and M11d's
+  # coupling budget is what says how much of it is affordable.
+  #
+  # Since M13b it is also a *ceiling* rather than the width: a fan-out is never drawn
+  # wider than the pair it feeds, because the two halves are offset from one
+  # centre-line at the pair's own pitch and a wider fan-out eats the gap that pitch
+  # exists to hold. Before M13b the derived pair was 0.289 mm and 0.2 was genuinely
+  # narrower; the coplanar model derives 0.185 mm, and the fan-out follows it down.
   pcie_tx:
     trace_width_mm: 0.2
     clearance_mm: 0.15
@@ -82,11 +96,12 @@ net_classes:
     priority: 95
     rip_up: protected
     description: PCIe Gen3 transmit, 85 ohm differential, which on 0.2104 mm of 7628
-      prepreg works out at a 0.289 mm trace beside a 0.15 mm gap. The gap is 0.15 and
-      not 0.2 for a mechanical reason - 0.289 + 0.15 is a 0.439 mm pitch, and a pair
-      that starts between two pads 0.5 mm apart cannot be wider than the pads it
-      starts from. At a 0.2 mm gap the pitch comes to 0.522 mm and the coupled
-      router refuses the pair, correctly. The uncoupled budget
+      prepreg with ground poured 0.15 mm away on each side works out at a 0.185 mm
+      trace beside a 0.15 mm gap. The gap is 0.15 and not 0.2 for a mechanical reason
+      - a pair that starts between two pads 0.5 mm apart cannot be wider than the pads
+      it start from, and at a 0.2 mm gap the coupled router refuses the pair. The
+      0.289 mm this class carried before M13b was the same target solved as a bare
+      microstrip, on a board that has never been one. The uncoupled budget
       is the largest on the board because this pair leaves a 0.5 mm pitch at both the
       controller and the coupling capacitors.
 
@@ -126,9 +141,10 @@ net_classes:
     prefer_layers: [F.Cu]
     priority: 90
     rip_up: protected
-    description: SATA III, 100 ohm differential, which on this stackup is a 0.239 mm
-      trace at the same 0.2 mm gap. Eight of these, four ports, all on the front layer
-      over the ground plane. The skew budget is 0.25 mm and not the 0.127 mm that
+    description: SATA III, 100 ohm differential, which on this stackup with ground
+      poured 0.15 mm away on each side is a 0.138 mm trace at the same 0.2 mm gap -
+      0.239 mm before M13b gave the derivation a coplanar model. Eight of these, four
+      ports, all on the front layer over the ground plane. The skew budget is 0.25 mm and not the 0.127 mm that
       the five-mil rule of thumb would give. A SATA III unit interval is 200 ps and
       the standard allows a good fraction of that within a pair, which in this
       laminate is well over a millimetre. 0.25 mm is still an order of magnitude

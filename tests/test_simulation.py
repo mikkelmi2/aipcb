@@ -13,6 +13,7 @@ only in the exported files.
 
 from __future__ import annotations
 
+import cmath
 import csv
 import json
 import math
@@ -28,7 +29,16 @@ from aipcb.diagnostics import Report
 from aipcb.kicad.sexpr import dump, parse
 from aipcb.model.layout import Stackup, StackupLayer
 from aipcb.model.simulation import SimulationSettings
-from aipcb.si.inputs import dielectrics, netinfo_json, simulation_json, stackup_json
+from aipcb.si.inputs import (
+    CELLS_ACROSS_GAP,
+    CELLS_ACROSS_TRACE,
+    dielectrics,
+    grid_optimal_um,
+    max_steps,
+    netinfo_json,
+    simulation_json,
+    stackup_json,
+)
 from aipcb.si.pairs import logical_pairs
 from aipcb.si.results import SParameters, analyse, read_sparameters, write_touchstone
 from aipcb.si.runner import nets_in_gerbers, slice_digest
@@ -356,7 +366,60 @@ class TestSolverInputs:
         port = payload["ports"][0]
         assert port["width"] == pytest.approx(sliced.ports[0].width_mm * 1000)
         assert port["length"] == pytest.approx(settings.launch_mm * 1000)
-        assert payload["grid"]["optimal"] == settings.grid_optimal_um
+        # The cell is micrometres too, and since M13b it is *derived* rather than
+        # copied: never coarser than the setting, fine enough for the geometry.
+        assert 0 < payload["grid"]["optimal"] <= settings.grid_optimal_um
+        assert payload["grid"]["optimal"] == pytest.approx(
+            grid_optimal_um(sliced, settings)
+        )
+
+    @needs_kicad_libraries
+    def test_the_mesh_is_derived_from_the_trace_and_the_gap(self, routed_pcie) -> None:
+        """M13b. A fixed cell returned 12.2 ohm for an 85 ohm line; see ADR 0012.
+
+        The rule is six cells across the trace and five across the gap, and what it
+        has to guarantee is that a *narrower* pair gets a *finer* mesh without
+        anybody remembering to ask for one.
+        """
+        netlist, board = routed_pcie
+        settings = netlist.simulation.for_class("sata")
+        pair = next(p for p in logical_pairs(netlist) if p.name.startswith("SATA0_TX"))
+        sliced = build_slice(board, netlist, pair, settings, port_impedance_ohm=50.0)
+
+        cell = grid_optimal_um(sliced, settings)
+        assert cell < settings.grid_optimal_um, "this pair is fine enough to need it"
+        assert sliced.ports[0].width_mm * 1000 / cell >= CELLS_ACROSS_TRACE
+        assert sliced.pair_gap_mm is not None
+        assert sliced.pair_gap_mm * 1000 / cell >= CELLS_ACROSS_GAP
+
+        # And the step limit follows it, because an FDTD timestep is set by the
+        # cell: a fixed limit would make the finer run stop earlier, not cost less.
+        assert max_steps(sliced, settings) > settings.max_steps
+
+    @needs_kicad_libraries
+    def test_the_rule_is_never_coarser_than_the_setting(self, routed_mcu) -> None:
+        """A design that asks for a fine mesh gets one; the rule only refines.
+
+        `examples/mcu-4layer` is the board M12 calibrated on, and its 0.25 mm pair
+        at a 0.2 mm gap comes out at **41.6 um** rather than the declared 50 --
+        wide geometry, but not wide enough to be left alone. That is inside the
+        25-100 um band M12's own convergence sweep covered on this exact pair, over
+        which the answer moved 5.3 %, so the calibration still bounds what runs; it
+        is not the same as the default being untouched, and the number is asserted
+        here rather than assumed anywhere.
+        """
+        netlist, board = routed_mcu
+        settings = netlist.simulation.for_class("usb")
+        pair = next(p for p in logical_pairs(netlist) if "USB" in p.name)
+        sliced = build_slice(board, netlist, pair, settings, port_impedance_ohm=45.0)
+
+        assert grid_optimal_um(sliced, settings) == pytest.approx(41.6, abs=0.5)
+        assert 25.0 <= grid_optimal_um(sliced, settings) <= 50.0
+
+        # Ask for finer and the rule stands aside: it refines, it never coarsens.
+        fine = settings.model_copy(update={"grid_optimal_um": 10.0})
+        assert grid_optimal_um(sliced, fine) == 10.0
+        assert max_steps(sliced, fine) == fine.max_steps
 
     @needs_kicad_libraries
     def test_the_driven_end_is_both_halves_of_the_pair(self, routed_pcie) -> None:
@@ -683,3 +746,372 @@ class TestSimulateCli:
         )
         assert run.returncode == 2
         assert "no differential pair" in run.stderr
+
+
+# ---------------------------------------------------------------------------
+# M13c: the skew verdict, read across frequency
+# ---------------------------------------------------------------------------
+
+
+def _pair_with_skew(
+    delay_ps: float,
+    floor_db: float = -300.0,
+    points: int = 401,
+    transit_ps: float = 120.0,
+):
+    """A pair whose only defect is a known intra-pair delay, plus a flat floor.
+
+    Written out rather than solved, so the answer the fit has to recover is known
+    exactly. Skew converts differential to common as ``|sin(pi f dt)|``; the floor
+    stands for everything else a real board converts -- launch asymmetry, via
+    barrels, the pour around each trace -- and is flat, which is what makes the two
+    separable at all.
+
+    The columns are chosen backwards from the mixed-mode combinations the analyser
+    takes, so that ``Sdd21`` comes out as the transmission and ``Scd21`` as the
+    conversion:
+
+        Sdd21 = (S10 - S12 - S30 + S32) / 2
+        Scd21 = (S10 - S12 + S30 - S32) / 2
+
+    ``transit_ps`` is the one-way propagation, carried as a phase ramp so the group
+    delay the analyser measures is a real number rather than zero.
+    """
+    frequencies = [5e8 + i * 2e7 for i in range(points)]
+    floor = 10 ** (floor_db / 20)
+    values: dict[tuple[int, int], list[complex]] = {}
+    for reflected in ((0, 0), (2, 0), (0, 2), (2, 2)):
+        values[reflected] = [0j for _ in frequencies]
+    through: list[complex] = []
+    converted: list[complex] = []
+    for hz in frequencies:
+        conversion = math.hypot(math.sin(math.pi * hz * delay_ps * 1e-12), floor)
+        magnitude = math.sqrt(max(0.0, 1.0 - conversion**2))
+        phase = cmath.exp(-2j * math.pi * hz * transit_ps * 1e-12)
+        through.append(magnitude * phase)
+        converted.append(conversion * phase)
+    values[(1, 0)] = [(t + c) / 2 for t, c in zip(through, converted, strict=True)]
+    values[(1, 2)] = [-(t + c) / 2 for t, c in zip(through, converted, strict=True)]
+    values[(3, 0)] = [-(t - c) / 2 for t, c in zip(through, converted, strict=True)]
+    values[(3, 2)] = [(t - c) / 2 for t, c in zip(through, converted, strict=True)]
+    return SParameters(frequencies=frequencies, excited=(0, 2), ports=4, values=values)
+
+
+class TestSkewFit:
+    """M13c. The verdict M12 could not take from a scalar.
+
+    M12's answer to "does simulation discriminate the two pairs M11 delivered over
+    budget" was no, and worse than no: the three links its `mode_conversion` scalar
+    flagged were the three *best*-matched pairs on the board. The cause was not that
+    the physics is invisible -- `REFCLKP/N` tracks `|sin(pi f dt)|` to within 3.2 dB
+    across its band -- it was that a worst-in-band maximum reads the floor, and the
+    floor varied by more than 25 dB between pairs while the skew moved it by 3.
+    """
+
+    def test_a_known_delay_is_recovered_from_the_curve(self) -> None:
+        from aipcb.si.results import _mixed_mode, fit_skew
+
+        for delay_ps in (1.0, 2.0, 5.0, 10.0):
+            sp = _pair_with_skew(delay_ps)
+            mixed = _mixed_mode(sp)
+            assert mixed is not None
+            _, _, sdd21, scd21 = mixed
+            fit = fit_skew(sp.frequencies, sdd21, scd21, list(range(len(sp.frequencies))))
+            assert fit is not None
+            assert fit.delay_ps == pytest.approx(delay_ps, abs=0.05), delay_ps
+            assert fit.confident
+
+    def test_a_pair_with_no_skew_fits_no_skew(self) -> None:
+        from aipcb.si.results import _mixed_mode, fit_skew
+
+        sp = _pair_with_skew(0.0, floor_db=-30.0)
+        mixed = _mixed_mode(sp)
+        assert mixed is not None
+        _, _, sdd21, scd21 = mixed
+        fit = fit_skew(sp.frequencies, sdd21, scd21, list(range(len(sp.frequencies))))
+        assert fit is not None
+        assert not fit.confident, fit.to_dict()
+
+    def test_a_skew_buried_under_the_floor_is_an_upper_bound(self) -> None:
+        """The honest third answer, and the one a scalar cannot express."""
+        from aipcb.si.results import _mixed_mode, fit_skew
+
+        sp = _pair_with_skew(0.05, floor_db=-25.0)
+        mixed = _mixed_mode(sp)
+        assert mixed is not None
+        _, _, sdd21, scd21 = mixed
+        fit = fit_skew(sp.frequencies, sdd21, scd21, list(range(len(sp.frequencies))))
+        assert fit is not None
+        assert not fit.confident, fit.to_dict()
+
+    def test_the_floor_is_recovered_too(self) -> None:
+        from aipcb.si.results import _mixed_mode, fit_skew
+
+        sp = _pair_with_skew(5.0, floor_db=-30.0)
+        mixed = _mixed_mode(sp)
+        assert mixed is not None
+        _, _, sdd21, scd21 = mixed
+        fit = fit_skew(sp.frequencies, sdd21, scd21, list(range(len(sp.frequencies))))
+        assert fit is not None
+        assert fit.floor_db == pytest.approx(-30.0, abs=1.0), fit.to_dict()
+
+    def test_the_fit_is_deterministic(self) -> None:
+        from aipcb.si.results import _mixed_mode, fit_skew
+
+        sp = _pair_with_skew(3.0, floor_db=-35.0)
+        mixed = _mixed_mode(sp)
+        assert mixed is not None
+        _, _, sdd21, scd21 = mixed
+        band = list(range(len(sp.frequencies)))
+        first = fit_skew(sp.frequencies, sdd21, scd21, band)
+        second = fit_skew(sp.frequencies, sdd21, scd21, band)
+        assert first == second
+
+    def test_the_verdict_is_taken_against_the_classs_own_budget(self) -> None:
+        settings = SimulationSettings().for_class("x").model_copy(
+            update={"stop_hz": 8e9}
+        )
+        # 5 ps over 40 mm of conductor -- 20 mm each way -- at ~6 ps/mm is a hair
+        # under a millimetre of length mismatch.
+        metrics = analyse(
+            _pair_with_skew(5.0),
+            pair="X",
+            net_class="c",
+            port_impedance_ohm=50.0,
+            target_ohm=100.0,
+            settings=settings,
+            length_mm=40.0,
+            geometric_skew_mm=0.9,
+            max_skew_mm=0.25,
+        )
+        assert metrics is not None
+        assert metrics.skew_fit is not None
+        assert metrics.verdicts["skew_fit"] == "warn"
+        assert metrics.fitted_skew_mm is not None
+        assert metrics.fitted_skew_mm > 0.25
+
+    def test_a_pair_inside_its_budget_passes(self) -> None:
+        settings = SimulationSettings().for_class("x").model_copy(
+            update={"stop_hz": 8e9}
+        )
+        metrics = analyse(
+            _pair_with_skew(5.0),
+            pair="X",
+            net_class="c",
+            port_impedance_ohm=50.0,
+            target_ohm=100.0,
+            settings=settings,
+            length_mm=40.0,
+            max_skew_mm=5.0,
+        )
+        assert metrics is not None
+        assert metrics.verdicts["skew_fit"] == "pass"
+
+    def test_the_scalar_verdict_is_labelled_low_confidence(self) -> None:
+        """It stays, and it stops pretending to be a skew verdict."""
+        settings = SimulationSettings().for_class("x").model_copy(
+            update={"stop_hz": 8e9, "mode_conversion_db": -40.0}
+        )
+        metrics = analyse(
+            _pair_with_skew(5.0),
+            pair="X",
+            net_class="c",
+            port_impedance_ohm=50.0,
+            target_ohm=100.0,
+            settings=settings,
+            length_mm=40.0,
+        )
+        assert metrics is not None
+        assert metrics.verdicts["mode_conversion"] == "warn-low-confidence"
+
+    def test_delay_becomes_a_length_with_the_pairs_own_propagation(self) -> None:
+        """Both halves are counted in the conductor length; the signal travels one."""
+        settings = SimulationSettings().for_class("x").model_copy(
+            update={"stop_hz": 8e9}
+        )
+        metrics = analyse(
+            _pair_with_skew(5.0),
+            pair="X",
+            net_class="c",
+            port_impedance_ohm=50.0,
+            target_ohm=100.0,
+            settings=settings,
+            length_mm=40.0,
+            max_skew_mm=0.25,
+        )
+        assert metrics is not None
+        assert metrics.ps_per_mm is not None
+        assert metrics.delay_ns is not None
+        assert metrics.ps_per_mm == pytest.approx(
+            metrics.delay_ns * 1000 / 20.0, rel=1e-9
+        )
+
+
+# ---------------------------------------------------------------------------
+# M13d: the container outlives nothing
+# ---------------------------------------------------------------------------
+
+
+def _runtime_and_image() -> tuple[str, str] | None:
+    """A container runtime with the pinned image, or ``None`` to skip."""
+    from aipcb.si import IMAGE
+    from aipcb.si.runner import ContainerMissing, container_digest, find_container
+
+    try:
+        runtime = find_container()
+        container_digest(runtime, IMAGE)
+    except (ContainerMissing, OSError):
+        return None
+    return runtime, IMAGE
+
+
+needs_container = pytest.mark.skipif(
+    _runtime_and_image() is None,
+    reason="no container runtime with the pinned gerber2ems image",
+)
+
+
+class TestContainerLifetime:
+    """The solver is a child of the runtime, not of this process (M13d).
+
+    Nothing about `aipcb` dying stops it. M12 cleaned up on the timeout path only,
+    and the M10-M12 chain paid for that twice: a killed session left a sixteen-core
+    FDTD run going eleven minutes later, and a relaunch then had two containers
+    writing one working directory.
+    """
+
+    def test_the_block_reaps_on_the_way_out(self, monkeypatch) -> None:
+        from aipcb.si import runner
+
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            runner.subprocess, "run", lambda cmd, **kw: calls.append(list(cmd))
+        )
+        with runner.running_container("podman", "aipcb-si-test"):
+            assert "aipcb-si-test" in runner._LIVE
+        assert calls == [["podman", "rm", "-f", "aipcb-si-test"]]
+        assert "aipcb-si-test" not in runner._LIVE
+
+    def test_it_reaps_on_an_exception_too(self, monkeypatch) -> None:
+        from aipcb.si import runner
+
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            runner.subprocess, "run", lambda cmd, **kw: calls.append(list(cmd))
+        )
+        with pytest.raises(KeyboardInterrupt), runner.running_container(
+            "podman", "aipcb-si-boom"
+        ):
+            raise KeyboardInterrupt
+        assert calls == [["podman", "rm", "-f", "aipcb-si-boom"]]
+
+    def test_reaping_twice_is_harmless(self, monkeypatch) -> None:
+        from aipcb.si import runner
+
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            runner.subprocess, "run", lambda cmd, **kw: calls.append(list(cmd))
+        )
+        with runner.running_container("podman", "aipcb-si-once"):
+            pass
+        assert runner.reap_containers() == []
+        assert len(calls) == 1
+
+    def test_a_busy_directory_is_refused_rather_than_shared(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """The one path that survives SIGKILL, which nothing can catch."""
+        from aipcb.si import runner
+
+        monkeypatch.setattr(
+            runner, "containers_on", lambda runtime, work: ["aipcb-si-someone-else"]
+        )
+        with pytest.raises(runner.ContainerBusy) as caught:
+            runner.run_gerber2ems(tmp_path, runtime="podman")
+        assert "aipcb-si-someone-else" in str(caught.value)
+        assert str(tmp_path) in str(caught.value)
+
+    def test_the_preflight_asks_the_runtime_about_this_directory(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        from aipcb.si import runner
+
+        seen: dict[str, list[str]] = {}
+
+        class Result:
+            returncode = 0
+            stdout = "aipcb-si-1\naipcb-si-2\n"
+
+        def fake_run(cmd, **kw):
+            seen["cmd"] = list(cmd)
+            return Result()
+
+        monkeypatch.setattr(runner.subprocess, "run", fake_run)
+        assert runner.containers_on("podman", tmp_path) == ["aipcb-si-1", "aipcb-si-2"]
+        assert f"label={runner.WORK_LABEL}={tmp_path.resolve()}" in seen["cmd"]
+
+    @needs_container
+    def test_a_killed_client_leaves_no_orphan(self, tmp_path) -> None:
+        """The milestone's own test: kill a run mid-solve, assert nothing survives.
+
+        Driven through a real container rather than a fake one, because what is
+        under test is whether a *process* dying takes a *container* with it, and a
+        monkeypatched ``subprocess.run`` cannot answer that.
+        """
+        import os
+        import signal
+        import time
+
+        found = _runtime_and_image()
+        assert found is not None
+        runtime, image = found
+        work = tmp_path / "solving"
+        work.mkdir()
+
+        script = f"""
+import os, subprocess, sys, time
+sys.path.insert(0, {str(REPO_ROOT / "src")!r})
+from aipcb.si.runner import running_container, containers_on, WORK_LABEL
+work = {str(work.resolve())!r}
+name = f"aipcb-si-{{os.getpid()}}-killtest"
+with running_container({runtime!r}, name):
+    subprocess.Popen(
+        [{runtime!r}, "run", "--rm", "--name", name,
+         "--label", f"{{WORK_LABEL}}={{work}}", "--entrypoint", "sleep",
+         {image!r}, "600"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    for _ in range(100):
+        if containers_on({runtime!r}, __import__("pathlib").Path(work)):
+            break
+        time.sleep(0.2)
+    print("up", flush=True)
+    time.sleep(120)
+"""
+        path = tmp_path / "solve.py"
+        path.write_text(script, encoding="utf-8")
+        child = subprocess.Popen(
+            [sys.executable, str(path)], stdout=subprocess.PIPE, text=True
+        )
+        try:
+            assert child.stdout is not None
+            assert child.stdout.readline().strip() == "up"
+            child.send_signal(signal.SIGTERM)
+            child.wait(timeout=60)
+        finally:
+            if child.poll() is None:  # pragma: no cover - only on a hang
+                child.kill()
+                child.wait(timeout=30)
+
+        from aipcb.si.runner import containers_on
+
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if not containers_on(runtime, work):
+                break
+            time.sleep(0.5)
+        orphans = containers_on(runtime, work)
+        for name in orphans:  # pragma: no cover - only when the test fails
+            subprocess.run([runtime, "rm", "-f", name], capture_output=True)
+        assert not orphans, orphans
+        assert os.getpid() != child.pid

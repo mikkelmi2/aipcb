@@ -190,6 +190,15 @@ class HighSpeedReport:
     """Everything M11e measured, in one object."""
 
     pairs: list[PairGeometry] = field(default_factory=list)
+    classes: dict[str, dict[str, Any]] = field(default_factory=dict)
+    """Each controlled-impedance class's resolved target, model included.
+
+    The model matters enough to be published rather than inferred. Before M13b
+    every class was solved as a bare microstrip whether or not the board poured
+    ground beside it, and M12 measured what that cost. A reader who wants to know
+    which of the two produced a width should be able to read it, not work it out
+    from the `pours:` block.
+    """
     gaps: list[ReferenceGap] = field(default_factory=list)
     stubs: list[ViaStub] = field(default_factory=list)
     projected_mm: float = 0.0
@@ -202,6 +211,7 @@ class HighSpeedReport:
             "method": "rule-based geometry checks, not electromagnetic simulation",
             "reference_checked": self.reference_checked,
             "projected_mm": round(self.projected_mm, 4),
+            "classes": dict(sorted(self.classes.items())),
             "pairs": [pair.to_dict() for pair in self.pairs],
             "reference_gaps": [gap.to_dict() for gap in self.gaps],
             "via_stubs": [stub.to_dict() for stub in self.stubs],
@@ -260,6 +270,7 @@ def analyse_highspeed(
                 name, controlled[name], tracks.get(name, []), copper, own, result
             )
     result.pairs = _pairs(audits, targets, tracks, skew, netlist)
+    result.classes = {name: target.to_dict() for name, target in targets.items()}
     return result
 
 
@@ -601,10 +612,50 @@ def report_highspeed(
     if not result.pairs and not result.gaps and not result.stubs:
         return
 
+    _report_models(result, netlist, report)
     for pair in result.pairs:
         _report_pair(pair, netlist, report)
     _report_reference(result, netlist, report)
     _report_stubs(result, netlist, report)
+
+
+def _report_models(
+    result: HighSpeedReport, netlist: Netlist, report: Report
+) -> None:
+    """Say which impedance model produced each class's geometry (M13b).
+
+    Published rather than inferred. A width is a number with a model behind it,
+    and before M13b the model was always bare microstrip even on a board that
+    poured ground 0.15 mm from the pair -- which M12 measured as a 40 % error and
+    nothing in the output said anything at all.
+    """
+    for name, target in sorted(result.classes.items()):
+        pour = target.get("pour_gap_mm")
+        where = (
+            f"ground poured {pour} mm from each side over "
+            f"{target['height_mm']} mm of laminate"
+            if pour is not None
+            else f"nothing poured alongside, over {target['height_mm']} mm of laminate"
+        )
+        sensitivity = target.get("gap_sensitivity")
+        report.info(
+            "hs-impedance-model",
+            f"net class {name!r}: {target['target_ohm']:.0f} ohm solved as "
+            f"{target['model']} -- {target['width_mm']} mm at a "
+            f"{target['gap_mm']} mm pair gap, with {where}"
+            + (
+                f"; one etch tolerance on the pour gap is worth {sensitivity:.1%}"
+                if sensitivity is not None
+                else ""
+            ),
+            loc=_loc(netlist, name),
+            path=("net_classes", name),
+            hint="`cpwg` is a coplanar waveguide with ground -- the pour beside the "
+            "pair is part of the geometry; `microstrip` means nothing is poured on "
+            "that layer",
+            net_class=name,
+            model=target["model"],
+        )
 
 
 def _severity(netlist: Netlist, net_class: str) -> Severity:
@@ -672,20 +723,10 @@ def _report_pair(pair: PairGeometry, netlist: Netlist, report: Report) -> None:
             path=path,
             pair=pair.key,
         )
-    if (
-        pair.skew_mm is not None
-        and pair.max_skew_mm is not None
-        and pair.skew_mm > pair.max_skew_mm
-    ):
-        report.add(
-            _severity(netlist, pair.net_class),
-            "hs-skew",
-            f"{pair.key} is {pair.skew_mm:.3f} mm out of length against its "
-            f"{pair.max_skew_mm:g} mm budget, after meanders",
-            loc=_loc(netlist, pair.net_class),
-            path=path,
-            pair=pair.key,
-        )
+    # No `hs-skew` here. The number this report carries in `pairs[].skew_mm` is the
+    # router's own `measure_skew` figure, and re-reporting it made one pair produce
+    # two findings that looked like two measurements. The router says it once,
+    # against the same budget and with the same severity policy. M13c.
 
 
 def _report_reference(
