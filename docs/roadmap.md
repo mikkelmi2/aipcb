@@ -129,14 +129,19 @@ has no signal layer left to cross on. A real card uses an inner signal layer or 
 wire link. Worth recording because it is the first board in this repository where
 the honest answer to "route this net" is "not on this stackup".
 
-**`_repair` can produce a route that crosses another net.** Found on that same
-net before it was dropped: the second-pass repair (`route/plan.py::_repair`)
-routed PRSNT across two already-placed `REFCLK` tracks, and KiCad reported two
-`tracks_crossing` errors. The repair builds its private field from the base
-environment *plus* everything placed so far, so the copper it crossed was in the
-obstacle set; something between that field and the realized geometry is not
-honouring it. Not chased to the bottom, because it is router work rather than
-M11's, and recorded here rather than left as a surprise.
+**~~`_repair` can produce a route that crosses another net.~~** **Fixed in M13a**,
+and the cause was not in `_repair`. Finished copper is a *list* of obstacles and
+the free-space calculation wants a *dict keyed by name*, so two pieces that shared
+a name became one and the loser vanished from every triangulation built afterwards.
+A differential pair split across two layers by a via transition produces exactly
+that: one `RoutedConnection` per layer, both naming their coupled leg after the
+same two pair terminals. On `examples/pcie-sata` four pieces of copper were being
+dropped that way, silently, since M11c -- the B.Cu halves of `REFCLKP/N` and
+`PCIE_RXP/N` -- and the repair pass that routed `PRSNT` across them was obeying an
+obstacle set that no longer had them in it. `route/geometry.py::with_copper` now
+suffixes rather than overwrites, `_accept` names copper by layer as well, and
+`route/invariant.py` asks the finished board whether any two nets overlap. See
+[`m13.md`](reports/m13.md).
 
 ## Generated files
 
@@ -157,6 +162,27 @@ numbered `MP` that share one UUID -- and `Connector_PCBEdge:BUS_PCI` has 240 pad
 over 120 numbers, which is squarely in the defect's path. Both cases are asserted
 as tests in `tests/test_highspeed.py`.
 
+**M13d re-verified how far it reached during the M10-M12 chain, which was the open
+question.** Every generated element on all eleven examples was walked and its UUID
+attributed to its owner. 34 duplicated UUIDs across six examples, and **every one
+of them is a pad**: the JST shell tabs on `pcie-sata` (`J2.MP` through `J5.MP`, two
+tabs each), the QFN's unnumbered mechanical pads against its numbered ones, and the
+same shapes on `enclosure`, `ldo-supply`, `mcu-4layer`, `qfn-fanout` and
+`usb-port`. **No stitching via, no zone, and no edge-connector finger is affected**
+-- the M11 reading holds, now measured across the whole corpus rather than argued
+from two footprints.
+
+**The same class of defect turned up in a place nobody had looked: track
+segments.** Four `segment` items on `examples/pcie-sata` share a UUID in pairs, one
+on F.Cu and one on B.Cu. `route/emit.py::track_uuid` keys a track on
+`(net, leg.start, leg.end, index)`, and a differential pair split across two layers
+by a via transition names its coupled leg after the same two pair terminals on both
+-- exactly the collision M13a found in the *obstacle* set and fixed there. It is
+not fixed here, because the obstacle name is internal and the track UUID is in the
+file: adding the layer to it changes the UUID of every track this tool has ever
+written. It belongs in the same milestone as the pad scheme, for the same reason
+and with the same fix (key on the instance, not on a name that repeats).
+
 ## High speed
 
 **Electromagnetic simulation** landed in M12 as `aipcb simulate`, so what is left
@@ -166,6 +192,14 @@ here is what it deliberately does not do.
 neighbours' copper, so their loading is in the answer, but nothing excites them and
 nothing reports coupling between two pairs. An eye needs a driver model and a
 channel; M12 produces the channel. All three are the obvious next stage.
+
+**Promoting a skew finding to an error.** M13c built the frequency-domain verdict
+that M12's scalar could not be: fit the mode-conversion curve against the
+`|sin(pi f dt)|` family, extract the implied delay, and compare *that* to the
+class's budget. It reports as a warning and stays one. Promotion is gated on the
+fit's false-positive behaviour being measured across a full board, and
+`docs/reports/m13.md` records how much of that measurement exists.
+[ADR 0012](decisions/0012-coplanar-impedance.md), Decision 5.
 
 **Automatic fixes from simulation results.** Deliberately absent: the JSON exists so
 that an agent loop can read a finding and change the source, which is where a fix
@@ -193,17 +227,56 @@ writes them into every dielectric, and types all of them `core` even on a four-l
 stack that alternates core and prepreg. `loss_tangent` became reachable from source
 in M12; these two did not, for the same byte-stability reason.
 
-**Impedance formulas that know about coplanar ground.** Both closed forms aipcb
-carries are bare microstrip. Every bundled example pours ground up to its pairs at
-the class clearance, and M12 measured what that does: the simulated impedance lands
-well below what the formula derived the width for. The width a design is built with
-is therefore systematically narrow. Fixing it means a coplanar-waveguide-with-ground
-model and regenerating every controlled-impedance example.
+**~~Impedance formulas that know about coplanar ground.~~** **Built in M13b**;
+[ADR 0012](decisions/0012-coplanar-impedance.md). The derivation now reads the
+`pours:` block, solves a coplanar model when ground will be poured beside the
+class's layer, and publishes which model it used. One correction to what this
+entry used to say: the widths were systematically **wide**, not narrow --
+impedance falls as a trace widens, so a board reading below its target was built
+too wide. `examples/pcie-sata` went from 0.2888 mm to 0.1846 mm on its 85 ohm
+classes and from 0.2390 mm to 0.1379 mm on its 100 ohm one.
+
+**A coplanar model for a pair on an inner layer.** M13b's model is a *surface*
+coplanar waveguide with ground: a trace with ground beside it and one plane under
+it. A pair between two planes with ground beside it is coplanar stripline, a
+different formula again, and the existing "impedance on an inner layer" entry below
+now has two gaps in it rather than one.
+
+**Deriving the pour clearance from the impedance rather than the other way round.**
+M13b made the pour gap an input to the width, and validation warns when it is tight
+enough that an etch tolerance on it moves the impedance. Nothing solves the other
+direction -- "how far should the pour stand off so this class is not sensitive to
+it" -- which is a design question a tool could answer and does not.
 
 **A digest-pinned Containerfile.** Antmicro's Dockerfile pins its base image by tag
 and installs from moving apt archives, so `aipcb simulate` is pinned by *image*, not
 reproducibly rebuildable. Carrying our own Containerfile is the only fix and means
 maintaining a fork of their build.
+
+**~~A killed client leaves its container running.~~** **Fixed in M13d.** A context
+manager reaps on any exit, `SIGINT`/`SIGTERM` handlers and an `atexit` hook reap on
+interruption, and a pre-flight check refuses to start a second solver against a
+directory something is already writing -- which is the one of the three that
+survives `SIGKILL`, since nothing can catch that. `si/runner.py`, and the
+containers now carry an `aipcb.si.work` label so the pre-flight can find an orphan
+whoever started it.
+
+**Simulation cost now depends on the geometry, and can be large.** M13b found the
+fixed 50 um mesh returning **12 Ohm for an 85 Ohm line** on the narrower traces the
+coplanar model derives, with a clean exit and a converged energy decay
+([ADR 0012](decisions/0012-coplanar-impedance.md), Decision 4). The mesh is now
+derived from the trace and gap, which makes it correct and makes a fine-geometry
+board several times more expensive to simulate. Nothing yet *warns* about the cost
+before a batch starts, and a per-pair cell-count estimate would be cheap to print.
+
+**The mode-conversion floor is not explained.** M13c fits an intra-pair delay out
+of the frequency response and reports it beside M11e's geometric skew, which is
+what makes the two verification layers comparable. What neither layer explains is
+where the floor underneath comes from -- launch geometry, via barrels, the pour's
+asymmetry around each trace, truncation noise -- and until it is understood the fit
+is bounded from below by it. Characterising it means differencing two runs of one
+pair that differ in exactly one thing, which is the experiment M12 named and did
+not run.
 
 **A second impedance formula.** `estimate_gap`, the M8 path that guesses a gap
 from `impedance_ohm`, still uses Hammerstad while the controlled-impedance path

@@ -243,16 +243,27 @@ it is.
 
 ```
 simulating pcie-sata into examples/pcie-sata/out/si
-  PCIE_RXN+PCIE_RXP        simulated    62.3 s  Zdiff   61.5 ohm  (target 85, -27.6%)
-  PCIE_TXN+PCIE_TXP        simulated    52.0 s  Zdiff   66.6 ohm  (target 85, -21.6%)
-  REFCLKN+REFCLKP          simulated   131.4 s  Zdiff   50.9 ohm  (target 85, -40.1%)
+  PCIE_TXN+PCIE_TXP        simulated   128.2 s  Zdiff   80.0 ohm  (target 85, -5.8%)
+  PCIE_RXN+PCIE_RXP        simulated   220.9 s  Zdiff   72.8 ohm  (target 85, -14.4%)
+  REFCLKN+REFCLKP          simulated   473.6 s  Zdiff   49.8 ohm  (target 85, -41.4%)
   ...
 ```
 
-Those deviations are real and they are a finding about the *width solver*, not about
-the router: both closed forms aipcb derives a width from model a bare microstrip, and
-every one of these pairs has a ground pour within a class clearance of it. See
-[`docs/reports/m12.md`](docs/reports/m12.md).
+Those deviations used to be much larger — 66.6, 61.5 and 50.9 ohm on the same three
+links — and they were a finding about the *width solver*, not about the router. Both
+closed forms aipcb derived a width from modelled a **bare** microstrip, and every one
+of these pairs has a ground pour within a class clearance of it. M13b gave the
+derivation a coplanar model, which reads the `pours:` block, solves the pair against
+the ground beside it as well as the plane under it, and says in `check`'s output
+which of the two models each class used.
+
+What did not come free is the mesh. A coplanar-derived pair is narrower, and the cell
+size M12 calibrated on a wider one returns **12 ohm for an 85 ohm line** — converged,
+exit code zero, no warning. The mesh now follows the geometry.
+[ADR 0012](docs/decisions/0012-coplanar-impedance.md) and
+[`docs/reports/m13.md`](docs/reports/m13.md) carry both measurements, and the honest
+state of the third link: `REFCLK`'s slice traps energy and its number is not one to
+act on.
 
 Each pair is cut out of the routed board as a **slice** — a small self-contained
 `.kicad_pcb` carrying that pair, the copper near it, the planes it is referenced to
