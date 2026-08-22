@@ -72,6 +72,17 @@ def simulate(
             min=1,
         ),
     ] = None,
+    parallel: Annotated[
+        int,
+        typer.Option(
+            "--parallel",
+            "-j",
+            help="How many pairs to solve at once; 0 picks one per five cores. "
+            "Measured slower than sequential on the development machine (ADR 0011 "
+            "Decision 4a) -- FDTD runs out of memory bandwidth, not of cores.",
+            min=0,
+        ),
+    ] = 1,
     as_json: Annotated[
         bool, typer.Option("--json", help="Emit machine-readable JSON.")
     ] = False,
@@ -148,6 +159,7 @@ def simulate(
         force=force,
         dry_run=dry_run,
         timeout_s=timeout,
+        parallel=parallel,
         progress=announce,
         geometric_skew=geometric_skew,
     )

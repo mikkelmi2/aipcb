@@ -19,6 +19,8 @@ import json
 import math
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -332,12 +334,15 @@ class TestSlice:
                 for v in sliced.board.children("via")
                 if names.get(int(v.child("net").value() or 0)) == "GND"
             }
-            # The launch corridor legitimately removes vias, and says so.
-            cleared = any("via(s) were removed" in n for n in sliced.notes)
-            missing = want - got
-            assert not missing or cleared, (
-                f"{pair.name}: {sorted(missing)} are inside the slice on the board "
-                "and absent from the slice, with no note saying why"
+            # Both bands that remove a via record it now, so "missing" and
+            # "removed" can be compared rather than a note being taken on trust.
+            accounted = {
+                (round(v.at[0], 4), round(v.at[1], 4)) for v in sliced.removed_vias
+            }
+            unexplained = want - got - accounted
+            assert not unexplained, (
+                f"{pair.name}: {sorted(unexplained)} are inside the slice on the "
+                "board and absent from it, with nothing saying why"
             )
 
     def test_every_slice_has_a_ground_reference(self, routed_pcie) -> None:
@@ -413,6 +418,109 @@ class TestSlice:
                 assert not line.intersects(shape), (
                     f"foreign copper still runs through port {number}'s launch"
                 )
+
+    def test_a_via_the_clip_band_takes_is_named_and_counted(self, routed_pcie) -> None:
+        """M13.7. The band that ate 22 stitching vias silently now says which ones.
+
+        The launch corridor always counted its removals; the half-millimetre clip
+        band did not, and `REFCLK`'s slice reported `0 via(s) were removed` while
+        carrying none of the stitching inside its own window. `SATA0_RX` is the
+        case with the most of them on this board.
+        """
+        sliced = self._slice(routed_pcie, "SATA0_RXN+SATA0_RXP")
+        band = [v for v in sliced.removed_vias if v.why == "clip band"]
+        assert band, "SATA0_RX has vias in the clip band and reported none"
+
+        note = next((n for n in sliced.notes if "clip band" in n), "")
+        assert note, "the clip band took vias and the slice said nothing"
+        assert f"{len(band)} via(s)" in note
+        for via in band:
+            # Inside the window it claims, outside the inset that dropped it.
+            assert sliced.rect[0] <= via.at[0] <= sliced.rect[2]
+            assert sliced.rect[1] <= via.at[1] <= sliced.rect[3]
+            assert f"{via.at[0]:.3f}" in note
+        assert sliced.to_dict()["vias_removed"] == len(sliced.removed_vias)
+
+    def test_every_slice_on_the_corpus_has_one_connected_return_path(
+        self, routed_pcie
+    ) -> None:
+        """The invariant, asked of the board it was learnt on.
+
+        Not a restatement of `test_no_plane_in_a_slice_is_left_floating`: that one
+        reads the zones' *net tags*, and this one asks whether the copper is
+        actually joined -- which is the question a zone tagged `GND` on three
+        layers with no via through it answers wrongly.
+        """
+        from aipcb.si.integrity import inspect_return_path
+
+        netlist, _ = routed_pcie
+        for pair in logical_pairs(netlist):
+            sliced = self._slice(routed_pcie, pair.name, ohm=50.0)
+            path = inspect_return_path(sliced.board, sliced.metals)
+            assert not path.floating, (
+                f"{pair.name}: {[f.describe() for f in path.floating]}"
+            )
+            assert path.bonded >= set(sliced.metals), (
+                f"{pair.name}: the return path reaches only {sorted(path.bonded)}"
+            )
+
+    def test_a_slice_that_leaves_a_plane_floating_is_refused(
+        self, routed_pcie, monkeypatch
+    ) -> None:
+        """M13.6's defect, reconstructed, and refused instead of simulated.
+
+        `_grounded_planes` is what ties `In2.Cu` -- a `P3V3` supply plane no via on
+        this board reaches -- to the reference net. Turn it off and the slice is
+        the one M13.5 was simulating: a 5 x 25 mm plate between two grounded
+        planes, at no defined potential, named as `pcie_rx`'s reference. The
+        message has to carry the layer, the net and the area, because "a slice is
+        invalid" tells nobody which copper to look at.
+        """
+        from aipcb.si import slice as slice_module
+
+        monkeypatch.setattr(
+            slice_module, "_grounded_planes", lambda zones, netlist, numbers: (zones, ())
+        )
+        netlist, board = routed_pcie
+        pair = next(p for p in logical_pairs(netlist) if p.name == "PCIE_RXN+PCIE_RXP")
+        settings = netlist.simulation.for_class(pair.net_class)
+        with pytest.raises(SliceError) as exc:
+            build_slice(board, netlist, pair, settings, port_impedance_ohm=50.0)
+        assert exc.value.code == "si-slice-floating-copper"
+        assert exc.value.fatal and exc.value.status == "failed"
+        assert "In2.Cu" in exc.value.message
+        assert "P3V3" in exc.value.message
+        assert "mm2" in exc.value.message
+
+    def test_a_reference_the_slice_does_not_bond_is_refused(
+        self, routed_pcie, monkeypatch
+    ) -> None:
+        """The second clause: the plane the number is measured against has to be there.
+
+        A slice can have one connected return path and still not contain the layer
+        the class declares as its `reference:` -- a four-layer stackup sliced down
+        to two, a class pointing at a plane the window misses. The impedance would
+        then be a measurement against copper the model does not have.
+        """
+        import dataclasses
+
+        import aipcb.highspeed as highspeed
+
+        netlist, board = routed_pcie
+        pair = next(p for p in logical_pairs(netlist) if p.name == "PCIE_RXN+PCIE_RXP")
+        real = highspeed.target_for(netlist, pair.net_class)
+        assert real is not None and real.reference == "In2.Cu"
+        monkeypatch.setattr(
+            highspeed,
+            "target_for",
+            lambda *a, **kw: dataclasses.replace(real, reference="In7.Cu"),
+        )
+        settings = netlist.simulation.for_class(pair.net_class)
+        with pytest.raises(SliceError) as exc:
+            build_slice(board, netlist, pair, settings, port_impedance_ohm=50.0)
+        assert exc.value.code == "si-slice-reference-unbonded"
+        assert exc.value.fatal
+        assert "In7.Cu" in exc.value.message
 
     def test_an_unrouted_pair_is_refused_by_name(self, routed_mcu) -> None:
         netlist, _ = routed_mcu
@@ -1313,3 +1421,239 @@ with running_container({runtime!r}, name):
             subprocess.run([runtime, "rm", "-f", name], capture_output=True)
         assert not orphans, orphans
         assert os.getpid() != child.pid
+
+
+# ---------------------------------------------------------------------------
+# M13.7: several solvers at once, each on its own cores
+# ---------------------------------------------------------------------------
+
+
+class TestParallelSolvers:
+    """ADR 0011 declined `--parallel N` because openEMS "already uses every core".
+
+    It does not. The multithreaded engine benchmarks itself at startup and settles
+    on four to six threads of this machine's sixteen, whatever it is handed, so a
+    second solver runs on cores the first one declined. What this covers is the
+    bookkeeping around that: the slots are disjoint, the batch is still ordered by
+    pair rather than by whoever finished first, and nothing is pinned when the
+    batch is sequential.
+    """
+
+    def test_the_slots_are_disjoint_and_cover_the_machine(self) -> None:
+        from aipcb.si.runner import CPUS_PER_SOLVER, cpu_slots, default_parallel
+
+        assert default_parallel(16) == 16 // CPUS_PER_SOLVER
+        assert default_parallel(4) == 1
+        assert default_parallel(1) == 1
+
+        slots = cpu_slots(3, 16)
+        assert slots == ["0-4", "5-9", "10-14"]
+        seen: set[int] = set()
+        for slot in slots:
+            low, high = (int(v) for v in slot.split("-"))
+            cpus = set(range(low, high + 1))
+            assert not (cpus & seen), "two solvers were given the same core"
+            seen |= cpus
+
+    def test_a_sequential_batch_pins_nothing(self) -> None:
+        """One solver gets the machine, exactly as it did before this existed."""
+        from aipcb.si.runner import cpu_slots
+
+        assert cpu_slots(1, 16) == [""]
+        assert cpu_slots(4, 4) == ["", "", "", ""], "a slot narrower than two cores"
+
+    def test_the_cpuset_reaches_the_runtime(self, monkeypatch, tmp_path: Path) -> None:
+        from aipcb.si import runner
+
+        seen: list[list[str]] = []
+
+        class _Done:
+            returncode = 0
+            stdout = "Found port #1 position in pos file\n"
+            stderr = ""
+
+        def fake_run(cmd, **kw):
+            seen.append(list(cmd))
+            return _Done()
+
+        monkeypatch.setattr(runner.subprocess, "run", fake_run)
+        monkeypatch.setattr(runner, "containers_on", lambda runtime, work: [])
+        runner.run_gerber2ems(
+            tmp_path, runtime="podman", expect_ports=1, cpus="5-9"
+        )
+        command = next(c for c in seen if "run" in c)
+        assert "--cpuset-cpus" in command
+        assert command[command.index("--cpuset-cpus") + 1] == "5-9"
+
+        seen.clear()
+        runner.run_gerber2ems(tmp_path, runtime="podman", expect_ports=1)
+        command = next(c for c in seen if "run" in c)
+        assert "--cpuset-cpus" not in command
+
+    def test_the_mesh_size_comes_off_the_log_this_image_actually_writes(self) -> None:
+        """`RunOutcome.cells` was `None` on every run until this pattern was added.
+
+        Three phrasings were matched and the one openEMS prints was not among them,
+        so a field the manifest carries had never once been filled.
+        """
+        from aipcb.si.runner import _parse_log
+
+        cells, timesteps, _, _, _ = _parse_log(
+            "FDTD simulation size: 81x277x42 --> 942354 FDTD cells\n"
+            "Number of timesteps: 65146 ( --> 2.0% of maximum )\n"
+        )
+        assert cells == 942354
+        assert timesteps == 65146
+
+        # And the same line in scientific notation, which is what openEMS switches
+        # to above about a million cells -- in the same log, for a bigger slice.
+        bigger, _, _, _, _ = _parse_log(
+            "FDTD simulation size: 98x333x42 --> 1.37063e+06 FDTD cells\n"
+        )
+        assert bigger == 1370630
+
+    def test_throughput_and_thread_count_come_off_the_log(self) -> None:
+        """The numbers ADR 0011 was corrected with, read the way they were read."""
+        from aipcb.si.runner import _throughput
+
+        log = (
+            "[@ 5s] Timestep: 1521 || Speed:  260.3 MC/s (3.6e-03 s/TS) || "
+            "Energy: ~7e-23 (- 0.00dB)\n"
+            "[@ 9s] Timestep: 3549 || Speed:  619.0 MC/s (2.1e-03 s/TS) || "
+            "Energy: ~7e-20 (- 0.00dB)\n"
+            "[@14s] Timestep: 6084 || Speed:  640.6 MC/s (1.8e-03 s/TS) || "
+            "Energy: ~1e-19 (- 0.00dB)\n"
+            "Multithreaded Engine: Best performance found using 6 threads.\n"
+        )
+        speed, threads = _throughput(log)
+        assert speed == 619.0, "the median, so the warm-up sample does not move it"
+        assert threads == 6
+        assert _throughput("nothing here") == (None, None)
+
+    def test_a_parallel_batch_reports_in_pair_order(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        """Concurrency must not reach the manifest: same board in, same file out.
+
+        The pairs are made to finish in reverse order on purpose -- the last one
+        returns first -- and the batch still has to come back sorted the way
+        `logical_pairs` sorts.
+        """
+        from aipcb.si import run as run_module
+
+        netlist = compile_netlist(
+            REPO_ROOT / "examples" / "pcie-sata" / "design.yaml", Report()
+        )
+        order = [p.name for p in logical_pairs(netlist)]
+        assert len(order) > 3
+
+        def fake_one_pair(board, netlist_, pair, out_dir, report, **kw):
+            time.sleep(0.02 * (len(order) - order.index(pair.name)))
+            report.info("si-fake", f"{pair.name} ran on {kw.get('cpus') or 'the lot'}")
+            return run_module.PairResult(
+                pair=pair, status="simulated", directory=out_dir / pair.name
+            )
+
+        monkeypatch.setattr(run_module, "_one_pair", fake_one_pair)
+        monkeypatch.setattr(run_module, "find_container", lambda: "podman")
+        monkeypatch.setattr(run_module, "container_digest", lambda *a, **kw: "sha256:x")
+        monkeypatch.setattr(run_module, "arm_cleanup", lambda: None)
+        monkeypatch.setattr(run_module, "supports_cpuset", lambda *a, **kw: True)
+
+        report = Report()
+        batch = run_module.simulate_pairs(
+            parse('(kicad_pcb (version 20241229) (generator "aipcb"))'),
+            netlist,
+            tmp_path / "si",
+            report,
+            parallel=3,
+        )
+        assert [r.pair.name for r in batch.results] == order
+        assert [d.message.split()[0] for d in report.diagnostics] == order
+        assert batch.parallel == 3
+        assert batch.summary()["parallel"] == 3
+
+    def test_a_runtime_that_cannot_pin_says_so_and_still_runs_concurrently(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        """Rootless podman on cgroup v2 is the common case, and it cannot pin.
+
+        `--cpuset-cpus` is accepted by the CLI and refused by the OCI runtime,
+        because systemd delegates `cpu memory pids` to the user slice and not
+        `cpuset`. Falling back to unpinned concurrency is right -- the runs still
+        overlap -- and saying which of the two happened is what makes one machine's
+        numbers comparable to another's.
+        """
+        from aipcb.si import run as run_module
+
+        netlist = compile_netlist(
+            REPO_ROOT / "examples" / "pcie-sata" / "design.yaml", Report()
+        )
+        given: list[str] = []
+
+        def fake_one_pair(board, netlist_, pair, out_dir, report, **kw):
+            given.append(kw.get("cpus", "missing"))
+            return run_module.PairResult(
+                pair=pair, status="simulated", directory=out_dir / pair.name
+            )
+
+        monkeypatch.setattr(run_module, "_one_pair", fake_one_pair)
+        monkeypatch.setattr(run_module, "find_container", lambda: "podman")
+        monkeypatch.setattr(run_module, "container_digest", lambda *a, **kw: "sha256:x")
+        monkeypatch.setattr(run_module, "arm_cleanup", lambda: None)
+        monkeypatch.setattr(run_module, "supports_cpuset", lambda *a, **kw: False)
+
+        report = Report()
+        batch = run_module.simulate_pairs(
+            parse('(kicad_pcb (version 20241229) (generator "aipcb"))'),
+            netlist,
+            tmp_path / "si",
+            report,
+            parallel=3,
+        )
+        assert batch.parallel == 3
+        assert batch.pinned is False
+        assert batch.summary()["pinned"] is False
+        assert set(given) == {""}, "a runtime that cannot pin was handed a cpuset"
+        assert any(d.code == "si-cpuset-unavailable" for d in report.diagnostics)
+
+    def test_every_pair_gets_a_slot_of_its_own_while_it_runs(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        """The free-list: never two pairs on one cpuset, and a cached pair frees its."""
+        from aipcb.si import run as run_module
+
+        netlist = compile_netlist(
+            REPO_ROOT / "examples" / "pcie-sata" / "design.yaml", Report()
+        )
+        held: dict[str, str] = {}
+        clashes: list[tuple[str, str]] = []
+        lock = threading.Lock()
+
+        def fake_one_pair(board, netlist_, pair, out_dir, report, **kw):
+            cpus = kw.get("cpus") or ""
+            with lock:
+                if cpus in held:
+                    clashes.append((held[cpus], pair.name))
+                held[cpus] = pair.name
+            time.sleep(0.05)
+            with lock:
+                held.pop(cpus, None)
+            return run_module.PairResult(
+                pair=pair, status="simulated", directory=out_dir / pair.name
+            )
+
+        monkeypatch.setattr(run_module, "_one_pair", fake_one_pair)
+        monkeypatch.setattr(run_module, "find_container", lambda: "podman")
+        monkeypatch.setattr(run_module, "container_digest", lambda *a, **kw: "sha256:x")
+        monkeypatch.setattr(run_module, "arm_cleanup", lambda: None)
+        monkeypatch.setattr(run_module, "supports_cpuset", lambda *a, **kw: True)
+
+        run_module.simulate_pairs(
+            parse('(kicad_pcb (version 20241229) (generator "aipcb"))'),
+            netlist,
+            tmp_path / "si",
+            Report(),
+            parallel=3,
+        )
+        assert not clashes, f"two solvers shared a cpuset: {clashes}"

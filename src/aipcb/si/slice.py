@@ -10,8 +10,9 @@ Six things separate a slice from the board it came out of, and each is a deliber
 approximation worth stating out loud:
 
 * **The coupling capacitors become copper.** A pair split by ``role: ac_coupling``
-  parts is one conductor at signal frequencies; the bridge closes it. See
-  :mod:`aipcb.si.pairs`.
+  parts is one conductor at signal frequencies; the bridge closes it, at the width
+  and on the layer of the pads it lands on, in two halves that carry their nets.
+  See :mod:`aipcb.si.pairs` and :func:`_bridge_tracks`.
 * **Each end grows a straight, axis-aligned launch.** gerber2ems ports are
   microstrip ports and openEMS only builds them along an axis, so a pair that ends
   at a pad on a diagonal has nowhere to be fed from. The launch is the same width
@@ -41,6 +42,14 @@ return path has to be a single conductor.** Before them ``examples/pcie-sata``'s
 timesteps; after them the same slice decays past -39 dB and is still falling. Each
 half alone leaves the plateau where it was, which is why neither is optional.
 
+M13.7 stopped taking that on trust. :func:`_check_return_path` runs on every slice
+as it is generated and refuses one whose copper is not all bonded, or whose declared
+reference plane the model does not reach -- naming the layer, the net and the area
+rather than the rule. The same milestone made both bands that remove a via say so:
+the launch corridor always counted its removals and the half-millimetre clip band
+did not, which is how a slice missing every stitching via in its own window came to
+report ``0 via(s) were removed``.
+
 Everything is a pure function of the routed board and the source, so a slice is a
 reproducible artifact: same inputs, byte-identical output.
 """
@@ -59,7 +68,14 @@ from aipcb.model.simulation import ResolvedSimulation
 from aipcb.netlist import Netlist
 from aipcb.si.pairs import LogicalPair
 
-__all__ = ["Port", "Slice", "SliceError", "build_slice", "port_footprint"]
+__all__ = [
+    "Port",
+    "RemovedVia",
+    "Slice",
+    "SliceError",
+    "build_slice",
+    "port_footprint",
+]
 
 Point = tuple[float, float]
 
@@ -80,13 +96,29 @@ _EPS = 1e-4
 
 
 class SliceError(ValueError):
-    """A pair cannot be sliced, with the reason a report can print."""
+    """A pair cannot be sliced, with the reason a report can print.
 
-    def __init__(self, code: str, message: str, hint: str = "") -> None:
+    ``fatal`` separates the two kinds. An unrouted pair is a *warning*: there is
+    nothing to simulate and nothing is wrong with the tool. A slice that violates
+    an invariant -- floating copper, an unbonded reference -- is an **error**,
+    because the alternative to failing is handing the solver a board that does not
+    exist and publishing the number it comes back with. M13.6 paid for that
+    distinction in solver hours.
+    """
+
+    def __init__(
+        self, code: str, message: str, hint: str = "", *, fatal: bool = False
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.hint = hint
+        self.fatal = fatal
+
+    @property
+    def status(self) -> str:
+        """What a batch calls the pair this stopped."""
+        return "failed" if self.fatal else "not-routed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +134,34 @@ class Track:
     @property
     def length(self) -> float:
         return math.dist(self.start, self.end)
+
+
+@dataclass(frozen=True, slots=True)
+class RemovedVia:
+    """One via the slice took out, and which of the two reasons took it.
+
+    Both reasons are legitimate and only one of them used to say so. M13.6 found
+    22 of ``examples/pcie-sata``'s 41 stitching vias missing from the eleven slices
+    while every slice reported ``0 via(s) were removed``: the launch corridor
+    counted its removals and the clip band did not, so the *reporting* was the
+    defect rather than the clipping. Every removal is a record now, whichever band
+    took it.
+    """
+
+    at: Point
+    net: str
+    why: str
+    """``launch corridor`` or ``clip band``."""
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "at_mm": [round(self.at[0], 4), round(self.at[1], 4)],
+            "net": self.net,
+            "why": self.why,
+        }
+
+    def describe(self) -> str:
+        return f"{self.net or 'no net'} at ({self.at[0]:.3f}, {self.at[1]:.3f})"
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +223,8 @@ class Slice:
     the routed pair does not. This is the number that says how much.
     """
     notes: list[str] = field(default_factory=list)
+    removed_vias: tuple[RemovedVia, ...] = ()
+    """Every via the slice took out, with the band that took it. Never empty silently."""
 
     @property
     def pair_gap_mm(self) -> float | None:
@@ -227,6 +289,8 @@ class Slice:
             "spans_planes": self.spans_planes,
             "launch_mm": round(self.launch_mm, 4),
             "bridged_by": list(self.bridged),
+            "vias_removed": len(self.removed_vias),
+            "vias_removed_detail": [v.to_dict() for v in self.removed_vias],
             "ports": [p.to_dict() for p in self.ports],
             "notes": list(self.notes),
         }
@@ -324,7 +388,29 @@ def _endpoints(tracks: Iterable[Track]) -> list[Point]:
     return [where[k] for k, d in sorted(degree.items()) if d == 1]
 
 
-def _nearest_bridge(groups: list[list[Track]]) -> list[tuple[Point, Point, float, str]]:
+@dataclass(frozen=True, slots=True)
+class _Hop:
+    """One capacitor's worth of copper: where it goes, and what it lands on."""
+
+    a: Point
+    b: Point
+    width: float
+    layer: str
+    net_a: int
+    """Board net code of the conductor the ``a`` end lands on."""
+    net_b: int
+    """And of the one at ``b``. The two differ -- that is what the cap separates."""
+
+
+def _incident(tracks: Iterable[Track], point: Point) -> Track | None:
+    """The track ending at ``point``, or ``None``. Ties broken by nothing: any will do."""
+    return next(
+        (t for t in tracks if _key(t.start) == _key(point) or _key(t.end) == _key(point)),
+        None,
+    )
+
+
+def _nearest_bridge(groups: list[list[Track]]) -> list[_Hop]:
     """Shortest hop joining each pair of sub-conductors, i.e. where the cap sits.
 
     Deliberately geometric rather than read off the capacitor's pads: the router
@@ -333,27 +419,55 @@ def _nearest_bridge(groups: list[list[Track]]) -> list[tuple[Point, Point, float
     transform -- which is exactly the kind of code that is wrong in the rotated case
     and never noticed.
     """
-    out: list[tuple[Point, Point, float, str]] = []
+    out: list[_Hop] = []
     joined = groups[0]
     for other in groups[1:]:
-        best: tuple[float, Point, Point, float, str] | None = None
+        best: _Hop | None = None
+        shortest = math.inf
         for a in _endpoints(joined):
             for b in _endpoints(other):
                 distance = math.dist(a, b)
-                layer = next(
-                    (t.layer for t in other if _key(t.start) == _key(b) or _key(t.end) == _key(b)),
-                    "F.Cu",
+                if distance >= shortest:
+                    continue
+                at_a, at_b = _incident(joined, a), _incident(other, b)
+                shortest = distance
+                best = _Hop(
+                    a=a,
+                    b=b,
+                    width=at_b.width if at_b is not None else 0.2,
+                    layer=at_b.layer if at_b is not None else "F.Cu",
+                    net_a=at_a.net if at_a is not None else 0,
+                    net_b=at_b.net if at_b is not None else 0,
                 )
-                width = next(
-                    (t.width for t in other if _key(t.start) == _key(b) or _key(t.end) == _key(b)),
-                    0.2,
-                )
-                if best is None or distance < best[0]:
-                    best = (distance, a, b, width, layer)
         if best is not None:
-            out.append((best[1], best[2], best[3], best[4]))
-            joined = [*joined, *other, Track(best[1], best[2], best[3], best[4], 0)]
+            out.append(best)
+            joined = [*joined, *other, *_bridge_tracks(best)]
     return out
+
+
+def _bridge_tracks(hop: _Hop) -> tuple[Track, Track]:
+    """The copper that stands in for the capacitor, in two halves that carry nets.
+
+    Geometrically this is one straight piece: same width and same layer as the pads
+    it lands on, so the pair's line is uninterrupted through the cap. It is emitted
+    as two halves for one reason, and it is not cosmetic. **gerber2ems meshes the
+    nets it is told about and nothing else** -- ``grid_gen`` reads ``netinfo.json``
+    and adds grid lines from the traces of those nets, so copper the Gerber labels
+    ``no-net`` gets no edge cells and lands wherever the grid happens to fall.
+
+    A single-track bridge is net 0, and M13.7 measured what that costs: on
+    ``examples/pcie-sata``'s ``PCIE_TX`` it was the *only* unnetted copper in any
+    slice on the corpus, and it sat exactly at the discontinuity the run is trying
+    to resolve. Splitting at the midpoint gives each half the net of the pad it
+    starts from, so both sides of the cap are nets under test and the mesh
+    generator resolves the bridge like the line it continues. The two halves touch,
+    which is the short the bridge *is*.
+    """
+    mid = ((hop.a[0] + hop.b[0]) / 2, (hop.a[1] + hop.b[1]) / 2)
+    return (
+        Track(hop.a, mid, hop.width, hop.layer, hop.net_a),
+        Track(mid, hop.b, hop.width, hop.layer, hop.net_b),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -546,10 +660,10 @@ def build_slice(
         if len(groups) < len(nets):
             missing = len(nets) - len(groups)
             notes.append(f"{missing} net(s) on the {side} side carry no copper")
-        for a, b, width, layer in _nearest_bridge(groups):
-            bridge = Track(a, b, width, layer, 0)
-            bridges.append(bridge)
-            bridged_by_side.setdefault(side, []).append(bridge)
+        for hop in _nearest_bridge(groups):
+            for bridge in _bridge_tracks(hop):
+                bridges.append(bridge)
+                bridged_by_side.setdefault(side, []).append(bridge)
         sides[side] = [t for group in groups for t in group]
 
     ends: dict[str, list[Point]] = {}
@@ -647,26 +761,23 @@ def build_slice(
             + 2 * launch
         )
 
-    node, cleared, dropped, tied = _assemble(
+    built = _assemble(
         board, netlist, pair, rect, origin, ports, tracks, stubs, bridges, all_pair,
         settings,
     )
-    if tied:
+    if built.tied:
         notes.append(
-            f"{', '.join(tied)} carries a plane the slice cannot connect -- its "
+            f"{', '.join(built.tied)} carries a plane the slice cannot connect -- its "
             "supply, its pads and its decoupling are all outside the window -- so "
             f"it is tied to {reference_net(netlist)} here. On the board it is a "
             "reference plane; modelled floating it is a resonant plate instead"
         )
-    if cleared > _EPS or dropped:
-        notes.append(
-            f"{cleared:.2f} mm of other nets' track and {dropped} via(s) were removed "
-            "from the corridor the four launches occupy, because a launch runs out "
-            "past the pad into the neighbouring pins' fanout"
-        )
+    for why in ("launch corridor", "clip band"):
+        notes.extend(_removal_notes(built, why))
+    _check_return_path(built.board, netlist, pair, metals)
     return Slice(
         pair=pair,
-        board=node,
+        board=built.board,
         rect=rect,
         origin=origin,
         ports=tuple(ports),
@@ -676,7 +787,87 @@ def build_slice(
         launch_mm=launch,
         bridged=pair.bridged_by,
         notes=notes,
+        removed_vias=built.removed,
     )
+
+
+#: How many removed vias a note lists by position before it summarises the rest.
+_MAX_LISTED_VIAS = 8
+
+
+def _removal_notes(built: _Assembly, why: str) -> list[str]:
+    """One note per band that took something, naming what it took.
+
+    The corridor's note keeps M12's wording, because it was never the broken half
+    and a report that changes its phrasing for no reason is a report nobody diffs.
+    """
+    taken = [v for v in built.removed if v.why == why]
+    listed = ", ".join(v.describe() for v in taken[:_MAX_LISTED_VIAS])
+    if len(taken) > _MAX_LISTED_VIAS:
+        listed += f", and {len(taken) - _MAX_LISTED_VIAS} more"
+    if why == "launch corridor":
+        if built.cleared_mm <= _EPS and not taken:
+            return []
+        note = (
+            f"{built.cleared_mm:.2f} mm of other nets' track and {len(taken)} via(s) "
+            "were removed from the corridor the four launches occupy, because a "
+            "launch runs out past the pad into the neighbouring pins' fanout"
+        )
+        return [f"{note}: {listed}" if taken else note]
+    if not taken:
+        return []
+    return [
+        f"{len(taken)} via(s) inside the slice window sat in the "
+        f"{_CLIP_INSET_MM:.2f} mm clip band just inside the outline and were "
+        f"removed: {listed}"
+    ]
+
+
+def _check_return_path(
+    board: SNode, netlist: Netlist, pair: LogicalPair, metals: tuple[str, ...]
+) -> None:
+    """Refuse to hand the solver a slice whose return path is not one conductor.
+
+    M13.6's lesson, run on every slice at generation time. Two ways to fail, and
+    each names the copper rather than the rule: a sheet bonded to nothing, or a
+    declared reference plane the slice does not reach. Both used to be silent, and
+    a silent one costs a solver run and a number that looks like a measurement.
+
+    See :mod:`aipcb.si.integrity` for what "bonded" is measured on, and for the one
+    thing this cannot see: the slice is checked before it is filled, so a plane cut
+    in two *by the fill* is :mod:`aipcb.checks.planes`'s finding on the real board,
+    not this one's.
+    """
+    from aipcb.highspeed import target_for
+    from aipcb.si.integrity import inspect_return_path
+
+    path = inspect_return_path(board, metals)
+    if path.floating:
+        listed = "; ".join(f.describe() for f in path.floating)
+        raise SliceError(
+            "si-slice-floating-copper",
+            f"{pair.name}'s slice leaves copper at no defined potential: {listed}. "
+            "A return path that is not one conductor is a resonator, and the "
+            "impedance it produces is not the board's",
+            hint="tie it to the reference net, or stitch the slice so a via reaches "
+            "it; `aipcb.si.slice._grounded_planes` and `_fence` are the two places "
+            "that already do this for planes and for the cut boundary",
+            fatal=True,
+        )
+
+    target = target_for(netlist, pair.net_class)
+    unbonded = path.unbonded(target.reference if target else None)
+    if unbonded is not None:
+        raise SliceError(
+            "si-slice-reference-unbonded",
+            f"{pair.name} is referenced to {unbonded}, and the slice does not bond "
+            "that layer to the rest of its return path, so the impedance would be "
+            "measured against copper the model leaves floating",
+            hint=f"the slice needs copper on {unbonded} tied to the reference net -- "
+            "a plane declared on it, and a stitching via inside the window that "
+            "reaches it",
+            fatal=True,
+        )
 
 
 def _add(a: Point, b: Point) -> Point:
@@ -977,6 +1168,18 @@ def _segment(track: Track, pair: str, index: int, net: int) -> SNode:
     return node
 
 
+@dataclass(frozen=True, slots=True)
+class _Assembly:
+    """The slice board, and everything the assembly had to take out to make it."""
+
+    board: SNode
+    cleared_mm: float
+    """Length of other nets' track cut out of the four launch corridors."""
+    removed: tuple[RemovedVia, ...]
+    tied: tuple[str, ...]
+    """Plane layers retagged to the reference net. See :func:`_grounded_planes`."""
+
+
 def _assemble(
     board: SNode,
     netlist: Netlist,
@@ -989,7 +1192,7 @@ def _assemble(
     bridges: list[Track],
     own: list[Track],
     settings: ResolvedSimulation,
-) -> tuple[SNode, float, int, tuple[str, ...]]:
+) -> _Assembly:
     root = SNode("kicad_pcb")
     for name in ("version", "generator", "generator_version", "general", "paper"):
         node = board.child(name)
@@ -1050,15 +1253,24 @@ def _assemble(
                           clipped.layer, clipped.net)
                 )
 
+    # Two bands take vias out, and both of them say so. The corridor's removals were
+    # always reported; the clip band's were not, which is how `REFCLK`'s slice came
+    # to report `0 via(s) were removed` while carrying none of the stitching inside
+    # its own window. A via outside `rect` entirely is not a removal -- it was never
+    # in this pair's window -- so only the band between `rect` and `inner` counts.
     vias = []
-    dropped = 0
+    removed: list[RemovedVia] = []
+    named = _net_names(board)
     for via in board.children("via"):
         at = _point(via.child("at"))
+        net = named.get(int((via.child("net") or SNode("x")).value() or 0), "")
         if not (inner[0] <= at[0] <= inner[2] and inner[1] <= at[1] <= inner[3]):
+            if rect[0] <= at[0] <= rect[2] and rect[1] <= at[1] <= rect[3]:
+                removed.append(RemovedVia(at=at, net=net, why="clip band"))
             continue
         radius = _via_radius(via)
         if ShapelyPoint(at).buffer(radius, quad_segs=8).intersects(corridor):
-            dropped += 1
+            removed.append(RemovedVia(at=at, net=net, why="launch corridor"))
             continue
         vias.append(via)
     zones, tied = _grounded_planes(
@@ -1128,7 +1340,12 @@ def _assemble(
     for port in ports:
         code = next((c for c, n in names.items() if n == port.net), 0)
         root.add(port_footprint(port, pair.name, recode.get(code, 0)))
-    return root, cleared, dropped, tied
+    return _Assembly(
+        board=root,
+        cleared_mm=cleared,
+        removed=tuple(sorted(removed, key=lambda v: (v.why, v.at))),
+        tied=tied,
+    )
 
 
 def _grounded_planes(

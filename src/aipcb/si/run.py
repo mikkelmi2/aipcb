@@ -1,10 +1,22 @@
 """The batch: slice every pair, solve the ones that changed, report what came back.
 
-Sequential by design. A single openEMS run already saturates the machine -- the
-solver reports 700-1300 MCells/s on sixteen cores and scales with them -- so running
-two pairs at once splits the same cores between them and finishes no sooner. That is
-a measurement, not an assumption; the M12 report carries the numbers. What actually
-makes a re-run fast is the cache, not concurrency.
+Sequential by default, and concurrent when asked -- ``--parallel N``. M12 made the
+batch sequential because "a single openEMS run already saturates the machine". That
+premise is false: the multithreaded engine benchmarks itself at startup and settles
+on four to six threads of sixteen, whatever it is given, so a second solver would be
+running on cores the first one declined.
+
+**The conclusion survived the premise anyway, and that is the interesting part.**
+Measured at M13.7 on three links: 693 s one at a time, 1 023 s all three at once,
+with aggregate throughput below what one solver gets alone. Nothing was saturated
+except memory bandwidth -- which is also why the engine declines those cores, and a
+second process does not create any. So the default stays one, the flag exists
+because that answer is a property of one memory system, and every run now reports
+the throughput and thread count it got so another machine can be compared against
+this one. ADR 0011 Decision 4a carries the table.
+
+What makes a *re*-run fast is the cache, which is checked before a solver slot is
+taken and is independent of all of this.
 
 Failures are per pair. One diverging or unroutable pair is a line in the report and
 the batch carries on, because the value of a batch is the eleven pairs that worked.
@@ -13,8 +25,10 @@ the batch carries on, because the value of a batch is the eleven pairs that work
 from __future__ import annotations
 
 import json
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -33,11 +47,15 @@ from aipcb.si.runner import (
     ContainerBusy,
     ContainerMissing,
     RunOutcome,
+    arm_cleanup,
     container_digest,
+    cpu_slots,
+    default_parallel,
     find_container,
     nets_in_gerbers,
     run_gerber2ems,
     slice_digest,
+    supports_cpuset,
 )
 from aipcb.si.slice import Slice, SliceError, build_slice
 
@@ -98,6 +116,10 @@ class SimulationBatch:
     image: str = IMAGE
     image_digest: str = ""
     runtime: str = ""
+    parallel: int = 1
+    """How many solvers this batch was allowed to run at once."""
+    pinned: bool = False
+    """Whether each of them got cores of its own. See :func:`~aipcb.si.runner.supports_cpuset`."""
 
     def summary(self) -> dict[str, object]:
         counts: dict[str, int] = {}
@@ -109,6 +131,8 @@ class SimulationBatch:
             "image": self.image,
             "image_digest": self.image_digest,
             "runtime": Path(self.runtime).name if self.runtime else "",
+            "parallel": self.parallel,
+            "pinned": self.pinned,
             "total_seconds": round(self.total_seconds, 2),
             "counts": dict(sorted(counts.items())),
             "pairs": [r.to_dict() for r in self.results],
@@ -148,10 +172,18 @@ def simulate_pairs(
     dry_run: bool = False,
     timeout_s: int | None = None,
     image: str = IMAGE,
+    parallel: int = 1,
     progress: Callable[[PairResult], None] | None = None,
     geometric_skew: dict[str, float] | None = None,
 ) -> SimulationBatch:
-    """Slice, solve and analyse every selected pair on a routed board."""
+    """Slice, solve and analyse every selected pair on a routed board.
+
+    ``parallel`` is how many solvers may run at once; 0 asks for one per
+    :data:`aipcb.si.runner.CPUS_PER_SOLVER` on this machine. Above one, each pair
+    gets a slot -- a cpuset -- for the length of its run, and the batch's output is
+    still ordered by pair rather than by whoever finished first, so two runs of the
+    same batch produce the same manifest.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     batch = SimulationBatch(design=netlist.name, directory=out_dir)
     started = time.monotonic()
@@ -170,26 +202,80 @@ def simulate_pairs(
                 "else in aipcb needs either.",
             )
             return batch
+        arm_cleanup()
     batch.runtime = runtime
 
-    for pair in logical_pairs(netlist):
-        if only and pair.name not in only:
-            continue
-        if net_class is not None and pair.net_class != net_class:
-            continue
-        result = _one_pair(
+    wanted = [
+        pair
+        for pair in logical_pairs(netlist)
+        if not (only and pair.name not in only)
+        and (net_class is None or pair.net_class == net_class)
+    ]
+    width = parallel if parallel > 0 else default_parallel()
+    slots = cpu_slots(width)
+    if width > 1 and runtime and not supports_cpuset(runtime, image):
+        # Concurrent but unpinned. Saying so matters: the numbers a pinned run
+        # produces and the numbers a shared-pool run produces are different
+        # numbers, and a report that does not say which it got cannot be compared
+        # against another machine's.
+        slots = [""] * width
+        report.info(
+            "si-cpuset-unavailable",
+            f"{width} solvers will run at once and share every core: this runtime "
+            "cannot pin a container to a cpuset",
+            hint="rootless podman on cgroup v2 is given `cpu memory pids` and not "
+            "`cpuset`; a `Delegate=` drop-in on `user@.service` grants it. Without "
+            "it the runs still overlap, they just are not divided",
+        )
+    batch.parallel = len(slots)
+    batch.pinned = bool(slots and slots[0])
+
+    # One `Report` per pair, merged in pair order afterwards. Diagnostics are what a
+    # caller diffs, and a batch whose warnings arrive in whatever order the solvers
+    # finished would be a different file every run for the same board.
+    reports = [Report() for _ in wanted]
+    ordered: list[PairResult | None] = [None] * len(wanted)
+
+    def solve(index: int, pair: LogicalPair, cpus: str) -> None:
+        ordered[index] = _one_pair(
             board,
             netlist,
             pair,
             out_dir,
-            report,
+            reports[index],
             runtime=runtime,
             image=image,
             force=force,
             dry_run=dry_run,
             timeout_s=timeout_s,
             geometric_skew=geometric_skew,
+            cpus=cpus,
         )
+
+    if len(slots) <= 1:
+        for index, pair in enumerate(wanted):
+            solve(index, pair, slots[0] if slots else "")
+    else:
+        # A free-list of cpusets rather than a slot per worker: a pair that hits the
+        # cache returns in milliseconds and its slot goes straight back, so a batch
+        # of eleven with three cached does not leave a third of the machine idle.
+        free = list(slots)
+        lock = threading.Lock()
+
+        def borrow(index: int, pair: LogicalPair) -> None:
+            with lock:
+                cpus = free.pop()
+            try:
+                solve(index, pair, cpus)
+            finally:
+                with lock:
+                    free.append(cpus)
+
+        with ThreadPoolExecutor(max_workers=len(slots)) as pool:
+            list(pool.map(lambda t: borrow(*t), list(enumerate(wanted))))
+
+    for index, result in enumerate(ordered):
+        report.extend(reports[index].diagnostics)
         if result is None:
             continue
         batch.results.append(result)
@@ -224,6 +310,7 @@ def _one_pair(
     dry_run: bool,
     timeout_s: int | None,
     geometric_skew: dict[str, float] | None = None,
+    cpus: str = "",
 ) -> PairResult | None:
     work = out_dir / pair.name
     settings = netlist.simulation.for_class(pair.net_class)
@@ -232,12 +319,15 @@ def _one_pair(
     try:
         sliced = build_slice(board, netlist, pair, settings, port_impedance_ohm=port_ohm)
     except SliceError as exc:
-        report.warning(
-            exc.code, exc.message, hint=exc.hint or None, path=pair.source_path
-        )
+        # An unrouted pair is a warning and an invariant violation is an error. The
+        # difference is whether carrying on would produce a *number*: nothing to
+        # simulate is a gap in the report, a slice with a floating return path is a
+        # measurement of a board that does not exist.
+        emit = report.error if exc.fatal else report.warning
+        emit(exc.code, exc.message, hint=exc.hint or None, path=pair.source_path)
         return PairResult(
             pair=pair,
-            status="not-routed",
+            status=exc.status,
             directory=work,
             message=exc.message,
             hint=exc.hint,
@@ -333,6 +423,7 @@ def _one_pair(
             expect_ports=len(sliced.ports),
             expect_vias=expect_vias,
             log_path=work / "run.log",
+            cpus=cpus,
         )
     except ContainerBusy as exc:
         # M13d. Refusing is the answer: this directory already has a writer, and

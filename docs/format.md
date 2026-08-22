@@ -1098,7 +1098,11 @@ Five approximations are deliberate and worth knowing about:
   each end are not.
 * Series parts marked `role: ac_coupling` become **copper bridges**, which is what
   they are at signal frequencies. This is the part a geometric slicer cannot do,
-  because only the source knows the capacitor is not a component under test.
+  because only the source knows the capacitor is not a component under test. The
+  bridge is the same width and on the same layer as the pads it lands on, and it
+  carries their nets — a bridge with no net is copper the mesh generator is never
+  told to resolve, and it would sit exactly on the discontinuity a run is trying
+  to measure.
 * **The slice's return path is made a single conductor.** Every layer the stackup
   declares a `plane` is tied to the reference net, and a ring of reference-net vias
   is added just inside the slice outline. Both are copper the board does not have,
@@ -1111,6 +1115,49 @@ Five approximations are deliberate and worth knowing about:
   timesteps, and with both it decays past −39 dB. What it costs is the ability to
   tell you that a supply plane is *badly* decoupled, which this was never able to
   measure anyway.
+
+Two of them are checked rather than trusted, on every slice, before the solver is
+started:
+
+* **Every sheet of copper in the slice is bonded to the others**, and a slice that
+  leaves one floating is refused by name — the layer, the net and the square
+  millimetres at no defined potential. A zone declared on three layers is three
+  sheets until a via joins them, which is the form the defect actually took: one
+  `examples/pcie-sata` slice reached the solver with two pours and both planes
+  mutually isolated, under a 100 Ω microstrip, and reported nothing.
+* **The plane a controlled-impedance class names as its `reference:` is one of
+  them.** An impedance number is a statement about a line *and* its return path, so
+  a slice that does not connect the declared plane is not measuring the class it
+  says it is.
+
+Both are checked before the slice is filled, so what they see is a zone's outline
+rather than its poured copper. That answers "is this sheet tied to anything" and not
+"is this sheet in one piece" — the second is what `check`'s plane-integrity report
+measures, on the real board, where the fill exists.
+
+### Running several at once
+
+`aipcb simulate --parallel N` (`-j N`) solves N pairs at a time, each solver pinned
+to its own cores where the host allows that. `-j 0` picks one per five cores. The
+default is 1.
+
+**Measure before you use it.** openEMS does not use the whole machine — its
+multithreaded engine benchmarks itself at startup and settles on four to six threads
+whatever it is given — but on the machine this was developed on, running three
+solvers at once came back **48 % slower** than running them one after another, and
+their combined throughput was lower than a single solver's. What runs out is memory
+bandwidth, which is also why the engine declines the spare cores; a second process
+does not create any. [ADR 0011](decisions/0011-si-simulation.md) Decision 4a has the
+numbers. A host with more memory channels may well go the other way, which is why
+the flag exists.
+
+Two things it does not change, both checked: the results, which agree with a
+sequential run to 0.04 %, and the order of the report, which is by pair rather than
+by whoever finished first — a concurrent batch produces the same `manifest.json` a
+sequential one does. Each run reports the throughput and thread count the solver
+chose, so a batch can be compared against another machine's, and it records whether
+it was able to pin: rootless podman on cgroup v2 is not given the `cpuset`
+controller, so concurrent runs there share every core instead of dividing them.
 
 Running it needs a container runtime and a locally built gerber2ems image; see
 [ADR 0011](decisions/0011-si-simulation.md), which records the pinned commits. It is

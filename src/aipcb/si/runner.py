@@ -48,17 +48,22 @@ from pathlib import Path
 from aipcb.si import IMAGE
 
 __all__ = [
+    "CPUS_PER_SOLVER",
     "ContainerBusy",
     "ContainerMissing",
     "RunOutcome",
+    "arm_cleanup",
     "container_digest",
     "containers_on",
+    "cpu_slots",
+    "default_parallel",
     "find_container",
     "nets_in_gerbers",
     "reap_containers",
     "run_gerber2ems",
     "running_container",
     "slice_digest",
+    "supports_cpuset",
 ]
 
 #: How long one pair may take before it is called a failure rather than a wait.
@@ -90,6 +95,31 @@ __all__ = [
 DEFAULT_TIMEOUT_S = 7200
 
 
+#: How many host CPUs one solver process is given when a batch runs several at once.
+#:
+#: **A measurement, and it replaces an assumption.** ADR 0011 Decision 4 declined
+#: process-level parallelism because "openEMS already uses every core -- it reported
+#: 750-1270 MCells/s on this machine's sixteen". M13.6 read the solver's own log on
+#: every link of an eleven-link batch and found the opposite: the multithreaded
+#: engine benchmarks itself at startup and settles on **four to five** of sixteen,
+#: at 256-451 MC/s. M13.7 re-measured on an idle machine and saw **six threads at
+#: 619 MC/s median** -- so the auto-tuner's answer moves with the load and with the
+#: model, and what it never does is use the machine.
+#:
+#: Five is the middle of what has been observed. It is not a thread count this code
+#: can set -- gerber2ems calls ``openEMS.Run()`` without ``numThreads``, and the
+#: image is pinned -- it is the size of the *cpuset* each container gets, inside
+#: which openEMS runs its own benchmark and picks its own number.
+#:
+#: **What it buys, measured rather than assumed: on this machine, nothing.** Three
+#: concurrent solvers came back 48 % slower than three sequential ones and their
+#: aggregate throughput was below a single solver's, because what the spare cores
+#: are short of is memory bandwidth and a second process does not create any. So
+#: this is the width of a slot for the caller who asks for one, not a default. ADR
+#: 0011 Decision 4a has the table.
+CPUS_PER_SOLVER = 5
+
+
 class ContainerMissing(RuntimeError):
     """No container runtime, or no image. Carries what to do about it."""
 
@@ -116,6 +146,12 @@ class RunOutcome:
     ports_seen: int = 0
     vias_seen: int = 0
     energy_db: float | None = None
+    mcells_per_s: float | None = None
+    """Median of the solver's own throughput samples. What a parallel run is judged on."""
+    threads: int | None = None
+    """How many the engine's startup benchmark settled on, inside whatever it was given."""
+    cpus: str = ""
+    """The cpuset this run was pinned to, empty when it had the machine."""
     message: str = ""
     log: str = ""
     warnings: list[str] = field(default_factory=list)
@@ -129,6 +165,9 @@ class RunOutcome:
             "ports_seen": self.ports_seen,
             "vias_seen": self.vias_seen,
             "energy_db": self.energy_db,
+            "mcells_per_s": self.mcells_per_s,
+            "threads": self.threads,
+            "cpus": self.cpus,
             "message": self.message,
             "warnings": list(self.warnings),
         }
@@ -179,20 +218,51 @@ def slice_digest(work: Path) -> str:
     return digest.hexdigest()
 
 
-_CELLS = re.compile(r"Rectilinear grid: ([\d,]+) cells|Cell count: ([\d,]+)")
+#: Every phrasing openEMS and gerber2ems have used for the mesh size. The one this
+#: image actually prints is the third -- ``FDTD simulation size: 81x277x42 -->
+#: 942354 FDTD cells`` -- and until M13.7 none of the patterns matched it, so
+#: ``RunOutcome.cells`` was ``None`` on every run this tool has ever done.
+#:
+#: The number is read as a float and rounded, because openEMS switches notation on
+#: its own: a 0.94 M mesh prints ``942354`` and a 1.37 M one prints ``1.37063e+06``,
+#: in the same line of the same log. Matching integers only would have half-fixed
+#: this and looked fixed.
+_CELLS = re.compile(
+    r"Rectilinear grid: ([\d,.e+]+) cells"
+    r"|Cell count: ([\d,.e+]+)"
+    r"|-->\s*([\d,.e+]+) FDTD cells"
+    r"|Cells\s*=\s*([\d,.e+]+)"
+)
 _PORT_FOUND = re.compile(r"Found port #(\d+) position in pos file")
 _ADDING_PORT = re.compile(r"Adding port at start")
 _VIAS = re.compile(r"Found (\d+) vias")
 _ENERGY = re.compile(r"Energy: ~[\d.e+-]+ \(-([\d.]+)dB\)")
+_SPEED = re.compile(r"Speed:\s*([\d.]+) MC/s")
+_THREADS = re.compile(r"Best performance found using (\d+) threads")
+
+
+def _throughput(log: str) -> tuple[float | None, int | None]:
+    """``(median MC/s, threads the engine chose)`` from the solver's own progress lines.
+
+    The median rather than the mean: the first sample of every run is taken while
+    the engine is still benchmarking itself and reads about half of what the run
+    settles at, and one warm-up sample should not move the number a measurement is
+    read off.
+    """
+    speeds = sorted(float(v) for v in _SPEED.findall(log))
+    threads = [int(v) for v in _THREADS.findall(log)]
+    return (
+        speeds[len(speeds) // 2] if speeds else None,
+        max(threads) if threads else None,
+    )
 
 
 def _parse_log(log: str) -> tuple[int | None, int | None, int, int, float | None]:
     cells = timesteps = None
     for line in log.splitlines():
-        if "Cells =" in line:
-            match = re.search(r"Cells\s*=\s*(\d+)", line)
-            if match:
-                cells = int(match.group(1))
+        found = _CELLS.search(line)
+        if found:
+            cells = round(float(next(g for g in found.groups() if g).replace(",", "")))
         if "Number of timesteps" in line:
             match = re.search(r"(\d+)", line.split("Number of timesteps")[1])
             if match:
@@ -298,6 +368,85 @@ def containers_on(runtime: str, work: Path) -> list[str]:
     return [line.strip() for line in run.stdout.splitlines() if line.strip()]
 
 
+#: Answer per ``(runtime, image)``, because the probe costs a container start and
+#: the answer is a property of the host's cgroup delegation, which does not move
+#: inside a run.
+_CPUSET_SUPPORT: dict[tuple[str, str], bool] = {}
+
+
+def supports_cpuset(runtime: str, image: str = IMAGE) -> bool:
+    """Whether this runtime can actually pin a container to a set of CPUs.
+
+    Measured rather than assumed, and the measurement is why: **rootless podman on
+    a stock cgroup v2 host cannot.** ``--cpuset-cpus`` is accepted by the CLI and
+    then refused by the OCI runtime --
+
+    ``crun: controller `cpuset` is not available under /sys/fs/cgroup/...``
+
+    -- because systemd delegates ``cpu memory pids`` to the user slice and not
+    ``cpuset``. Granting it means a ``Delegate=`` drop-in on ``user@.service``,
+    which is a root change to somebody's machine and not something a PCB tool
+    should require. So a batch asks first and runs unpinned if the answer is no:
+    concurrent solvers on a shared pool still finish sooner than one after another,
+    they just share cores instead of dividing them.
+    """
+    cached = _CPUSET_SUPPORT.get((runtime, image))
+    if cached is not None:
+        return cached
+    try:
+        probe = subprocess.run(
+            [runtime, "run", "--rm", "--cpuset-cpus", "0", "--entrypoint",
+             "/bin/true", image],
+            capture_output=True, text=True, check=False, timeout=120,
+        )
+        answer = probe.returncode == 0
+    except (OSError, subprocess.SubprocessError):  # pragma: no cover - no runtime
+        answer = False
+    _CPUSET_SUPPORT[(runtime, image)] = answer
+    return answer
+
+
+def arm_cleanup() -> None:
+    """Install the reapers now, from the caller's thread.
+
+    :func:`running_container` installs them lazily, and ``signal.signal`` only works
+    on the main thread -- so a batch that first starts a container from a worker
+    would get the ``atexit`` handler and silently lose the Ctrl-C one. A batch calls
+    this before it dispatches anything.
+    """
+    _install_handlers()
+
+
+def default_parallel(cpus: int | None = None) -> int:
+    """How many solvers to run at once when nobody says: one per :data:`CPUS_PER_SOLVER`.
+
+    Floored at one, so a small machine runs the sequential path it always ran.
+    """
+    available = cpus if cpus is not None else (os.cpu_count() or 1)
+    return max(1, available // CPUS_PER_SOLVER)
+
+
+def cpu_slots(parallel: int, cpus: int | None = None) -> list[str]:
+    """One ``--cpuset-cpus`` string per concurrent solver, disjoint and contiguous.
+
+    Disjoint because the point is that two solvers stop competing: a quota
+    (``--cpus``) throttles a container that still *sees* every CPU and still spawns
+    threads for all of them, and openEMS sizes its startup benchmark off what it
+    sees. A cpuset changes what it sees.
+
+    Contiguous rather than interleaved, which is a deliberate simplification worth
+    naming: on a hybrid part -- this machine is ten cores presenting sixteen CPUs,
+    some of them SMT siblings and some efficiency cores -- consecutive numbers are
+    not equal cores, so the slots are not equally fast. Making them equal means
+    reading the topology, and the measurement below did not need it.
+    """
+    available = cpus if cpus is not None else (os.cpu_count() or 1)
+    if parallel <= 1 or available < 2 * parallel:
+        return [""] * max(parallel, 1)
+    width = available // parallel
+    return [f"{i * width}-{i * width + width - 1}" for i in range(parallel)]
+
+
 @contextmanager
 def running_container(runtime: str, name: str) -> Iterator[None]:
     """Own one container for the duration of a block, and reap it on the way out.
@@ -330,6 +479,7 @@ def run_gerber2ems(
     expect_ports: int = 4,
     expect_vias: int = 0,
     log_path: Path | None = None,
+    cpus: str = "",
 ) -> RunOutcome:
     """Geometry, both excitations and post-processing, in one container run.
 
@@ -361,6 +511,7 @@ def run_gerber2ems(
         "--label",
         f"{WORK_LABEL}={work.resolve()}",
         "--userns=keep-id",
+        *(["--cpuset-cpus", cpus] if cpus else []),
         "-v",
         f"{work.resolve()}:/work",
         "-w",
@@ -379,6 +530,7 @@ def run_gerber2ems(
             return RunOutcome(
                 ok=False,
                 seconds=time.monotonic() - started,
+                cpus=cpus,
                 message=f"the solver did not finish inside {timeout_s} s",
             )
     seconds = time.monotonic() - started
@@ -387,6 +539,7 @@ def run_gerber2ems(
         log_path.write_text(log, encoding="utf-8")
 
     cells, timesteps, ports, vias, energy = _parse_log(log)
+    speed, threads = _throughput(log)
     warnings: list[str] = []
     ok = run.returncode == 0
 
@@ -422,6 +575,9 @@ def run_gerber2ems(
         ports_seen=ports,
         vias_seen=vias,
         energy_db=energy,
+        mcells_per_s=speed,
+        threads=threads,
+        cpus=cpus,
         message=message,
         log=log,
         warnings=warnings,

@@ -208,17 +208,37 @@ and with the same fix (key on the instance, not on a name that repeats).
 **Electromagnetic simulation** landed in M12 as `aipcb simulate`, so what is left
 here is what it deliberately does not do.
 
-**Three simulated links out of four are not physical, and it is not the coupling
-capacitors.** M13 recorded `|Sdd21| > 1` on the transmit link as one odd result with
-the slicer's capacitor bridges as the suspect. M13.5 measured a fourth link and the
-count is now `PCIE_TXP/N` 1.23, `REFCLKP/N` 1.13, `SATA0_RXP/N` 1.33 -- and the one
-link that passes, `PCIE_RXP/N`, is the one whose energy decayed furthest (-61 dB).
-More energy out than went in is what an FDTD run reports when it is truncated before
-the fields have left, so this belongs with the trapped-mode question above rather
-than with the bridges. It matters commercially as well as physically: a SATA link is
-about 37 minutes at the measured rate, so the seven that remain are four and a half
-hours, and on this evidence most of that would buy `usable: false`. **Answer this
-before running another batch.**
+**One simulated link out of eleven is not physical, and it is still `PCIE_TX`.**
+M13.6 closed the other ten by giving every slice a connected return path, and left
+the transmit link at `|Sdd21| = 1.220` with the coupling-capacitor bridges as the
+one remaining suspect and an exact one-out-of-eleven correlation behind it.
+
+**M13.7 tested the bridges and the answer is no.** The bridge's geometry was
+measured off the slice artifact rather than argued about: same layer as the pads it
+joins, same width as the trace, spanning exactly the 0.96 mm between the two cap
+pads at the 1.4 mm pitch the board's own fanout puts them at. One defect was real
+and it was not geometric -- **the bridge carried no net**, and it was the only
+unnetted copper in any slice on the corpus, so gerber2ems's grid generator (which
+adds mesh lines only for the nets in `netinfo.json`) never resolved the one piece of
+copper sitting on the discontinuity. Fixed: the bridge is emitted in two halves,
+each carrying the net of the pad it starts from. The mesh went from 0.78 M to
+0.94 M cells and the coarsest cell across the bridge from 79.9 to 33.5 um.
+
+**The number did not move.** `|Sdd21|` 1.220 -> 1.22, Zdiff 79.29 -> 79.59 ohm,
+energy -64.6 -> -66.4 dB. So the mesh hypothesis is refuted, the fix is kept because
+unnetted copper is a defect either way, and what `PCIE_TX` actually is remains open.
+
+The new signature, which is more specific than the old one and is where the next
+hypothesis should start: **the excess gain is already there single-ended.** At the
+6.25 GHz peak, `|S(4,2)| = 1.112` and `|S(2,1)| = 1.003` -- one half of the pair
+gains eleven per cent on its own, before any mixed-mode arithmetic, and the two
+halves are not alike. The excess rises monotonically from 0.96 at 0.5 GHz to 1.22 at
+6.25 GHz and falls above it. That points at the ports rather than at the interior:
+this link launches at 0.5 mm pitch at the controller end and **1.0 mm at the card
+edge**, against a coupled run at 0.3346 mm, so both ports sit on geometry whose
+differential impedance is far from the 85 ohm the ports are terminated at, and they
+sit on *different* such geometries. Testable the same way the last two hypotheses
+were, and not in the milestone that had one hypothesis and finished it.
 
 **`REFCLKP/N` converges, and what was trapping it was the slice's return path.**
 Closed in M13.6, and the diagnosis M13.5 stopped at was two thirds of the answer.
@@ -259,34 +279,38 @@ still reads -41.7 % against its target, which removes the last alternative
 explanation: the number is not a truncated run and not a floating reference, it is
 an estimator applied to a structure it does not describe.
 
-**openEMS is using four or five of this machine's sixteen cores, and ADR 0011
-assumed it used all of them.** Measured in M13.6 on the pinned image (openEMS
-`v0.0.36-142-g32c5c6b`), from the solver's own log on every link in the batch:
+**`--parallel N` is built, measured, and the measurement says do not use it here.**
+ADR 0011 Decision 4's premise -- "openEMS already uses every core" -- was re-measured
+in M13.6 and is false: the engine benchmarks itself at startup and settles on four to
+six threads of this machine's sixteen whatever it is handed. That was the `CLAUDE.md`
+pattern arriving for a third time, so M13.7 built the flag and measured the win
+rather than assuming it.
 
-```
-Multithreaded Engine: Best performance found using 4 threads.
-Multithreaded Engine: Best performance found using 5 threads.
-Speed: 256-451 MC/s        (SATA1_TX, 252 samples)
-```
+**There is no win on this machine.** Three links, same slices: 693 s one at a time,
+**1 023 s all three at once** -- 48 % slower, with aggregate throughput (316 MC/s)
+*below what one solver gets alone* (489-619). Mid-run the three drew about 750 % of a
+CPU against one solver's 600 %, so nothing was saturated except memory bandwidth --
+which is also why the auto-tuner declines the spare cores, and a second process does
+not create any. Decision 4's conclusion therefore stands on a reason it never gave.
+Numbers in [ADR 0011](decisions/0011-si-simulation.md) Decision 4a.
 
-[ADR 0011](decisions/0011-si-simulation.md) Decision 4 declined `--parallel N`
-because "openEMS already uses every core -- it reported 750-1270 MCells/s on this
-machine's sixteen -- so process-level parallelism divides the same cores between
-runs". Neither half of that premise still holds: the engine auto-tunes to 4-5
-threads and sustains a third to a half of the quoted throughput. This is the
-`CLAUDE.md` pattern arriving for a third time, and the ADR should be re-measured
-rather than trusted.
+What is left of it:
 
-Two things follow, both cheap to measure and neither measured yet:
-
-* **`--numThreads`.** The flag exists (`--numThreads arg (=0)`, needs
-  `--engine=multithreaded`). openEMS picks 4-5 from a short benchmark at startup,
-  and FDTD is memory-bandwidth-bound, so the auto-tuner may simply be right --
-  which is why this is a measurement and not a fix.
-* **Process-level parallelism, on its own merits.** Independent runs share no
-  synchronisation, which is where thread scaling inside one FDTD run usually goes,
-  so 2-3 concurrent links may scale where 16 threads did not. On an eleven-link
-  batch that is the difference between five hours and under two.
+* **A host with more memory channels may go the other way**, and that is why the
+  flag ships rather than being reverted. The measurement is a property of one memory
+  system, and the tool now reports the throughput and thread count of every run so
+  another machine's answer can be compared against this one's.
+* **`--numThreads` is still unmeasured, and now also unreachable.** gerber2ems calls
+  `openEMS.Run()` without it and the image is pinned, so the only lever aipcb has is
+  how many CPUs the container is given. Whether the auto-tuner's four-to-six is
+  optimal needs a patched image to answer -- and the concurrency result above is
+  circumstantial evidence that it is close to right.
+* **This host cannot pin a container to a cpuset**, so the measurement above is of
+  *unpinned* concurrency and that confound is real. Rootless podman on cgroup v2 is
+  delegated `cpu memory pids` and not `cpuset`; `--cpuset-cpus` is accepted by the
+  CLI and refused by crun. `aipcb` probes for it and records which of the two it
+  got. Granting it is a `Delegate=` drop-in on `user@.service` -- a root change to
+  somebody's machine, and not something a PCB tool should require.
 
 **No GPU route exists in this solver.** Also measured rather than assumed: the
 image's `openEMS --engine` offers `basic`, `sse`, `sse-compressed` and

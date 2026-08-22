@@ -445,6 +445,12 @@ The `epsilon_r`-is-ignored and every-dielectric-is-`core` findings from phase 0 
 
 ## Decision 4 — sequential, and the measurement behind it
 
+> **Amended at M13.7 — the premise is false and the conclusion holds anyway.** The
+> paragraph below reasons from a throughput figure that had gone stale to a
+> conclusion that turns out, when measured directly, to be right. Kept as written,
+> because being right for the wrong reason is worth being able to see. See
+> *Decision 4a* underneath it.
+
 `--parallel N` was not built. openEMS already uses every core — it reported
 750–1270 MCells/s on this machine's sixteen — so process-level parallelism divides
 the same cores between runs and adds a way for two containers to contend for memory
@@ -453,6 +459,91 @@ in `docs/reports/m12.md` are what a second process would have to beat, and it ca
 the work is already parallel one level down.
 
 What makes a re-run fast is the cache, and that is where the effort went.
+
+## Decision 4a — `--parallel N`, built, measured, and not the default
+
+* **Measured:** 2026-08-22 (M13.6 and M13.7)
+* **On:** openEMS `v0.0.36-142-g32c5c6b` inside the pinned `gerber2ems:phase0`
+  image, on a 16-CPU Intel Core 7 240H (10 cores, hybrid, SMT on the P-cores),
+  30 GB of RAM, machine otherwise idle
+* **Expiry:** re-measure when the image is rebuilt or the machine changes. The
+  conclusion below is about *this* memory system and would not survive a move to a
+  many-channel server; Decision 4 is what happens when a number outlives its host
+
+### The premise was wrong
+
+"openEMS already uses every core" was never true of this image. The multithreaded
+engine runs its own benchmark at startup and prints what it chose:
+
+```
+Multithreaded Engine: Best performance found using 4 threads.
+Multithreaded Engine: Best performance found using 5 threads.
+Multithreaded Engine: Best performance found using 6 threads.
+```
+
+M13.6 read that line off every link of an eleven-link batch: **four or five** of
+sixteen, at 256–451 MC/s. M13.7 re-measured on an idle machine: **five or six**, at
+489–619 MC/s median. So the auto-tuner's answer moves with the model and with the
+load, and what it never does is take the machine. Decision 4's 750–1270 MC/s was
+also being used as a *utilisation* argument, which a throughput figure is not.
+
+### So the flag was built
+
+`aipcb simulate --parallel N` (`-j`) runs N solvers at once. Each is pinned to its
+own **cpuset** where the host allows it — `--cpuset-cpus`, not `--cpus`, because a
+quota throttles a container that still *sees* sixteen CPUs and still sizes its
+startup benchmark off sixteen. `-j 0` asks for one solver per
+`runner.CPUS_PER_SOLVER` CPUs.
+
+The flag cannot set the thread count: gerber2ems calls `openEMS.Run()` without
+`numThreads` and the image is pinned, so the size of the CPU set is the only lever,
+and openEMS still benchmarks and chooses inside it.
+
+**This host cannot pin at all.** Rootless podman on cgroup v2 is delegated
+`cpu memory pids` and not `cpuset`, so `--cpuset-cpus` is accepted by the CLI and
+refused by crun. `runner.supports_cpuset` probes for it once per batch and falls
+back to unpinned concurrency, and the batch records which of the two it got —
+pinned and shared-pool numbers are not comparable.
+
+### And the measurement says not to use it here
+
+Three links, same slices, first one at a time and then all three at once:
+
+| link | alone | | | three at once | | |
+|---|---|---|---|---|---|---|
+| | wall | MC/s | threads | wall | MC/s | threads |
+| `PCIE_TXN/P` (0.94 M cells) | 199 s | 619 | 6 | 986 s | **95** | 4 |
+| `PCIE_RXN/P` (1.00 M cells) | 170 s | 606 | 6 | 1 022 s | **67** | 2 |
+| `REFCLKN/P` (1.37 M cells) | 324 s | 489 | 5 | 953 s | **154** | 6 |
+| **batch wall clock** | **693 s** | | | **1 023 s** | | |
+
+**Three concurrent solvers are 48 % slower than three sequential ones**, and their
+aggregate throughput — 316 MC/s — is *below what a single solver gets on its own*.
+Mid-run the three together drew about 750 % of a CPU where one alone draws about
+600 %, so the machine was never saturated: what ran out was memory bandwidth, which
+is also the reason the auto-tuner declines the other ten cores in the first place.
+Running three processes does not create bandwidth. The engine also re-benchmarks
+under contention and picks *worse* thread counts — one solver settled on two
+threads — and then keeps them for the whole run.
+
+So Decision 4's conclusion stands and its reasoning does not. **The default stays
+sequential**, `--parallel` ships with these numbers attached, and it is worth having
+because the answer is a property of one memory system: a host with more channels, or
+one that can actually pin, may well go the other way. The confound is stated rather
+than hidden — this measurement is of *unpinned* concurrency, because this host
+cannot do the other kind.
+
+Two things the concurrency did **not** change, both checked: the impedances agree
+with the sequential run to 0.04 % (72.97 / 49.53 / 79.56 Ω against 72.94 / 49.53 /
+79.59), and the batch still reports in pair order rather than in finishing order, so
+a concurrent run produces the same `manifest.json` a sequential one does.
+
+### What did not change
+
+The cache. A re-run of an unchanged pair still costs a slice and three small files,
+it is still checked before a solver slot is taken, and it is still the thing that
+turns hours into nothing. Concurrency and the cache are independent, and only one of
+them earned its place.
 
 ## Decision 5 — no scikit-rf
 
