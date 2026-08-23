@@ -216,7 +216,10 @@ against a computed lower bound, corridor utilization and headroom per layer, lay
 changes made without capacity pressure, and a hash of the board.
 `bench/results/baseline.json` is the committed reference, `--compare` diffs against
 it, and a smoke run over three examples guards every pull request. See
-[the M16 report](reports/m16.md) for the baseline table and what it already says.
+[the M16 report](reports/m16.md) for the baseline table and what it already says —
+including that routing cost is close to linear in connections × triangulation size
+(R² 0.97), and that 83–94% of it is in the tightener on the five largest boards
+while negotiation never exceeds half a second.
 
 Two consequences worth naming. It discharges one of the three
 [graduation conditions](#maturity-and-graduation) — runtime is benchmarked now, and

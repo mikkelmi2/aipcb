@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "commit": "70c7127",
-  "recorded": "2026-08-23T21:37:41+00:00",
+  "commit": "aa0db94",
+  "recorded": "2026-08-23T22:23:26+00:00",
   "environment": {
     "python": "3.14.4",
     "implementation": "CPython",
@@ -20,8 +20,8 @@
     "vias": 85,
     "layer_changes": 90,
     "via_lower_bound": 14,
-    "seconds": 67.569,
-    "router_seconds": 62.063
+    "seconds": 67.308,
+    "router_seconds": 61.863
   },
   "boards": [
     {
@@ -45,12 +45,12 @@
       "self_crossings": 0,
       "over_subscribed": 0,
       "seconds": {
-        "build": 0.9247,
+        "build": 0.8983,
         "fanout": 0.0,
         "transitions": 0.0,
-        "field": 0.068,
-        "negotiate": 0.0115,
-        "tighten": 0.103,
+        "field": 0.065,
+        "negotiate": 0.0098,
+        "tighten": 0.0986,
         "skew": 0.0,
         "invariant": 0.0005,
         "emit": 0.0003,
@@ -58,8 +58,8 @@
         "write": 0.0008,
         "check": 0.0003
       },
-      "total_seconds": 1.1091,
-      "router_seconds": 0.1829,
+      "total_seconds": 1.0736,
+      "router_seconds": 0.1739,
       "layers": [
         {
           "layer": "B.Cu",
@@ -107,12 +107,12 @@
       "self_crossings": 0,
       "over_subscribed": 3,
       "seconds": {
-        "build": 0.4487,
+        "build": 0.4428,
         "fanout": 0.0,
         "transitions": 0.0,
-        "field": 0.3534,
-        "negotiate": 0.0088,
-        "tighten": 0.2203,
+        "field": 0.3476,
+        "negotiate": 0.0084,
+        "tighten": 0.2171,
         "skew": 0.0,
         "invariant": 0.0013,
         "emit": 0.0006,
@@ -120,8 +120,8 @@
         "write": 0.0017,
         "check": 0.0005
       },
-      "total_seconds": 1.0353,
-      "router_seconds": 0.5838,
+      "total_seconds": 1.02,
+      "router_seconds": 0.5744,
       "layers": [
         {
           "layer": "B.Cu",
@@ -169,21 +169,21 @@
       "self_crossings": 0,
       "over_subscribed": 0,
       "seconds": {
-        "build": 0.7852,
+        "build": 0.765,
         "fanout": 0.0,
         "transitions": 0.0,
-        "field": 0.3328,
-        "negotiate": 0.1638,
-        "tighten": 4.095,
+        "field": 0.3205,
+        "negotiate": 0.1606,
+        "tighten": 4.0792,
         "skew": 0.0,
         "invariant": 0.0021,
         "emit": 0.001,
         "stitch": 0.0187,
-        "write": 0.0031,
+        "write": 0.0032,
         "check": 0.001
       },
-      "total_seconds": 5.4027,
-      "router_seconds": 4.5937,
+      "total_seconds": 5.3514,
+      "router_seconds": 4.5625,
       "layers": [
         {
           "layer": "B.Cu",
@@ -231,12 +231,12 @@
       "self_crossings": 0,
       "over_subscribed": 6,
       "seconds": {
-        "build": 0.333,
+        "build": 0.3307,
         "fanout": 0.0,
         "transitions": 0.0,
-        "field": 0.1865,
+        "field": 0.1851,
         "negotiate": 0.0114,
-        "tighten": 0.1878,
+        "tighten": 0.1875,
         "skew": 0.0,
         "invariant": 0.0011,
         "emit": 0.0009,
@@ -244,8 +244,8 @@
         "write": 0.0021,
         "check": 0.0005
       },
-      "total_seconds": 0.7234,
-      "router_seconds": 0.3869,
+      "total_seconds": 0.7193,
+      "router_seconds": 0.3851,
       "layers": [
         {
           "layer": "B.Cu",
@@ -293,21 +293,21 @@
       "self_crossings": 0,
       "over_subscribed": 0,
       "seconds": {
-        "build": 0.1218,
+        "build": 0.1215,
         "fanout": 0.0,
         "transitions": 0.0,
-        "field": 0.4503,
-        "negotiate": 0.0285,
+        "field": 0.4444,
+        "negotiate": 0.0286,
         "tighten": 0.2465,
         "skew": 0.0,
         "invariant": 0.0009,
-        "emit": 0.0005,
+        "emit": 0.0006,
         "stitch": 0.0,
         "write": 0.0017,
         "check": 0.0006
       },
-      "total_seconds": 0.8509,
-      "router_seconds": 0.7263,
+      "total_seconds": 0.8447,
+      "router_seconds": 0.7204,
       "layers": [
         {
           "layer": "B.Cu",
@@ -355,21 +355,21 @@
       "self_crossings": 0,
       "over_subscribed": 3,
       "seconds": {
-        "build": 0.0782,
+        "build": 0.0775,
         "fanout": 0.0,
         "transitions": 0.0,
-        "field": 1.0885,
-        "negotiate": 0.5048,
-        "tighten": 8.5804,
+        "field": 1.0865,
+        "negotiate": 0.4965,
+        "tighten": 8.5532,
         "skew": 0.0,
-        "invariant": 0.0039,
+        "invariant": 0.004,
         "emit": 0.0015,
-        "stitch": 0.027,
-        "write": 0.0036,
-        "check": 0.001
+        "stitch": 0.0271,
+        "write": 0.0037,
+        "check": 0.0011
       },
-      "total_seconds": 10.289,
-      "router_seconds": 10.1777,
+      "total_seconds": 10.2512,
+      "router_seconds": 10.1402,
       "layers": [
         {
           "layer": "B.Cu",
@@ -439,21 +439,21 @@
       "self_crossings": 0,
       "over_subscribed": 0,
       "seconds": {
-        "build": 0.0183,
+        "build": 0.0184,
         "fanout": 0.0,
         "transitions": 0.0,
-        "field": 0.0571,
-        "negotiate": 0.0014,
+        "field": 0.0568,
+        "negotiate": 0.0013,
         "tighten": 0.1414,
         "skew": 0.0,
         "invariant": 0.0001,
         "emit": 0.0001,
         "stitch": 0.0,
-        "write": 0.0007,
+        "write": 0.0008,
         "check": 0.0004
       },
-      "total_seconds": 0.2194,
-      "router_seconds": 0.1999,
+      "total_seconds": 0.2192,
+      "router_seconds": 0.1997,
       "layers": [
         {
           "layer": "B.Cu",
@@ -501,21 +501,21 @@
       "self_crossings": 1,
       "over_subscribed": 43,
       "seconds": {
-        "build": 1.1624,
+        "build": 1.1649,
         "fanout": 0.0,
-        "transitions": 0.0275,
-        "field": 1.6336,
-        "negotiate": 0.3266,
-        "tighten": 33.9781,
+        "transitions": 0.0271,
+        "field": 1.6193,
+        "negotiate": 0.3277,
+        "tighten": 33.8831,
         "skew": 0.0001,
-        "invariant": 0.0143,
+        "invariant": 0.0145,
         "emit": 0.0043,
-        "stitch": 0.0336,
-        "write": 0.0079,
-        "check": 0.0027
+        "stitch": 0.033,
+        "write": 0.0076,
+        "check": 0.0023
       },
-      "total_seconds": 37.1911,
-      "router_seconds": 35.9802,
+      "total_seconds": 37.0839,
+      "router_seconds": 35.8718,
       "layers": [
         {
           "layer": "B.Cu",
@@ -585,21 +585,21 @@
       "self_crossings": 0,
       "over_subscribed": 1,
       "seconds": {
-        "build": 0.3021,
+        "build": 0.2983,
         "fanout": 0.0162,
         "transitions": 0.0,
-        "field": 0.4348,
-        "negotiate": 0.1914,
-        "tighten": 5.0008,
+        "field": 0.4379,
+        "negotiate": 0.1896,
+        "tighten": 5.0134,
         "skew": 0.0,
-        "invariant": 0.0057,
+        "invariant": 0.0058,
         "emit": 0.0019,
-        "stitch": 0.0313,
+        "stitch": 0.0312,
         "write": 0.0039,
         "check": 0.001
       },
-      "total_seconds": 5.989,
-      "router_seconds": 5.6488,
+      "total_seconds": 5.9991,
+      "router_seconds": 5.6628,
       "layers": [
         {
           "layer": "B.Cu",
@@ -650,18 +650,18 @@
         "build": 0.0517,
         "fanout": 0.0,
         "transitions": 0.0,
-        "field": 0.5984,
-        "negotiate": 0.0139,
-        "tighten": 0.1521,
+        "field": 0.5971,
+        "negotiate": 0.014,
+        "tighten": 0.152,
         "skew": 0.0,
         "invariant": 0.0006,
         "emit": 0.0004,
         "stitch": 0.0,
         "write": 0.0018,
-        "check": 0.6399
+        "check": 0.6392
       },
-      "total_seconds": 1.4588,
-      "router_seconds": 0.765,
+      "total_seconds": 1.4568,
+      "router_seconds": 0.7637,
       "layers": [
         {
           "layer": "B.Cu",
@@ -709,21 +709,21 @@
       "self_crossings": 0,
       "over_subscribed": 1,
       "seconds": {
-        "build": 0.0491,
+        "build": 0.0486,
         "fanout": 0.0,
         "transitions": 0.0,
-        "field": 0.3196,
-        "negotiate": 0.1431,
-        "tighten": 2.3523,
+        "field": 0.3216,
+        "negotiate": 0.1435,
+        "tighten": 2.3405,
         "skew": 0.0,
-        "invariant": 0.0026,
+        "invariant": 0.0025,
         "emit": 0.001,
-        "stitch": 0.0335,
+        "stitch": 0.0338,
         "write": 0.0028,
-        "check": 0.3965
+        "check": 0.3946
       },
-      "total_seconds": 3.3005,
-      "router_seconds": 2.8177,
+      "total_seconds": 3.289,
+      "router_seconds": 2.8081,
       "layers": [
         {
           "layer": "B.Cu",
