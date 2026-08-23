@@ -30,6 +30,32 @@ route_app = typer.Typer(
 DesignArg = Annotated[Path, typer.Argument(help="Path to the design file.", dir_okay=False)]
 JsonOpt = Annotated[bool, typer.Option("--json", help="Emit machine-readable JSON.")]
 
+#: Where the label is defined and what takes it off. Absolute, because the notice
+#: is read in a terminal that has no idea where the checkout is.
+BETA_DOCS_URL = (
+    "https://github.com/mikkelmi2/aipcb/blob/master/docs/roadmap.md"
+    "#maturity-and-graduation"
+)
+
+#: The same fact the notice states in prose. Machine consumers get it here, in the
+#: report, rather than in a line of output they would have to parse.
+ROUTING_MATURITY = "beta"
+
+
+def _beta_notice(as_json: bool) -> None:
+    """Say once, quietly, that the router has not met a board it did not design.
+
+    On stderr, so it never lands in a pipe, and never at all under ``--json``: a
+    machine consumer reads ``maturity`` out of the report instead.
+    """
+    if as_json:
+        return
+    typer.echo(
+        f"note: autorouting is {ROUTING_MATURITY} - proven on this repository's "
+        f"examples, not yet on boards it did not design. {BETA_DOCS_URL}",
+        err=True,
+    )
+
 
 def _build(
     design: Path, out: Path, report: Report
@@ -45,6 +71,7 @@ def route_check(design: DesignArg, as_json: JsonOpt = False) -> None:
     """Verify that every route topology can actually be built on this placement."""
     from aipcb.route.check import check_routes
 
+    _beta_notice(as_json)
     report = Report()
     try:
         with tempfile.TemporaryDirectory(prefix="aipcb-route-") as tmp:
@@ -59,7 +86,7 @@ def route_check(design: DesignArg, as_json: JsonOpt = False) -> None:
 
     if as_json:
         payload = report.to_dict()
-        payload["routes"] = outcome.to_dict()
+        payload["routes"] = {**outcome.to_dict(), "maturity": ROUTING_MATURITY}
         typer.echo(json.dumps(payload, indent=2))
     else:
         typer.echo(report.render(color=sys.stdout.isatty()))
@@ -101,6 +128,7 @@ def route_all(
     """Build a design and route it, writing tracks into the board."""
     from aipcb.route.pipeline import route_design
 
+    _beta_notice(as_json)
     report = Report()
     target = out or design.parent
     try:
@@ -125,6 +153,7 @@ def route_all(
     layers = ", ".join(str(name) for name in sorted({leg.layer for leg in routed.routed}))
     summary["segments"] = count
     summary["vias"] = via_count
+    summary["maturity"] = ROUTING_MATURITY
     if stitched.placed or stitched.total_skipped:
         summary["stitching"] = stitched.summary()
     states = done.states()

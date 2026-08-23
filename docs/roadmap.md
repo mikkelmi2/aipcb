@@ -5,6 +5,33 @@ Everything here has been considered and left out on purpose, with the reason
 recorded. Where a decision is unlikely to be revisited, it links to the ADR that
 settled it.
 
+## Maturity and graduation
+
+The [README's maturity table](../README.md#maturity-at-a-glance) marks two things
+**beta**. A label with no exit condition is a permanent hedge, so this is what has
+to be true for each one to come off — a measurement plan, not a mood.
+
+**Autorouting graduates when three things have happened.** It has routed **five
+externally-contributed boards** end to end — boards this project did not design,
+brought by somebody who is not us, which is the exact evidence the example corpus
+cannot supply no matter how many examples it grows. A **congestion stress example**
+harder than `examples/congestion` — more nets than channels, on an outline with no
+slack — either routes or hands over cleanly, so that the failure mode at the limit
+is known rather than discovered by a user. And its **runtime is benchmarked against
+board size**, so "it will not finish" can be told apart from "it has not finished
+yet". Until all three, the label stays, and it costs little: routing is one
+declared step, it fails loudly, and `routing: manual` or the
+[Freerouting bridge](external-routers.md) take it out of the loop entirely.
+
+**SI simulation graduates when** all eleven flagship links extract physically —
+`PCIE_TX` is the one that does not, and the open finding is under
+[High speed](#high-speed) — **and** when one simulated impedance has been checked
+against a measured test coupon. The second condition needs a fabricated board, and
+nothing in this repository has been fabricated yet.
+
+Nothing on this page is a delivery date. These are conditions, and the reports say
+when each was last measured.
+
 ## Rejected, not deferred
 
 **External autorouters** — Freerouting and the rest. Recorded in
@@ -49,6 +76,23 @@ worse than refusing it.
 frame. This is fab-level: a panel is a different object from a board, and modelling
 it as an outline with holes in it would be a lie that survives right up until
 somebody orders one.
+
+## Placement
+
+**Placement quality is not optimised, and it is the next obvious gap.** Parts joined
+by a `group`, a `max_distance` or a `for:` reference are clustered, and the clusters
+are shelf-packed into the outline. That is enough to produce boards the router can
+finish — it is how the whole corpus is placed — but nothing *scores* a placement:
+not against total ratline length, not against the congestion it will hand the
+router, not against thermal spread, and nothing iterates towards a better one. This
+is wanted before the router graduates from beta, because a router measured on badly
+placed boards is being measured on the wrong thing.
+
+What would not change is the input. The three-level intent model —
+[ADR 0008](decisions/0008-mech-placement.md), mechanical fixes as law, relative
+intent above them, packing below — is what a scoring pass would optimise *inside*.
+A placer that ignores a `fixed:` position to shorten a ratline has misunderstood
+which of the two is a fact about the world.
 
 ## Routing
 

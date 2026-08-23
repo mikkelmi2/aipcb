@@ -13,6 +13,32 @@ is not always what was built.
 
 ---
 
+## Maturity map
+
+Not everything documented here is at the same level, and a map that does not say so
+is misleading. These are the tiers the [README](../README.md#maturity-at-a-glance)
+carries, with the document that goes deepest on each.
+
+| | | |
+|---|---|---|
+| Source format, compilation, `check`, schematics | **stable** — hardened across fifteen milestones and guarded by invariants | [`format.md`](format.md), [`guide.md`](guide.md) |
+| Manual layout — preserve, `sync-placement`, `routing: manual` | **stable** | [`workflows.md`](workflows.md) |
+| Part placement | **basic** — clusters shelf-packed into the outline, unoptimised on purpose | [`roadmap.md`](roadmap.md#placement) |
+| Autorouting | **beta** — finishes the example corpus, has never met a board this project did not design | [`topology.md`](topology.md), [`routing-costs.md`](routing-costs.md) |
+| SI simulation | **beta** — ten of eleven flagship links extract physically | [`reports/m13.md`](reports/m13.md) |
+| Freerouting bridge | **new** — landed in M14e | [`external-routers.md`](external-routers.md) |
+
+`aipcb route` says the beta part out loud, once per invocation, and the `--json`
+report carries it as `routing.maturity` so an agent does not have to read prose.
+What has to be true for each label to come off is in
+[`roadmap.md`](roadmap.md#maturity-and-graduation) — conditions rather than dates.
+
+A **beta** label here is information, not a warning: routing is one declared step,
+it fails loudly rather than silently, and `routing: manual` or the bridge take it
+out of the loop entirely. Everything in the stable rows works the same either way.
+
+---
+
 ## User documentation
 
 | | |

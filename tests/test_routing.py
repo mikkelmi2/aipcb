@@ -17,9 +17,11 @@ import subprocess
 import sys
 from itertools import pairwise
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
+from aipcb.cli_route import BETA_DOCS_URL
 from aipcb.compile.build import build_design
 from aipcb.diagnostics import Report
 from aipcb.kicad.sexpr import dump, parse
@@ -476,6 +478,73 @@ class TestRouteCli:
         assert payload["routing"]["segments"] > 0
         board = parse((tmp_path / "ldo-supply.kicad_pcb").read_text(encoding="utf-8"))
         assert list(board.children("segment"))
+
+
+@needs_kicad_libraries
+@needs_kicad_cli
+class TestBetaNotice:
+    """The router is beta, and says so once -- to a human, never into a pipe.
+
+    The label is information, not decoration, so it has two forms and they must not
+    leak into each other: one line on stderr for a person, and a ``maturity`` field
+    in the report for anything reading the JSON.
+    """
+
+    #: Every key ``route all --json`` emitted before the maturity field existed.
+    #: ``stitching`` is conditional on the design declaring a stitching pattern, so
+    #: it is excluded here rather than asserted absent.
+    ROUTING_KEYS: ClassVar[set[str]] = {
+        "routed", "failed", "length_mm", "vias", "layers", "nets", "iterations",
+        "converged", "handed_over", "fanout", "pairs", "transitions", "crossings",
+        "manual", "segments",
+    }
+
+    def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "aipcb.cli", "route", *args],
+            capture_output=True, text=True, check=False,
+        )
+
+    def test_the_notice_is_one_line_on_stderr_with_a_link(self, tmp_path: Path) -> None:
+        design = REPO_ROOT / "examples" / "ldo-supply" / "design.yaml"
+        result = self._run("all", str(design), "--out", str(tmp_path))
+        notices = [line for line in result.stderr.splitlines() if "beta" in line]
+        assert len(notices) == 1, result.stderr
+        assert BETA_DOCS_URL in notices[0]
+        assert "beta" not in result.stdout
+
+    def test_route_check_says_it_too(self) -> None:
+        design = REPO_ROOT / "examples" / "usb-port" / "design.yaml"
+        result = self._run("check", str(design))
+        assert sum("beta" in line for line in result.stderr.splitlines()) == 1
+
+    def test_json_carries_the_label_structurally_and_not_in_prose(
+        self, tmp_path: Path
+    ) -> None:
+        design = REPO_ROOT / "examples" / "ldo-supply" / "design.yaml"
+        result = self._run("all", str(design), "--out", str(tmp_path), "--json")
+        assert result.stderr == "", "a machine consumer gets no prose"
+        payload = json.loads(result.stdout)
+        assert payload["routing"]["maturity"] == "beta"
+
+    def test_json_is_schema_stable_apart_from_the_new_field(
+        self, tmp_path: Path
+    ) -> None:
+        """The only difference from the pre-M15.1 payload is ``maturity``."""
+        design = REPO_ROOT / "examples" / "ldo-supply" / "design.yaml"
+        payload = json.loads(
+            self._run("all", str(design), "--out", str(tmp_path), "--json").stdout
+        )
+        assert set(payload) == {"ok", "counts", "diagnostics", "routing"}
+        keys = set(payload["routing"]) - {"stitching"}
+        assert keys - {"maturity"} == self.ROUTING_KEYS
+        assert "maturity" in keys
+
+    def test_route_check_json_carries_it_as_well(self) -> None:
+        design = REPO_ROOT / "examples" / "usb-port" / "design.yaml"
+        result = self._run("check", str(design), "--json")
+        assert result.stderr == ""
+        assert json.loads(result.stdout)["routes"]["maturity"] == "beta"
 
 
 @needs_kicad_libraries
