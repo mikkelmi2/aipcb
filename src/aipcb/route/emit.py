@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Turning tightened routes into KiCad track segments and vias.
 
 Rubber-band tightening produces any-angle geometry, and that is what gets emitted:

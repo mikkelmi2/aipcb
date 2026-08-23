@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The board's mechanical boundary -- layer 2's hardest constraint.
 
 Everything else in ``layout:`` is intent the compiler is free to interpret. The

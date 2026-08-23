@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Mechanical conflict checks -- the ones that are cheap now and expensive in KiCad.
 
 Two fixed footprints whose courtyards overlap, a connector pinned outside the board

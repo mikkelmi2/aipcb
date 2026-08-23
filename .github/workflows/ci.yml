@@ -1,0 +1,115 @@
+# CI runs the test suite twice on purpose.
+#
+# `test` runs on a bare runner with no KiCad, where -- measured, not guessed --
+# 427 of 1274 tests run and 847 skip themselves, in about 17 s. That is the point
+# of the job: a contributor without KiCad should get a fast, green, useful suite,
+# and this is what stops that path from rotting. It is emphatically not a gate.
+#
+# `test-kicad` runs the same suite inside `kicad/kicad:9.0.8`, pinned by patch
+# version, where the other 847 actually run. That is the job that gates a merge,
+# and it takes half an hour. ADR 0013 records why a pinned container beat the
+# PPA, and why two Python interpreters are in play inside it.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ruff + mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e '.[dev]'
+      - run: ruff check .
+      - run: mypy
+
+  licences:
+    name: licence hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+      - name: every source file carries an SPDX header
+        run: python tools/add_spdx.py --check
+      - name: every runtime dependency is permissively licensed
+        run: python tools/check_licenses.py
+
+  test:
+    name: tests (no KiCad, py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -e '.[dev]'
+      - name: pytest, reporting what skipped and why
+        run: pytest -q -rs
+
+  test-kicad:
+    name: tests (KiCad 9.0.8)
+    runs-on: ubuntu-latest
+    container:
+      # Pinned to the patch version every ADR in this repository was measured
+      # against. Bumping it is a deliberate act with a re-measurement attached,
+      # not a floating tag that changes under us -- see CLAUDE.md and ADR 0013.
+      image: kicad/kicad:9.0.8
+      # The image's default user cannot write /var/lib/apt.
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+
+      # Two interpreters are in play in this job, on purpose (ADR 0013 Decision 2):
+      #
+      #   aipcb   -> Python 3.12, installed here by uv. The image ships 3.11, and
+      #              the router is not correct on 3.11 (ADR 0013 Finding 4).
+      #   pcbnew  -> the image's system Python 3.11, because that is what KiCad's
+      #              bindings were built for. aipcb never imports pcbnew in its own
+      #              process; it probes for an interpreter that can (ADR 0009), so
+      #              the two are allowed to differ.
+      - name: install uv, and a standalone Python 3.12 for aipcb
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends curl ca-certificates
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: create the environment
+        run: |
+          uv python install 3.12
+          uv venv --python 3.12 /opt/venv
+          VIRTUAL_ENV=/opt/venv uv pip install -e '.[dev]'
+
+      - name: report both interpreters, so a failure here is debuggable
+        run: |
+          echo "aipcb runs on:  $(/opt/venv/bin/python -V)"
+          /usr/bin/python3 -c 'import sys, pcbnew; print("pcbnew runs on: Python", sys.version.split()[0], "with pcbnew", pcbnew.GetBuildVersion())'
+          kicad-cli --version
+          /opt/venv/bin/aipcb version
+
+      - name: pytest -- nothing here should skip for want of KiCad
+        run: /opt/venv/bin/python -m pytest -p no:cacheprovider -q -rs

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Rendering the artefacts a human reviews.
 
 A ``.kicad_sch`` is not something anybody reads. The thing a reviewer sits down

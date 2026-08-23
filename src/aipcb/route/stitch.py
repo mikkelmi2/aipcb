@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Stitching vias: the barrels that make two pours one plane.
 
 A ground pour on the front and a ground pour on the back are two sheets of copper

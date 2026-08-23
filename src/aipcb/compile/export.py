@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Fabrication output: Gerbers, drill files, and the rest of what a fab needs.
 
 This closes the path the project set out to build. Source goes in one end, and what

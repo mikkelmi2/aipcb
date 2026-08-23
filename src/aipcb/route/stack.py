@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The stackup as the router sees it: which layers exist, and what they are for.
 
 `layout.stackup` describes a physical board. This module turns that into routing

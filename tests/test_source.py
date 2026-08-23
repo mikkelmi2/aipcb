@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Loading YAML with positions, and the strictness rules that go with it."""
 
 from __future__ import annotations

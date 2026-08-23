@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Locating KiCad footprints (``.kicad_mod`` inside ``.pretty`` directories).
 
 The board writer needs a footprint's full definition to place it, and validation

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """What a differential pair *is*: which nets, which pads, how wide, how far apart.
 
 A pair is not two nets that happen to run alongside each other. Its impedance comes

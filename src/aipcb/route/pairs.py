@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Differential pairs: routed as one thing, realized as two runs with a neck.
 
 A pair is not two nets that happen to run alongside each other -- its impedance

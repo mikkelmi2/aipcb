@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Controlled impedance, card edges, via transitions and the M11e report (M11).
 
 Four kinds of test, and the split is the same one M10 used:

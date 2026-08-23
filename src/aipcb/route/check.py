@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Validating route topologies against a placed board.
 
 A sketch can be well-formed and still impossible: it can name a pad that is not on

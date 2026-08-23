@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The property a finished board must have: two nets' copper never touches.
 
 Everything else in :mod:`aipcb.route` is *constructive* -- a route is tightened

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The ``aipcb`` command-line interface.
 
 Every command follows the same contract, because an agent in a loop should never

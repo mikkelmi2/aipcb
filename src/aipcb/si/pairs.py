@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Which differential pairs there are to simulate, and where each one really ends.
 
 A declared pair is two nets that name each other. That is not always one *conductor*

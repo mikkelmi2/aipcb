@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic UUIDs derived from source paths.
 
 Every element `aipcb` emits into a KiCad file carries a UUID that is a pure

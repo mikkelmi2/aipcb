@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Length matching: making the short half of a pair as long as the long one.
 
 Skew is length, so closing it means adding length, and the only honest place to add

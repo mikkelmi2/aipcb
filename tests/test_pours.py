@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Copper pours, stitching vias and plane integrity (M10).
 
 The tests here split three ways, and the split is deliberate:

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Validating pours and stitching before anything is built.
 
 Every check here answers a question that is cheap now and expensive later. A pour

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Placing footprints on the board from the design's placement intent.
 
 The source never says where a part goes. It says what belongs near what and why --

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The query layer: reading part of a design without loading all of it."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The mechanical layer: the board's boundary, and the parts the enclosure pins.
 
 Three claims are under test here, and the first one is the one that would be

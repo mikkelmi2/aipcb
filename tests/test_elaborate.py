@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Flattening hierarchical designs: modules, parameters, and reference designators."""
 
 from __future__ import annotations

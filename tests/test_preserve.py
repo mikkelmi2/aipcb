@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Incremental builds: rebuilding without destroying what a human changed.
 
 The rule under test is one sentence: the source owns what it declares, and

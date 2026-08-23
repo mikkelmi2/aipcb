@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic identity -- the property everything else is built on."""
 
 from __future__ import annotations

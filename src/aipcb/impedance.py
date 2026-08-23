@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Closed-form impedance approximations, in one place.
 
 Three formulas live here, and the differences between them matter enough to be

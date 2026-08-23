@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Controlled impedance: from a net class and a stackup to a trace geometry.
 
 M11a's rule in one place, so that the router, the validator and the verification

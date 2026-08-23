@@ -1,0 +1,91 @@
+aipcb
+Copyright 2026 The aipcb Authors
+
+This product includes software developed by The aipcb Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License in the accompanying LICENSE file or at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+Third-party content
+--------------------------------------------------------------------------------
+
+This section records what in this repository was not written here, and on what
+terms it is present. It was compiled by audit rather than by memory; the audit
+and its method are written up in docs/reports/m15.md.
+
+1. NO VENDORED SOURCE CODE.
+
+   aipcb vendors no third-party code. In particular the S-expression reader and
+   writer in src/aipcb/kicad/sexpr.py is original work, written for this project
+   after `kiutils` was evaluated and rejected; the reasoning is recorded in
+   docs/decisions/0001-kicad-io.md. It is not derived from `kiutils` or from
+   KiCad's own parser.
+
+2. KiCad SYMBOL AND FOOTPRINT DATA, embedded in generated design files.
+
+   The example designs reference stock KiCad library symbols and footprints by
+   name (for instance `Connector:Bus_PCI_Express_x1`). KiCad, in the ordinary
+   course of writing a schematic, inlines the referenced symbol definitions into
+   the `.kicad_sch` file, and footprint geometry into the `.kicad_pcb` file. The
+   generated designs committed under examples/ and tests/golden/ therefore
+   contain KiCad library data.
+
+   The KiCad libraries are licensed CC-BY-SA 4.0 with an exception:
+
+       To the extent that the creation of electronic designs that use
+       'Licensed Material' can be considered to be 'Adapted Material', then
+       the copyright holder waives article 3 of the license with respect to
+       these designs and any generated files which use data provided as part
+       of the 'Licensed Material'.
+
+   The files here are exactly that: generated files which use library data. The
+   exception applies, and the share-alike article does not reach them. The
+   exception is withdrawn only for redistributing the libraries "as a collection";
+   this repository contains no `.kicad_sym`, no `.kicad_mod`, no `.pretty`
+   directory and no library table — the audit checked. Attribution is offered
+   here as courtesy rather than obligation:
+
+       KiCad Libraries — https://gitlab.com/kicad/libraries
+       Copyright the KiCad Librarian Team and contributors
+       CC-BY-SA 4.0 with the design exception above
+       https://www.kicad.org/libraries/license/
+
+3. EXTERNAL TOOLS, INVOKED AND NEVER EMBEDDED.
+
+   aipcb runs several third-party programs as separate processes and exchanges
+   files with them. It does not link against them, import them, bundle them, or
+   distribute them, and none of their licences reach aipcb's own code:
+
+       KiCad 9.x           GPL-3.0-or-later   invoked as `kicad-cli`, and as a
+                                              `pcbnew` subprocess that imports
+                                              nothing from aipcb (ADR 0009)
+       Freerouting 2.x     GPL-3.0            invoked by the user or agent; aipcb
+                                              only writes DSN and reads SES
+       openEMS             GPL-3.0            run inside a container image
+       gerber2ems          Apache-2.0         run inside the same container image
+
+   The `pcbnew` boundary is deliberate and is documented in
+   docs/decisions/0009-pours.md: aipcb's own process never imports `pcbnew`, and
+   the helper subprocess that does imports nothing from aipcb and nothing outside
+   the standard library. The container image for openEMS and gerber2ems is built
+   by the user from Antmicro's published Dockerfile; it is not distributed here.
+
+4. RUNTIME DEPENDENCIES.
+
+   Every distribution in aipcb's runtime dependency closure is BSD/MIT-family or
+   equivalently permissive — 16 distributions, measured, at the time of writing.
+   tools/check_licenses.py re-measures this and fails CI on drift, so the claim
+   has an expiry date attached to it rather than a date of writing.
+
+5. TECHNICAL STANDARDS AND DATASHEETS.
+
+   Connector pinouts in examples/library/ (PCI Express card edge, SATA, USB
+   Micro-B) are factual contact assignments, not copied expression. Where a
+   specification's requirements are discussed — the SATA skew tables in
+   examples/pcie-sata/design.yaml, for example — they are cited and paraphrased,
+   never reproduced. No datasheet text is included verbatim. One datasheet URL is
+   linked, not mirrored.

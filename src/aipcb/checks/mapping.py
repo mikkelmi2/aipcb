@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Mapping KiCad's UUIDs back to the source that produced them.
 
 ``kicad-cli``'s ERC and DRC reports identify every offending item by UUID:

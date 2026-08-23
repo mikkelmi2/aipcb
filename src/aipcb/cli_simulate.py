@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """``aipcb simulate`` -- electromagnetic simulation of the controlled-impedance pairs.
 
 Deliberately not part of ``check``. Two reasons, and only one of them is runtime:

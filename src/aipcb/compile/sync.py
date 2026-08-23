@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Reconciling a hand-moved part with the source that fixed it.
 
 Somebody opens the board in KiCad and nudges the USB connector half a millimetre,

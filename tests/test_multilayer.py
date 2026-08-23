@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Multilayer routing: layers, via columns, cut capacity and negotiated congestion.
 
 These are M8's own tests. The acceptance bar is the same as every milestone's --

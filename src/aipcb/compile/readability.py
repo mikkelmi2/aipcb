@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Measuring how readable a generated schematic is.
 
 "Readable" is a judgement, and this module does not pretend otherwise. What it does

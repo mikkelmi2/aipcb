@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Extracting the routing environment from a generated board.
 
 The stretcher needs to know what a wire must go around: pads belonging to other

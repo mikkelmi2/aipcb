@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Loading and schema-validating designs and part libraries.
 
 pydantic's own error text is written for Python programmers and is missing the one

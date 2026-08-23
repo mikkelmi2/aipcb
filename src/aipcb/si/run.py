@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The batch: slice every pair, solve the ones that changed, report what came back.
 
 Sequential by default, and concurrent when asked -- ``--parallel N``. M12 made the

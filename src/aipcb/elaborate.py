@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Flattening a hierarchical design into a netlist.
 
 Elaboration walks the instance tree, and for each module instance it:
@@ -17,7 +19,7 @@ instead of stopping at the first.
 from __future__ import annotations
 
 import re
-from typing import Any, TypeVar
+from typing import Any
 
 from aipcb.diagnostics import Report
 from aipcb.loader import LoadedDesign
@@ -43,7 +45,6 @@ MAX_DEPTH = 32
 
 _SUBST_RE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 
-_T = TypeVar("_T")
 #: Which source block a mechanical entry came from, so a diagnostic can name it.
 _BLOCK_OF: dict[type, str] = {MechPlacement: "placement", Fanout: "fanout"}
 
@@ -665,9 +666,9 @@ def elaborate(loaded: LoadedDesign, report: Report | None = None) -> Netlist:
     return _Elaborator(loaded, report).run()
 
 
-def _resolve_refs(
-    block: dict[str, _T], components: list[ElabComponent]
-) -> tuple[dict[str, _T], tuple[tuple[str, str], ...]]:
+def _resolve_refs[T](
+    block: dict[str, T], components: list[ElabComponent]
+) -> tuple[dict[str, T], tuple[tuple[str, str], ...]]:
     """Key a mechanical block by reference designator rather than by source name.
 
     A mechanical block names components the way the source does -- ``J1``, or
@@ -678,7 +679,7 @@ def _resolve_refs(
     """
     by_path = {c.path_text: c.refdes for c in components}
     by_refdes = {c.refdes for c in components}
-    resolved: dict[str, _T] = {}
+    resolved: dict[str, T] = {}
     unknown: list[tuple[str, str]] = []
     for name, value in block.items():
         refdes = name if name in by_refdes else by_path.get(name)

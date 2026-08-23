@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """What a signal-integrity simulation is allowed to assume.
 
 Everything here is optional and nothing here reaches the board. A design that says

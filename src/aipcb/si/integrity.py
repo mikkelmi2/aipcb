@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Whether a slice's return path is one conductor, asked before the solver is.
 
 M13.6 spent four solver runs proving one sentence: **a slice's return path has to be

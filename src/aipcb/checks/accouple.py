@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """AC-coupling capacitors in a high-speed pair (M11c).
 
 PCIe requires series capacitors on the transmitting end, and a series part in a

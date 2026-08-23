@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Signal-integrity simulation: slices, the solver that eats them, and the verdict.
 
 The path is: a routed board goes in, one *slice* per differential pair comes out --

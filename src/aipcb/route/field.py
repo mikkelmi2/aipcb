@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The layered routing field: one triangulation per layer, joined by via columns.
 
 This is M8a. Where M7 had a single triangulation of one layer's free space, a

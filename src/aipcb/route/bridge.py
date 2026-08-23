@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The external-router bridge: pipes on each side, and judgement in the middle.
 
 ADR 0006 rejected *integrating* an external router, and that decision stands: the

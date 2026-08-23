@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The pair via-transition generator (M11c).
 
 M8 refused to let a differential pair change layer, and the refusal was correct

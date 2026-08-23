@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Compiling an elaborated netlist into a ``.kicad_pcb``.
 
 The board carries the same information as the schematic plus everything layer 2

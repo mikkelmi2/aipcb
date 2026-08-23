@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The build pipeline: source in, KiCad files out.
 
 One place decides the order of operations -- load, elaborate, check, emit -- so the

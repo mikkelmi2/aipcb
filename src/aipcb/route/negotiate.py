@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Negotiated congestion: every net routes, the contested corridors get expensive.
 
 M7c routed nets in a fixed order and fed each finished route back as geometry. That

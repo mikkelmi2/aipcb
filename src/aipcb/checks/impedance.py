@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Source-level checks on controlled-impedance net classes (M11a).
 
 These run under ``aipcb validate``, before anything is built, because everything

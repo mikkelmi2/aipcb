@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The semantic schematic layer -- layer 1 of the architecture.
 
 This is the format a designer (human or agent) actually writes. It is netlist-first

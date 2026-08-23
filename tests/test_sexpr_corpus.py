@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Round-trip every KiCad file we can find, and prove nothing is lost.
 
 This is the evidence behind ADR 0001. The claim that our S-expression layer is

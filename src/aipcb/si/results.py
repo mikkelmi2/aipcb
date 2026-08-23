@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """From S-parameters to a verdict, in the same shape as every other check.
 
 openEMS hands back two CSV files -- one per excitation -- holding the four-port

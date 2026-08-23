@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """What the router is trying to minimise, as named numbers.
 
 Every term the multilayer search weighs lives here, with a default and a reason.

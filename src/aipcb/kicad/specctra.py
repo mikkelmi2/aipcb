@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Specctra DSN out, Specctra SES in -- headlessly, through ``pcbnew``.
 
 The bridge to an external router is two file formats and no API. ``aipcb`` never

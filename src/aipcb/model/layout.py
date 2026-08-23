@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The layout-intent layer -- layer 2 of the architecture.
 
 This layer says what the board should be *like*, not where every copper feature

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The ``aipcb query`` and ``aipcb summary`` commands.
 
 Rendering lives here, apart from the queries themselves, so text and JSON are two

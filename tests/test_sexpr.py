@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The S-expression layer: parsing, writing, and the guarantees both must hold to."""
 
 from __future__ import annotations

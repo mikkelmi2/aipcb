@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The pieces of geometry every route needs, whichever kind of route it is.
 
 An ordinary connection and half of a differential pair want the same four things: to

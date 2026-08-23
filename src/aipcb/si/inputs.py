@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The three files gerber2ems reads besides the Gerbers, and how they are derived.
 
 ``aipcb export`` produces a fabrication package. gerber2ems wants that package plus

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Running KiCad's ERC and DRC, and re-expressing the results against the source.
 
 `kicad-cli` reports violations against a schematic or a board: a symbol at these

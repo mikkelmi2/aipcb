@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Readable schematics: the placement, the wiring, and the policy on editing them.
 
 M2's bar was "correctness over beauty" and M14's is "reviewable by convention". The

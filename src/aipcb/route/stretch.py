@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The stretcher: topology in, DRC-clean geometry out.
 
 This is the pure function ADR 0006 promised. Give it a sketch and a placed board

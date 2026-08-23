@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Regenerate the golden KiCad files.
 
 Run this after an intentional change to the emitters, then read the diff: it shows

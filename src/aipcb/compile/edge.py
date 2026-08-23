@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Card-edge connectors: the geometry three other modules need (M11b).
 
 A card-edge footprint is unlike every other footprint this tool places, in one

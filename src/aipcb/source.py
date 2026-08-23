@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Loading YAML source with position tracking.
 
 Every diagnostic `aipcb` emits should point at the exact line and column of the

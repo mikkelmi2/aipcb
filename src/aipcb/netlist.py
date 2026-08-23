@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The elaborated netlist -- what a design becomes once modules are expanded.
 
 Layer 1 is hierarchical and parameterised; a schematic is flat. Elaboration is the

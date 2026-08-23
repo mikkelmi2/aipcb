@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Shortest paths across every layer at once, with vias as ordinary moves.
 
 M7 searched one layer's triangulation. This searches all of them, joined at via

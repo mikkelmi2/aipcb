@@ -1,13 +1,42 @@
+# Python
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
+build/
+dist/
+
+# Tool caches
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
-*.egg-info/
-build/
-dist/
+
+# Build output.
+# `aipcb export` writes fabrication data to out/; `aipcb build --render`
+# writes schematic plots to review/. The examples' .kicad_sch and .kicad_pcb
+# *are* committed on purpose -- they are what a reader wants to open.
 out/
+review/
+
+# ...and the KiCad files an example build writes beside its design.yaml.
+# The golden copies under tests/golden/ ARE tracked -- that is what the
+# byte-stability tests compare against -- so these patterns are scoped to
+# examples/ and must stay that way.
+examples/*/*.kicad_pcb
+examples/*/*.kicad_sch
+examples/*/*.kicad_pro
+examples/*/fp-lib-table
+examples/*/sym-lib-table
+
+# Intermediates of tools/make_images.py. The .png files it produces ARE
+# committed -- they are the README -- but the SVGs it rasterises from are not.
+docs/images/_svg/
+docs/images/_check.json
+
+# KiCad's own local state, written when a board is opened
 *.kicad_prl
 *-backups/
 fp-info-cache
+
+# Local agent/session state
+.claude/

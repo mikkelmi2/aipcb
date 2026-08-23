@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Running one slice through openEMS, and not running it again if nothing changed.
 
 The solver never touches the host: it lives in the pinned container ADR 0011

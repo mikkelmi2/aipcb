@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The check loop: build, run KiCad's checks, report against the source.
 
 This is the operation an agent runs after every edit. It exists to make one thing

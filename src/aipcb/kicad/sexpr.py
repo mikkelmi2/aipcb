@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Lossless S-expression reader/writer for KiCad 8/9 files.
 
 Design notes

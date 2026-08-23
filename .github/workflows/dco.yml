@@ -1,0 +1,28 @@
+# Every commit in a pull request must carry a Signed-off-by line matching its
+# author. See CONTRIBUTING.md for the `git commit -s` instruction and the fix-up
+# commands. The check is a dozen lines of shell rather than a third-party action
+# on purpose: it is the only thing standing between this repository and an
+# unreviewed dependency running in CI on every pull request.
+
+name: DCO
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: sign-off
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: every commit is signed off
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python3 tools/check_dco.py "$BASE" "$HEAD"

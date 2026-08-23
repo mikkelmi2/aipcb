@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Emitting the project-level files KiCad expects beside a schematic.
 
 A ``.kicad_sch`` embeds copies of the symbols it uses, so it opens and checks

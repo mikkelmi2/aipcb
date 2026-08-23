@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Signal-integrity simulation: slices, solver inputs, and the arithmetic on the way back.
 
 Nothing here starts a container. The solver is pinned, slow and external; what these

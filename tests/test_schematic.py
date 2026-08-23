@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Compiling designs into KiCad schematics.
 
 The acceptance bar for M2 is not "it wrote a file" but "KiCad agrees with it": the

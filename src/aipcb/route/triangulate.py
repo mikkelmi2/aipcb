@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Triangulating the free space, and expressing paths as crossing sequences.
 
 This is the machinery ADR 0006 settled on, following the shortest-homotopic-path

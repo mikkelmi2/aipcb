@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Filling zones with KiCad's own engine, in a subprocess.
 
 `kicad-cli` 9.0.8 cannot fill a zone: there is no fill command, no fill flag, and

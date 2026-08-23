@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Compiling designs into KiCad boards.
 
 The acceptance bar for M3 is a board KiCad loads, whose DRC reports no violations

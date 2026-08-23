@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The funnel algorithm: tightening a sleeve into the shortest path through it.
 
 Given a sleeve -- the strip of triangles a route's homotopy class passes through --

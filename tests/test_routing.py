@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Topological routing: the model, the geometry, and what KiCad makes of the result.
 
 The acceptance bar is the same as every other milestone's: generated copper passes

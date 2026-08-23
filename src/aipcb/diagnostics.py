@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Structured, source-referenced diagnostics.
 
 Every problem `aipcb` reports -- a schema violation, an unresolvable part, a DRC

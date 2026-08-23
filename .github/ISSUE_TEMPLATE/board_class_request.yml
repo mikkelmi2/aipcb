@@ -1,0 +1,78 @@
+name: Board class request
+description: You tried a board aipcb couldn't finish — tell us where it handed over
+labels: ["board-class"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        aipcb is honest about a narrow demonstrated range: two- and four-layer
+        boards, up to roughly a dozen parts, with differential pairs that matter.
+        Dense BGA, DDR, HDI and six-plus layers are **not** built — the README says
+        so.
+
+        This template is not for reporting that. It is for telling us **what you
+        tried and exactly where it stopped**, because that is the information that
+        decides what gets built next. A board that fails cleanly is data. Please
+        file this even if the failure was expected.
+
+  - type: textarea
+    id: board
+    attributes:
+      label: What board did you try?
+      description: >
+        Layer count, board size, part count, the densest package on it, and the
+        constraints that mattered (controlled impedance? length matching? a
+        connector with a fixed position?).
+      placeholder: |
+        6-layer, 80 × 60 mm, ~90 parts, densest is a 0.8 mm pitch 256-ball BGA.
+        Two DDR3 byte lanes needing length matching, plus a USB 3 pair.
+    validations:
+      required: true
+
+  - type: textarea
+    id: handover
+    attributes:
+      label: Where did it hand over?
+      description: >
+        Which command, which stage, and what it said. Paste the diagnostics. If it
+        finished but the result was unusable, say what was wrong with it — that is
+        a different and more interesting answer than a clean stop.
+      render: shell
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Which stage stopped you?
+      multiple: true
+      options:
+        - The source format could not express the design
+        - Part definitions were missing
+        - Placement
+        - Routing — it gave up and handed over
+        - Routing — it finished, but the result was not usable
+        - DRC / checks
+        - Simulation
+        - Export / fabrication output
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: source
+    attributes:
+      label: The design source, if you can share it
+      description: >
+        Optional but by far the most useful thing here. A cut-down version that
+        still stops in the same place is ideal.
+      render: yaml
+
+  - type: textarea
+    id: workflow
+    attributes:
+      label: What would you have wanted to happen?
+      description: >
+        Full auto? Hybrid — you route the hard nets, aipcb does the rest? Or aipcb
+        purely as a schematic, placement and verification tool with all routing
+        done by hand? Knowing which mode you were reaching for matters.

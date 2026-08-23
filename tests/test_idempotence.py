@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Every command is a function of its source, not of what it left behind.
 
 M13.5 found `aipcb check` reading its own previous output back in. `check` routes

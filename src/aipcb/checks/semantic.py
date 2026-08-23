@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Semantic checks on an elaborated netlist.
 
 These run before anything is compiled, and catch the mistakes that are cheapest to

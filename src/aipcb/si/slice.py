@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Cutting one pair out of a routed board, and giving it somewhere to be fed from.
 
 A slice is a real ``.kicad_pcb``: same stackup, same nets, same pours, same design

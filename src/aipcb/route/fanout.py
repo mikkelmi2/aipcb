@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Pattern-based escape routing: getting a dense package's signals out from under it.
 
 A fine-pitch package is where rubber-band routing meets its density ceiling, and

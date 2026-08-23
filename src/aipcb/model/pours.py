@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Copper pours and stitching vias -- plane intent, expressed once in the source.
 
 A pour is not geometry the source stores; it is a *statement about which net owns

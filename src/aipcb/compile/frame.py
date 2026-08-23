@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The board reference frame: one place where Y-up meets Y-down.
 
 The source describes the board in its own frame -- millimetres, Y up, origin at the

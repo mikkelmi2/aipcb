@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Plane integrity: what the fill actually produced, measured off the filled board.
 
 A pour is a request. What comes back is copper with holes in it, cut by every track

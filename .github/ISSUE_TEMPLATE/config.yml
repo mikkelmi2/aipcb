@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: How the source format works
+    url: https://github.com/mikkelmi2/aipcb/blob/master/docs/format.md
+    about: The reference for every key in a design file — check here before filing a bug about one.
+  - name: Why it is built this way
+    url: https://github.com/mikkelmi2/aipcb/tree/master/docs/decisions
+    about: Architecture decision records. Most "why doesn't it just…" questions are answered in one of these.

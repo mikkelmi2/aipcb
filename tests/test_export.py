@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Fabrication output: the last step of the source-to-fab-data path."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Card-edge connector integration checks (M11b).
 
 Everything here is validation and glue. The fingers are the footprint's; the notch

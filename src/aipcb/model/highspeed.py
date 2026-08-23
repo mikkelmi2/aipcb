@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """High-speed source blocks: pair via transitions (M11c).
 
 A differential pair changing layer is not two vias. It is a *pattern*: two signal

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Where things go on a schematic sheet, and why.
 
 M2 placed symbols on a square grid in module order. That is a netlist with

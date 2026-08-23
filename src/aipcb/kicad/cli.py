@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Driving ``kicad-cli``.
 
 KiCad is the backend of this toolchain, not a library dependency: we shell out to

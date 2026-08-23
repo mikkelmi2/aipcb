@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The bundled examples must validate cleanly and survive a round trip.
 
 These are the designs the README points at, so they are also the format's

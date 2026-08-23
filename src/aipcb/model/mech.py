@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Mechanical placement and fanout intent -- what the board's outside world dictates.
 
 Layer 1 says what a component is *for*; ``layout.placement`` says what belongs near

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Partial reads of a design, for token economy.
 
 An agent working on one part of a board should not have to hold the whole thing in

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Rebuilding a board without destroying what a human changed in KiCad.
 
 `aipcb` generates boards, but people finish them. Someone opens the `.kicad_pcb`,

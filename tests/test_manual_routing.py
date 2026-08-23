@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """`routing: manual`, the schematic-edit policy, and the external-router bridge.
 
 Three M14 features that share one theme: saying out loud what is generated and what

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Build a design and route it -- the whole of ``aipcb route all``, minus the CLI.
 
 Extracted so that more than one command can produce a routed board. ``aipcb

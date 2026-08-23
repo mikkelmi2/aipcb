@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The check loop: KiCad's findings, re-expressed against the source.
 
 The point of M4 is that a violation KiCad reports against a pad at some coordinate

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The component database: parts, their pinouts, and their KiCad bindings.
 
 A *part* is a purchasable thing (``C_100n_0402``, ``ATtiny85-20PU``). It binds a

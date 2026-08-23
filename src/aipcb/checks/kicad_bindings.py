@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Checking that parts bind to KiCad symbols and footprints that actually exist.
 
 A part declares a symbol, a footprint, and a pinout. All three can drift: a symbol

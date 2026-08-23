@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Declared-manual routing, and the four states a net's copper can be in.
 
 Manual routing already *happened* before M14: the router hands a connection over

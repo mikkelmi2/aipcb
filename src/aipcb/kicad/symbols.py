@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Reading KiCad symbol libraries (``.kicad_sym``).
 
 Two things need this. The part database wants to *verify* that a part's declared

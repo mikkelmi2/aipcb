@@ -1,0 +1,72 @@
+name: Bug report
+description: Something produced the wrong output, crashed, or claimed something untrue
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The single most useful thing you can attach is **the design file**. Almost
+        every bug here is reproducible from the source, and almost none are
+        reproducible from a description of the source.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what you expected instead
+      placeholder: |
+        `aipcb check examples/mine/design.yaml` reported 0 DRC errors, but KiCad
+        opens the board with two overlapping tracks on In1.Cu.
+    validations:
+      required: true
+
+  - type: textarea
+    id: design
+    attributes:
+      label: The design source
+      description: >
+        Paste the design file, or attach it, or link a repository. Cut it down if
+        you can — a design that still reproduces the bug with three parts is worth
+        far more than one with fifty. If you cannot share it, say so and describe
+        the shape of it (layer count, net classes, what's routed manually).
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: The command you ran, and its complete output
+      description: Include the whole output, not just the last line. `--json` output is ideal.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: >
+        Run `aipcb version` — it prints both aipcb's version and the KiCad it found.
+        Add your OS, and the Freerouting or container image version if the bug
+        involves an external router or a simulation.
+      value: |
+        aipcb version:
+        KiCad:
+        Python:
+        OS:
+        Freerouting / container image (if relevant):
+      render: shell
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: determinism
+    attributes:
+      label: Determinism
+      description: >
+        Same source in, byte-identical output out, is a rule this project treats as
+        inviolable. If it broke, that is a more serious bug than whatever else you
+        came here to report, and worth saying so.
+      options:
+        - label: Running the same command twice produced different output
+        - label: I have not checked

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Emitting copper pours as KiCad zones -- the outline and the rules, never the fill.
 
 A zone in a ``.kicad_pcb`` is two things bolted together: a *boundary* with a set of

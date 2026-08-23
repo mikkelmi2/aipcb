@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """The high-speed verification report (M11e).
 
 **This is rule-based verification, not electromagnetic simulation.** Everything

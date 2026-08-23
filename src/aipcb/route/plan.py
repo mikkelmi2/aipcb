@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Routing a whole board: what to connect, where it goes, and on which layer.
 
 The work divides in two, and keeping the halves apart is what makes M8 tractable.

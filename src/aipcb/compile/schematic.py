@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 The aipcb Authors
+# SPDX-License-Identifier: Apache-2.0
 """Compiling an elaborated netlist into a ``.kicad_sch``.
 
 Connectivity is names. Every pin gets a short stub, and on the end of that stub sits
