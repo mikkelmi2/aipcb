@@ -18,9 +18,33 @@
 # opinions with it; a generic one has none. The pin *names* below are this board's
 # own and are what `pins:` resolves against.
 #
-# The footprints are real, the pinout is real, and the geometry is real. The
-# schematic symbols are outlines with the right number of pins. What M11 is about
-# is the board, and the board is the real thing.
+# **The power architecture is a simplification, and that is the part most likely
+# to mislead.** `SATA_CTRL_QFN48` below declares exactly two supply pins, 38 and
+# 45, both on one 3.3 V rail, and `../pcie-sata/design.yaml` decouples them
+# correctly: one 100 nF per supply pin plus a 10 uF reservoir. Against the pinout
+# as written, nothing is missing.
+#
+# Against a real bridge, plenty is. An ASM1064/JMB585-class part drives five
+# high-speed PHYs -- one PCIe Gen3 lane and four SATA III ports -- and does not
+# run them off a single 3.3 V rail. It has a core rail around 1.0-1.2 V, usually
+# from an LDO; separate analog and PLL supplies for the SerDes, typically with
+# their own filtering; and an I/O supply. Each wants local decoupling of its own.
+# A real board of this function carries something like 15-25 capacitors. This one
+# carries six, and the six it has are right for the part it describes rather than
+# for the part it is named after.
+#
+# So: the footprints are real and the geometry is real. The *pinout* is real in
+# its signal assignments -- the SATA and PCIe pairs, the reference clock, the
+# grounds -- and deliberately simplified in its supplies. The schematic symbols
+# are outlines with the right number of pins. What M11 was about is the board and
+# the copper on it, and those are the real thing; the power tree is scenery.
+#
+# One consequence worth naming, because it is a gap in the tool rather than in
+# this file: **aipcb has no decoupling-coverage check.** It knows a capacitor's
+# `role` and what it is `for:`, it places satellites next to what they serve, and
+# it measures how far each one ended up from its pin -- but nothing anywhere
+# asserts that every power pin *has* a local capacitor. A genuinely
+# under-decoupled board would pass every check in this repository.
 
 parts:
   PCIE_X1_EDGE:
