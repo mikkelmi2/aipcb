@@ -198,6 +198,55 @@ suffixes rather than overwrites, `_accept` names copper by layer as well, and
 `route/invariant.py` asks the finished board whether any two nets overlap. See
 [`m13.md`](reports/m13.md).
 
+### From the gEDA toporouter study
+
+The [toporouter postmortem](notes/toporouter-postmortem.md) read the only complete
+open-source rubber-band router that exists — gEDA PCB's, written 2008–2009 from Tal
+Dayan's thesis, abandoned by 2010 and broken beyond repair by 2011. The techniques
+below are the forward-looking half of that note; the exposures under
+[Verification](#verification) are the other half. Everything here is to be built from
+the note and the academic sources, **never** from the GPL-2.0 source it studied.
+
+**A routing benchmark harness.** Nothing measures how the router's runtime grows with
+board size. It is already one of the three
+[graduation conditions](#maturity-and-graduation) for autorouting to leave beta; the
+postmortem raises its priority, because runtime — not correctness — is what actually
+made the toporouter unusable (90 seconds and 35 failed nets on a 269-net board), and
+it had no benchmark to see it coming. It is also the precondition for judging the
+three candidates below, all of which trade runtime for quality. Do this first.
+
+**A spreading pass.** Every route is tightened to the shortest path through its
+sleeve, so it hugs the inflated hull of every obstacle it passes even where there is
+free space on the other side. M11d rule 1 gives a wider corridor to
+controlled-impedance pairs and to nothing else. A general pass that distributes the
+routes crossing a cut evenly along it would give every net what the standoff gives
+pairs — less coupling, more room for later nets, and pressure on the same-net sliver
+from the geometry side. Postmortem §A.1 and candidate C1.
+
+**A detour pass.** Negotiation converges on *legality* — no cut over-subscribed — and
+then stops; nothing afterwards asks whether a legal route is a good one. A
+post-convergence pass that ranks routes by realised length over unobstructed length,
+rips up the worst, and keeps only strictly-better re-routes was measured on the
+historical boards at 7–16% less copper for 15–30% more runtime. It is a pure post-pass
+and can be budget-capped. Postmortem §A.4 and candidate C3.
+
+**Route to the net, not to the pad.** `spanning_routes` fixes a Euclidean minimum
+spanning tree over pad centres before anything is routed, so every connection is a
+fixed pad-to-pad problem. Routing group-to-group, and merging the two groups when a
+connection lands, lets later connections of a net terminate anywhere on what is
+already connected. It shortens copper, helps completion under congestion, and removes
+the `copper_sliver` above at its cause instead of trimming it afterwards. It is also
+the largest of these — it changes what a connection *is*, which reaches
+`RouteTopology` and the manual-routing path, and would need its own ADR. Postmortem
+§A.5 and candidate C4.
+
+**Ordering the first negotiation pass by pairwise conflict.** Routing each connection
+alone and scoring the pairs by how much their solo routes conflict is an alternative
+to the current priority-plus-difficulty order. Listed with low confidence — negotiation
+exists precisely to make the first order matter less — but cheap to settle by
+measuring iterations to convergence on `examples/congestion` both ways. Postmortem
+§A.4 and candidate C5.
+
 ## Verification
 
 **Copper outside the board outline is not checked by anything.** Measured on KiCad
@@ -217,6 +266,52 @@ there is dropped inside KiCad with nothing in the report saying a category went
 missing. The list is version-specific by construction. ADR 0009's rule applies: it
 wants re-measuring at each KiCad major, and `tests/test_check_loop.py` carries the
 60-rule catalogue with the version attached so the diff is visible when it moves.
+
+### Exposures flagged by the toporouter study
+
+Three places where the [postmortem](notes/toporouter-postmortem.md) found aipcb
+sharing a weakness with the router it studied and nothing watching. None is a defect
+found in output; each is a guard the failure history says is worth having.
+
+**The capacity model under-counts cuts, and does not say so.** `field.py` states
+Maley's realizability criterion — a set of topologies is buildable exactly when no cut
+is over-subscribed — and then charges only the triangulation's own diagonals. The
+second diagonal of every adjacent triangle pair is also a cut, and it can be the
+shorter one; the gEDA toporouter hit this, named them *special cuts*, and rewrote its
+cluster code around them in 2009. So `check_capacity` is **optimistic**: it can pass a
+board the criterion rejects. Legality is guarded downstream — the stretcher tightens
+against inflated obstacles including all finished copper, and `route/invariant.py`
+asks the finished board whether two nets overlap — so the consequence is a route that
+fails or detours absurdly somewhere the capacity report called fine, not a short
+circuit. Two things follow, and they are separable: the *wording* should be corrected
+now to say the cut set is a lower bound (a check that overstates its guarantee is
+worse than one that states its limits), and charging the flip diagonals is a candidate
+in its own right — worth measuring first, by counting on each example how often a flip
+diagonal is shorter than the diagonal it pairs with. Postmortem §A.6, candidate C2 and
+exposure E1.
+
+**Nothing checks that a net does not cross itself.** `crossing_nets` skips same-net
+pairs, and must — two connections of one net are supposed to meet. The consequence is
+that no check anywhere asks whether a *single leg* is a simple polyline, or whether
+two legs of one connection overlap on one layer. A single funnel output is simple by
+construction; a multi-leg route across via hops is a concatenation of several, and the
+construction argument does not cover the join. The toporouter's tightener produced
+exactly this class of geometry and its author spent over a hundred hours on it. Both
+checks are one Shapely call, and the expected result on the current corpus is zero
+findings — which is the point. Postmortem exposure E2.
+
+**Scale robustness is untested.** The toporouter was killed, finally and
+unrecoverably, by the host project converting its base units to nanometres: the
+coordinate range moved, the triangulation library's in-circle predicate stopped being
+reliable, and edge-flipping recursed ten thousand deep on a two-resistor board. aipcb
+delegates its CDT to GEOS rather than hand-rolling one ([ADR
+0006](decisions/0006-routing-approach.md)) and snaps to 1e-6 mm, which at board scale
+leaves eight orders of magnitude of double precision in hand — so this is almost
+certainly fine. "Almost certainly" is exactly the state
+[CLAUDE.md](../CLAUDE.md)'s premise rule exists to end. One test that routes an
+existing example translated far from the origin and scaled, asserting the same
+topology comes out, converts a premise into a dated measurement. Postmortem exposure
+E3.
 
 ## Schematics
 
