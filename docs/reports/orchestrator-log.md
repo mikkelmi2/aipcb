@@ -11,7 +11,7 @@ ADR numbers were assigned up front to keep concurrent agents from colliding:
 
 ## Baseline before M10
 
-Starting point: `d6fcc49`, working tree clean, `master` up to date with `origin`.
+Starting point: `f4e3868`, working tree clean, `master` up to date with `origin`.
 
 Verified by the orchestrator before anything was delegated:
 
@@ -60,10 +60,10 @@ Gate status at the halt:
 
 | Gate | Result |
 |---|---|
-| 1 — suite, ruff, mypy | green; the two commits touch only Markdown (`git diff --stat d6fcc49..HEAD` = 3 doc files), so the verified baseline still holds |
+| 1 — suite, ruff, mypy | green; the two commits touch only Markdown (`git diff --stat f4e3868..HEAD` = 3 doc files), so the verified baseline still holds |
 | 2 — acceptance checks | **not applicable — nothing was implemented**, so there is nothing to accept |
 | 3 — delivery report | `docs/reports/m10.md` exists (230 lines) and does carry measurements: fill determinism over 8 runs on 2 boards, the ten-example per-stage performance table, the usb-port fill probe (0.42 s, 444 vertices, 0 DRC violations) |
-| 4 — commit + push | `2b519e8`, `d185199` — pushed |
+| 4 — commit + push | `6c73140`, `6a25da9` — pushed |
 | 5 — this entry | written |
 
 Notable, and carried into the final report:
@@ -104,7 +104,7 @@ repo file it created is `docs/decisions/0011-si-simulation.md` (351 lines), it r
 no git commands, and it installed nothing into `.venv` or `pyproject.toml`. The
 orchestrator verified the artifacts it claimed: `podman` present at
 `/usr/bin/podman`, image `localhost/gerber2ems:phase0` = `e1921ec2b3fc`, matching
-the digest recorded in the ADR. Committed as `307d2e4` and pushed.
+the digest recorded in the ADR. Committed as `451812c` and pushed.
 
 The verdict is genuinely useful even with the chain stopped, because it retires the
 milestone's biggest unknown:
@@ -223,7 +223,7 @@ M12a's port work; it has been written into `docs/milestones/m12-simulation.md` a
 required work rather than fixed here, because choosing the coordinate frame of a
 fab deliverable is a real decision, not a one-flag mechanical fix.
 
-Commits `2d046be`, `8a4c4c8`, pushed.
+Commits `df118ba`, `7ea4fc5`, pushed.
 
 ### M10 gate — PASSED (all five)
 
@@ -234,7 +234,7 @@ Re-run by the orchestrator, not taken from the subagent's report.
 | 1 — suite, ruff, mypy | `pytest` exit 0 (968 collected, up from 886); `ruff` clean; `mypy --strict` clean on **66** source files (60 before) |
 | 2 — acceptance checks | passed, measured independently — see below |
 | 3 — delivery report | `docs/reports/m10.md`: deviations in a table at the top, measured numbers throughout, the required per-stage performance table with aipcb stages separated from `kicad-cli`/`pcbnew` calls and compared line-by-line against the pre-pours baseline |
-| 4 — commit + push | `a5c8152` (implementation), `7e9af61` (docs + report) — pushed |
+| 4 — commit + push | `1973b4a` (implementation), `7c19421` (docs + report) — pushed |
 | 5 — this entry | written |
 
 **Gate 2, measured by the orchestrator on all ten examples:**
@@ -303,7 +303,7 @@ than retiring the marker or weakening the test.
 terminated by an API session limit at the moment it printed "Now the performance
 measurements:". All of M11a–M11e, the tests, the docs and
 [ADR 0010](../decisions/0010-highspeed.md) were already committed across five
-commits (`3fadee9`, `76f2c98`, `8afd02c`, `11c3e16`, `d5452a6`) with a clean tree;
+commits (`4599b95`, `fbd048e`, `166fa4f`, `e33b0ce`, `1e0a6a2`) with a clean tree;
 only `docs/reports/m11.md` was missing. That is a gate-3 failure, so the
 orchestrator spent its **one permitted remediation pass** on exactly that: a fresh
 subagent to write the report and take the measurements the first session died on.
@@ -338,14 +338,14 @@ permitted stretcher change" than the guardrail required.
 ### M11 gate — PASSED, with one acceptance clause explicitly NOT met
 
 Re-run by the orchestrator. The remediation pass produced `docs/reports/m11.md`
-(722 lines, commit `e61fe00`).
+(722 lines, commit `df90927`).
 
 | Gate | Result |
 |---|---|
 | 1 — suite, ruff, mypy | `pytest` exit 0 (**1090 tests**, up from 968; 20 m 27 s); `ruff` clean; `mypy --strict` clean on **75** source files |
 | 2 — acceptance checks | passed as specified — but see the shortfall below |
 | 3 — delivery report | passes emphatically: 11 deviations in a table at the top, measured claims throughout, the performance table compared against M10's baseline |
-| 4 — commit + push | five M11 commits plus `e61fe00` — pushed |
+| 4 — commit + push | five M11 commits plus `df90927` — pushed |
 | 5 — this entry | written |
 
 **Gate 2, measured by the orchestrator across all eleven examples:**
@@ -355,7 +355,7 @@ Re-run by the orchestrator. The remediation pass produced `docs/reports/m11.md`
 - **Zero DRC/ERC errors on all eleven**, `rc=0` throughout. Warnings only:
   `pcie-sata` 10, `overconstrained` 3 (its expected hand-overs), `qfn-fanout` 1,
   `usb-port` 1.
-- **Prior examples genuinely unaffected:** `git diff 1f637c9..HEAD -- tests/golden/`
+- **Prior examples genuinely unaffected:** `git diff b7d9c5e..HEAD -- tests/golden/`
   adds the new `pcie-sata` golden and modifies **no** pre-M11 golden at all.
 - **The stretcher guardrail held strictly.** `route/stretch.py` is untouched. The
   three M11d rules live in `route/pairs.py`, gated on `impedance_diff_ohm`, with
@@ -403,7 +403,7 @@ violation with an empty `items` array and no position in both output formats.
 **Pad-UUID aliasing:** the card edge is not affected — `J1` has 36 pads, 36 numbers
 and **36 distinct UUIDs**. The defect remains live elsewhere on the same board (JST
 shells 9 pads/8 UUIDs, QFN exposed pad 65/50) and `usb-port` is unchanged at 31/20.
-Commit `d5452a6` turned out to be about something else: the *generated* card-edge
+Commit `1e0a6a2` turned out to be about something else: the *generated* card-edge
 pour keepout, the one zone nobody declares, which the UUID index did not know
 about — so a DRC violation on it reported `loc: None` and "probably added by hand
 in KiCad". Now it points at `design.yaml:451:3`.
@@ -456,7 +456,7 @@ without re-deriving anything by hand.
 | 1 — suite, ruff, mypy | `pytest` exit 0 (**31 m 58 s**); `ruff` clean; `mypy --strict` clean on **85** source files |
 | 2 — acceptance checks | passed, measured by the orchestrator: **11/11 examples byte-stable**, **0 DRC errors** on all eleven, warning counts unchanged from before M12 (pcie-sata 10, overconstrained 3, qfn-fanout 1, usb-port 1) — the new work disturbed no prior example. One acceptance item was not run; see below |
 | 3 — delivery report | passes after remediation |
-| 4 — commit + push | fourteen M12 commits, plus `7c0b590` (remediation) and `db1f5ba` (orchestrator deviation row) — pushed |
+| 4 — commit + push | fourteen M12 commits, plus `0ba14ae` (remediation) and `db1f5ba` (orchestrator deviation row) — pushed |
 | 5 — this entry | written |
 
 The remediation ran **all eleven links** — roughly two hours of solver time — so
