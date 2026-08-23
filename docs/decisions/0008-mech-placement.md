@@ -263,6 +263,20 @@ generator for a *specific* pattern, deterministic, UUID-mapped, and composing wi
 the topology model rather than replacing it. Where the router is not good enough,
 the answer is another pattern generator or an honest hand-over — not a black box.
 
+> **Amended by M14e (2026-08-22): the rejection stands; the position is refined.**
+> Integrating an external router is still rejected, for exactly the three reasons
+> above. What M14e added is a **documented bridge**, which is a different object:
+> `aipcb export --dsn` writes a Specctra file with all existing copper marked
+> unmovable, an *agent* runs whatever router it likes as an explicit visible step,
+> and `aipcb import --ses` splices the result in, verifies its geometry against the
+> source net classes, and checks it. The three broken properties are not repaired —
+> they are **stated**, in [`docs/external-routers.md`](../external-routers.md):
+> external copper is manual copper, it carries no source mapping, and it is
+> explicitly exempt from the determinism bar. aipcb still never invokes a router,
+> parses its logs, or offers an `--engine` flag. The full amendment, with the Phase 0
+> measurements it rests on, is in
+> [ADR 0006](0006-routing-approach.md#amendment-m14dm14e-declared-manual-routing-and-a-bridge-that-is-not-an-integration).
+
 **Making the whole placement model absolute.** Tempting, and wrong. Relative intent
 is what makes a design portable between board revisions; absolute coordinates are
 what makes it match an enclosure. A board needs both, and the layering above says

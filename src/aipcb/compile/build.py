@@ -14,13 +14,19 @@ from pathlib import Path
 from aipcb.checks.kicad_bindings import check_kicad_bindings
 from aipcb.checks.semantic import run_semantic_checks
 from aipcb.compile.board import build_board
-from aipcb.compile.preserve import MergeStats, merge_board
+from aipcb.compile.preserve import (
+    MergeStats,
+    merge_board,
+    schematic_was_edited,
+    stamp_schematic,
+)
 from aipcb.compile.project import (
     build_fp_lib_table,
     build_project,
     build_sym_lib_table,
     render_project,
 )
+from aipcb.compile.review import ReviewResult
 from aipcb.compile.schematic import build_schematic
 from aipcb.diagnostics import AipcbError, Report
 from aipcb.elaborate import elaborate
@@ -41,6 +47,8 @@ class BuildResult:
     project: str = ""
     merge: MergeStats | None = None
     """What was preserved from an existing board, when one was there."""
+    review: ReviewResult | None = None
+    """The rendered review artefacts, when ``--render`` asked for them."""
 
 
 def compile_netlist(design_path: Path, report: Report) -> Netlist:
@@ -58,6 +66,7 @@ def build_design(
     out_dir: Path | None = None,
     report: Report | None = None,
     fresh: bool = False,
+    render: bool = False,
 ) -> BuildResult:
     """Compile a design to KiCad files.
 
@@ -101,7 +110,9 @@ def build_design(
     written.append(project_path)
 
     schematic_path = target / f"{project}.kicad_sch"
-    _write_if_changed(schematic_path, dump(build_schematic(netlist, project=project)))
+    schematic = stamp_schematic(build_schematic(netlist, project=project))
+    _report_schematic_edits(schematic_path, schematic, report)
+    _write_if_changed(schematic_path, dump(schematic))
     written.append(schematic_path)
 
     board_path = target / f"{project}.kicad_pcb"
@@ -134,8 +145,52 @@ def build_design(
     _write_if_changed(fp_table, dump(build_fp_lib_table(footprint_libs)))
     written.append(fp_table)
 
+    review: ReviewResult | None = None
+    if render:
+        from aipcb.compile.review import render_review
+
+        review = render_review(schematic_path, target, netlist, report)
+        written.extend(review.files)
+
     return BuildResult(
-        netlist=netlist, written=written, project=project, merge=merge_stats
+        netlist=netlist,
+        written=written,
+        project=project,
+        merge=merge_stats,
+        review=review,
+    )
+
+
+def _report_schematic_edits(path: Path, fresh: SNode, report: Report) -> None:
+    """Say out loud that a hand-edited sheet is about to be regenerated.
+
+    ADR 0003 (amended by M14) makes the schematic a *view* of the source rather than
+    a document: everything on it -- every symbol, wire, label and power symbol -- is
+    generated, so there is nothing on the sheet that a rebuild could sensibly hand
+    back. The board is the opposite case, and M6 preserves it accordingly.
+
+    What that policy owes the person who moved a symbol is a sentence, not silence.
+    A sheet whose stamp no longer matches its contents has been edited, and this says
+    so before the edit is overwritten -- and says where the edit belongs instead.
+    """
+    if not path.exists():
+        return
+    try:
+        existing = parse(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, SExprError):
+        return  # unreadable: the write below replaces it, and says nothing it cannot back up
+    if dump(existing) == dump(fresh):
+        return
+    edited = schematic_was_edited(existing)
+    if edited is not True:
+        return
+    report.warning(
+        "schematic-edits-discarded",
+        f"{path.name} has been edited since aipcb generated it, and those edits are "
+        "about to be regenerated away",
+        hint="the schematic is a view of the design, not a second copy of it: move "
+        "the change into the YAML, where it is reviewable and survives. Copy the "
+        "sheet aside first if you want to keep it",
     )
 
 

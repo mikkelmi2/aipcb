@@ -19,6 +19,7 @@ from pathlib import Path
 from aipcb.compile.build import BuildResult, build_design
 from aipcb.diagnostics import Report
 from aipcb.kicad.sexpr import SNode, dump, parse
+from aipcb.route.manual import RoutingStates
 from aipcb.route.plan import DEFAULT_CONGESTION, RoutedBoard
 from aipcb.route.stitch import StitchResult
 
@@ -36,6 +37,23 @@ class RoutedDesign:
     stitched: StitchResult
     segments: int
     vias: int
+
+    def states(self) -> RoutingStates:
+        """Every net's routing state, read off the board this run just wrote.
+
+        Read off the board rather than assembled from what the router did, because a
+        declared-manual net's copper may have arrived by a route this program knows
+        nothing about -- a hand route in KiCad, or a session file from an external
+        router (M14d).
+        """
+        from aipcb.route.manual import routing_states
+
+        return routing_states(
+            self.board,
+            self.build.netlist,
+            auto_routed={c.net for c in self.routed.connections},
+            handed_over={f.net: f.reason for f in self.routed.failed},
+        )
 
 
 def build_and_parse(

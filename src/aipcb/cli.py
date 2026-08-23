@@ -122,6 +122,14 @@ def build(
             help="Regenerate from source, discarding manual edits to an existing board.",
         ),
     ] = False,
+    render: Annotated[
+        bool,
+        typer.Option(
+            "--render",
+            help="Also plot the schematic to review/ as PDF and SVG, with its "
+            "readability measurements.",
+        ),
+    ] = False,
 ) -> None:
     """Compile a design into KiCad files.
 
@@ -132,7 +140,9 @@ def build(
 
     report = Report()
     try:
-        result = build_design(design, out_dir=out, report=report, fresh=fresh)
+        result = build_design(
+            design, out_dir=out, report=report, fresh=fresh, render=render
+        )
     except SourceError as exc:
         _err(f"error: {exc}")
         raise typer.Exit(EXIT_UNREADABLE) from exc
@@ -146,6 +156,8 @@ def build(
         payload["design"] = {"name": result.netlist.name, **result.netlist.stats()}
         if result.merge is not None:
             payload["preserved"] = result.merge.to_dict()
+        if result.review is not None:
+            payload["review"] = result.review.to_dict()
         typer.echo(json.dumps(payload, indent=2))
     else:
         typer.echo(report.render(color=sys.stdout.isatty(), summary=bool(report)))
@@ -166,9 +178,36 @@ def export(
         Path | None,
         typer.Option("--build-dir", help="Keep the intermediate KiCad files here."),
     ] = None,
+    dsn: Annotated[
+        bool,
+        typer.Option(
+            "--dsn",
+            help="Export a Specctra DSN for an external router instead of "
+            "fabrication files. Existing copper is fixed in the file.",
+        ),
+    ] = False,
+    board: Annotated[
+        Path | None,
+        typer.Option(
+            "--board",
+            help="With --dsn: the board to export. Defaults to the one beside the "
+            "design file.",
+        ),
+    ] = None,
 ) -> None:
-    """Build a design and export Gerbers, drill files, a BOM and a placement file."""
+    """Build a design and export Gerbers, drill files, a BOM and a placement file.
+
+    With `--dsn`, export the board as a Specctra DSN instead, for an external router
+    to work on. Everything already routed or poured is marked unmovable in the file,
+    and the declared-manual nets with no copper yet are listed as what is left to do.
+    aipcb does not run the router: see `docs/external-routers.md` for the three
+    commands and the contract.
+    """
     import tempfile
+
+    if dsn:
+        _export_dsn(design, out, board, as_json)
+        return
 
     from aipcb.compile.build import build_design
     from aipcb.compile.export import export_board
@@ -338,6 +377,157 @@ def sync_placement(
                 "run `aipcb build` to put them back where the source says."
             )
     raise typer.Exit(EXIT_OK)
+
+
+def _default_board(design: Path, netlist: Any) -> Path:
+    from aipcb.compile.build import project_name
+
+    return design.parent / f"{project_name(netlist.name)}.kicad_pcb"
+
+
+def _export_dsn(
+    design: Path, out: Path | None, board: Path | None, as_json: bool
+) -> None:
+    """`aipcb export --dsn`: hand a board to an external router, safely."""
+    from aipcb.compile.build import compile_netlist, project_name
+    from aipcb.kicad.specctra import SpecctraError
+    from aipcb.route.bridge import export_for_router
+
+    report = Report()
+    try:
+        netlist = compile_netlist(design, report)
+    except SourceError as exc:
+        _err(f"error: {exc}")
+        raise typer.Exit(EXIT_UNREADABLE) from exc
+    except AipcbError as exc:
+        _emit(exc.report, as_json)
+        raise typer.Exit(EXIT_ERRORS) from exc
+
+    board_path = board or _default_board(design, netlist)
+    if not board_path.exists():
+        _err(
+            f"error: no board at {board_path}. Run `aipcb route all {design}` first: "
+            "the DSN has to carry the copper that is already there, or an external "
+            "router will re-route it"
+        )
+        raise typer.Exit(EXIT_UNREADABLE)
+
+    target_dir = out or design.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / f"{project_name(netlist.name)}.dsn"
+
+    try:
+        result = export_for_router(board_path, target, netlist, report)
+    except (ValueError, SpecctraError) as exc:
+        _err(f"error: {exc}")
+        raise typer.Exit(EXIT_ERRORS) from exc
+
+    if as_json:
+        payload = report.to_dict()
+        payload["export"] = result.to_dict()
+        typer.echo(json.dumps(payload, indent=2))
+    else:
+        typer.echo(report.render(color=sys.stdout.isatty(), summary=bool(report)))
+        typer.echo(
+            f"wrote {target} ({result.dsn.bytes_written} bytes, "
+            f"{result.dsn.protected} pieces of copper fixed)"
+        )
+        if result.pending:
+            typer.echo(f"  to route: {', '.join(result.pending)}")
+    raise typer.Exit(EXIT_ERRORS if not report.ok else EXIT_OK)
+
+
+@app.command(name="import")
+def import_cmd(
+    design: DesignArg,
+    ses: Annotated[
+        Path,
+        typer.Option(
+            "--ses",
+            help="The Specctra session file an external router produced.",
+        ),
+    ],
+    board: Annotated[
+        Path | None,
+        typer.Option(
+            "--board",
+            help="The board to import into. Defaults to the one beside the design.",
+        ),
+    ] = None,
+    as_json: JsonOpt = False,
+    skip_check: Annotated[
+        bool,
+        typer.Option("--no-check", help="Import without running ERC and DRC after."),
+    ] = False,
+) -> None:
+    """Import an external router's session file, then check what arrived.
+
+    Imported copper is *manual* copper: aipcb preserves it on every later build,
+    routes around it, and checks it exactly as it checks its own. What it does not do
+    is trust it -- the widths and via sizes are compared against the net classes the
+    source declares, and any difference is reported rather than accepted.
+    """
+    from aipcb.checks.loop import check_design
+    from aipcb.compile.build import compile_netlist
+    from aipcb.kicad.specctra import SpecctraError
+    from aipcb.route.bridge import import_session
+
+    report = Report()
+    try:
+        netlist = compile_netlist(design, report)
+    except SourceError as exc:
+        _err(f"error: {exc}")
+        raise typer.Exit(EXIT_UNREADABLE) from exc
+    except AipcbError as exc:
+        _emit(exc.report, as_json)
+        raise typer.Exit(EXIT_ERRORS) from exc
+
+    board_path = board or _default_board(design, netlist)
+    for path, what in ((board_path, "board"), (ses, "session file")):
+        if not path.exists():
+            _err(f"error: no {what} at {path}")
+            raise typer.Exit(EXIT_UNREADABLE)
+
+    try:
+        result = import_session(board_path, ses, netlist, report)
+    except (ValueError, SpecctraError) as exc:
+        _err(f"error: {exc}")
+        raise typer.Exit(EXIT_ERRORS) from exc
+
+    checked = None
+    if not skip_check:
+        # `board_file` is what makes this check mean anything. `check_design` builds
+        # fresh on purpose (M13.5), and a fresh build of this design has no copper on
+        # it at all -- so without pointing it at the board we just wrote, DRC would
+        # report zero errors on an empty board and call the import verified.
+        try:
+            checked = check_design(
+                design, report=report, route=False, board_file=board_path
+            )
+        except AipcbError as exc:
+            _emit(exc.report, as_json)
+            raise typer.Exit(EXIT_ERRORS) from exc
+
+    if as_json:
+        payload = report.to_dict()
+        payload["import"] = result.to_dict()
+        if checked is not None:
+            payload["summary"] = checked.summary()
+        typer.echo(json.dumps(payload, indent=2))
+    else:
+        typer.echo(report.render(color=sys.stdout.isatty(), summary=bool(report)))
+        typer.echo(
+            f"imported {result.ses.tracks_added} tracks and "
+            f"{result.ses.vias_added} vias into {board_path}"
+        )
+        for state, count in result.states.counts().items():
+            typer.echo(f"  {state}: {count}")
+        if checked is not None:
+            typer.echo(
+                f"  drc: {'ran' if checked.drc.ran else 'skipped'} "
+                f"({checked.drc.counts.get('errors', 0)} errors)"
+            )
+    raise typer.Exit(EXIT_ERRORS if not report.ok else EXIT_OK)
 
 
 @app.command()

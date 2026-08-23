@@ -646,15 +646,84 @@ The three bundled examples build up from there:
   across a channel. Not routable on one layer; routable on two, and the negotiation
   works out which ones dive.
 
+## Routing is optional
+
+You do not have to trust an unknown autorouter to get value out of this. Routing is
+one step of the pipeline, it is declared in the source, and there are three ways to
+run it. Everything else — validation, placement, pours, ERC, DRC, the high-speed
+checks, Gerbers — works identically in all three.
+
+### Full auto
+
+```bash
+aipcb route all design.yaml     # topological router, DRC-clean or handed over
+aipcb check design.yaml
+```
+
+The router refuses to deliver marginal geometry. What it cannot make legally it
+*hands over*, naming the connection, the corridor that ran out of room, and the nets
+contesting it.
+
+### Hybrid — you own the critical nets, aipcb routes the rest
+
+This is the mode most people want first. Declare which nets are yours:
+
+```yaml
+net_classes:
+  rf:
+    trace_width_mm: 0.4
+    routing: manual        # every net in this class is yours
+nets:
+  SENSE:
+    class: analog
+    routing: manual        # or just this one
+  CLK_OUT:
+    class: rf
+    routing: auto          # ...and this one opts back out of its class
+```
+
+```bash
+aipcb route all design.yaml     # your nets are left untouched and listed as pending
+# ...draw them in KiCad...
+aipcb check design.yaml         # checks all copper identically, whoever drew it
+```
+
+### Fully manual
+
+```bash
+aipcb build design.yaml         # footprints placed, no copper
+# ...draw all of it in KiCad...
+aipcb check design.yaml --no-route
+```
+
+Whichever mode, `aipcb check --json` puts every net in one of four states:
+
+| State | Meaning |
+|---|---|
+| `manual-routed` | declared manual, and copper for it is on the board |
+| `manual-pending` | declared manual, and **there is no copper yet** |
+| `auto-routed` | aipcb's router laid it |
+| `handed-over` | the router tried and refused, with the reason and the blocking corridor |
+
+`manual-pending` is the one to watch: it is where a board sits between "these pairs
+are mine" and "I have drawn them", and to anything counting unrouted connections it
+looks exactly like a finished board. `aipcb check` warns about it by name.
+
+Hand-drawn copper is preserved by every later build and routed *around*, never
+through. The full loop is in [`docs/workflows.md`](docs/workflows.md); routing
+declared-manual nets with an external router such as Freerouting, headlessly, is in
+[`docs/external-routers.md`](docs/external-routers.md).
+
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `aipcb validate DESIGN` | schema and semantic checks, with source-referenced diagnostics |
-| `aipcb build DESIGN` | compile to `.kicad_sch`, `.kicad_pcb`, `.kicad_pro` and the project library tables |
+| `aipcb build DESIGN` | compile to `.kicad_sch`, `.kicad_pcb`, `.kicad_pro` and the project library tables; `--render` also plots the schematic to `review/` |
 | `aipcb check DESIGN` | build, route, run KiCad's ERC and DRC, report violations against the source |
 | `aipcb sync-placement DESIGN` | report parts moved in KiCad, and write their positions back into the source |
-| `aipcb export DESIGN` | Gerbers, drill files, BOM and placement file into `out/` |
+| `aipcb export DESIGN` | Gerbers, drill files, BOM and placement file into `out/`; `--dsn` writes a Specctra DSN for an external router instead |
+| `aipcb import DESIGN --ses FILE` | import an external router's session file, splice it in, verify it against the source, and check the result |
 | `aipcb route check DESIGN` | verify route topologies are realizable, and that they fit alongside each other |
 | `aipcb route all DESIGN` | route the board across every signal layer and write tracks and vias |
 | `aipcb simulate DESIGN` | solve each differential pair with openEMS and report impedance, return and insertion loss |
@@ -703,6 +772,11 @@ unreadable.
 | M12a — slice generation | **done**: one slice per pair, cut out of the routed board with its neighbours, planes and vias; `role: ac_coupling` parts bridged so a split lane is one link; a straight launch and four ports at the ends. Slices are byte-stable |
 | M12b — simulation orchestration | **done**: openEMS in the pinned container ADR 0011 records, sequential (openEMS already uses every core), cached on a hash of what the solver reads, per-pair failures, and a manifest. No `--parallel`, measured rather than assumed |
 | M12c — structured results | **done**: differential impedance against the class target, worst return loss and its frequency, insertion loss at the class's key frequencies, group delay, and pass/warn per metric — as `check`-shaped findings pointing at the source. Raw S-parameters kept as Touchstone. The thresholds are engineering defaults and say so |
+| M13 — routing correctness, impedance model, skew verdict | **done**: the obstacle-set merge that was losing copper, the coplanar model M12 measured, and the fitted-Δτ verdict ([`docs/reports/m13.md`](docs/reports/m13.md)) |
+| M14a/M14b — readable schematics | **done**: placement driven by roles, `for:` references, module structure and the signal-flow graph; power symbols, staggered stubs, module frames. Overlapping items across the eleven examples: 71 → 0; mean decoupling-to-IC distance on `pcie-sata` 157.5 mm → 27.8 mm; the sheet dropped from A1 to A3. Netlists byte-identical, ERC still 0 ([ADR 0003 amendment](docs/decisions/0003-schematic-generation.md)) |
+| M14c — manual-edit policy for schematics | **done**: M6's preserve never covered `.kicad_sch` and silently overwrote edits. The sheet is now explicitly a *view*, and a rebuild that discards an edit says so |
+| M14d — `routing: manual` | **done**: declared on a class or a net, honoured by the router, reported as four distinct states ([`docs/workflows.md`](docs/workflows.md)) |
+| M14e — headless external-router bridge | **done**: `aipcb export --dsn` / `aipcb import --ses` through the `pcbnew` subprocess, existing copper fixed on the way out and spliced rather than replaced on the way back. Round-tripped through Freerouting 2.3.0 headlessly with 0 DRC errors ([`docs/external-routers.md`](docs/external-routers.md)) |
 
 ## Documentation
 
@@ -711,6 +785,11 @@ unreadable.
   copper on however many layers it takes.
 * [`docs/routing-costs.md`](docs/routing-costs.md) — every number the router weighs,
   with its default and why.
+* [`docs/workflows.md`](docs/workflows.md) — working in KiCad alongside aipcb: what
+  is preserved, moving parts, the three routing modes, and why the schematic is a
+  view rather than a document.
+* [`docs/external-routers.md`](docs/external-routers.md) — the headless DSN/SES
+  bridge: three commands, the contract, and the rule about controlled impedance.
 * [`docs/roadmap.md`](docs/roadmap.md) — what is deliberately not built, and why.
 * [`docs/reports/`](docs/reports/) — one delivery report per milestone, with the
   numbers each one was measured against.
@@ -721,7 +800,7 @@ unreadable.
 ## Development
 
 ```bash
-.venv/bin/pytest          # about 1040 tests, roughly 20 minutes (it runs KiCad for real)
+.venv/bin/pytest          # about 1270 tests, roughly 50 minutes (it runs KiCad for real)
 .venv/bin/ruff check .
 .venv/bin/mypy
 ```

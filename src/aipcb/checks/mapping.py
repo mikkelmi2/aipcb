@@ -101,7 +101,29 @@ def build_index(netlist: Netlist) -> UuidIndex:
 
     _index_edges(index, netlist)
     _index_pours(index, netlist)
+    _index_sheet_blocks(index, netlist)
     return index
+
+
+def _index_sheet_blocks(index: UuidIndex, netlist: Netlist) -> None:
+    """Map a schematic cluster's frame and name back to the module instance it draws.
+
+    The frames are graphics -- no pin, no net, nothing ERC looks at -- but they are
+    still generated elements in a generated file, and an element nothing can account
+    for is exactly what the M4 index exists to make impossible.
+    """
+    for name, members in sorted(netlist.module_instances().items()):
+        if not name or not members:
+            continue
+        first = members[0]
+        ref = SourceRef(
+            kind="module instance",
+            label=name,
+            path=("instances", name),
+            loc=netlist.locs.get(("instances", name)) or first.loc,
+        )
+        for prefix in ("block-frame", "block-text"):
+            index.add(element_uuid(prefix, f"module:{name}"), ref)
 
 
 def _index_pours(index: UuidIndex, netlist: Netlist) -> None:
@@ -232,6 +254,12 @@ def _index_component(index: UuidIndex, component: ElabComponent) -> None:
         )
         for prefix in ("pin", "wire", "label", "nc"):
             index.add(element_uuid(prefix, *component.hier, number), pin_ref)
+        # M14: a rail or ground pin carries a power symbol on the end of its stub
+        # rather than a text label, and the symbol has a pin of its own. Both map
+        # back to the same place a label did -- the pin that asked for the rail.
+        symbol_uuid = element_uuid("pwrsym", *component.hier, number)
+        index.add(symbol_uuid, pin_ref)
+        index.add(element_uuid("pwrsym-pin", symbol_uuid, "1"), pin_ref)
         index.add(
             element_uuid("fp", *component.hier, "pad", number),
             SourceRef(
@@ -332,6 +360,11 @@ def _index_net(index: UuidIndex, net: ElabNet, netlist: Netlist) -> None:
     )
     index.add(net.uuid, ref)
     index.add_net(net.name, ref)
-    for prefix in ("pwrflag", "pwrflag-wire", "pwrflag-label"):
+    for prefix in ("pwrflag", "pwrflag-wire", "pwrflag-label", "pwrflag-sym"):
         index.add(element_uuid(prefix, net.name), ref)
     index.add(element_uuid("pwrflag-pin", net.name, "1"), ref)
+    # The flag drives a rail symbol through a short wire (M14); the symbol and its
+    # pin belong to the same net the flag does.
+    index.add(
+        element_uuid("pwrsym-pin", element_uuid("pwrflag-sym", net.name), "1"), ref
+    )

@@ -99,6 +99,12 @@ class Net(Strict):
         default=None, description="Partner net of a differential pair.",
     )
     description: str | None = None
+    routing: Literal["auto", "manual"] | None = Field(
+        default=None,
+        description="Overrides the net class's `routing:` for this one net. "
+        "`manual` keeps aipcb's router off it entirely -- the copper comes from a "
+        "hand route in KiCad or from an external router through the DSN/SES bridge.",
+    )
     reason: str | None = Field(
         default=None, description="Why this net exists or why its attributes are set.",
     )

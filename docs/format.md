@@ -84,6 +84,7 @@ nets:
 | `max_current_a` | number | Informs track width later. |
 | `impedance_ohm` | number | Target single-ended or differential impedance. |
 | `diff_pair` | net name | Partner net. **Must be declared from both sides.** |
+| `routing` | `auto` \| `manual` | Who lays this net's copper. `manual` keeps aipcb's router off it entirely; the copper comes from a hand route or an external router, and the net is reported as *pending* until it has some. Overrides the class's `routing:` in either direction. |
 | `description`, `reason` | string | Intent. `reason` is for *why*, `description` for *what*. |
 
 Nets do not have to be declared. A net named only in a component's `pins:` is
@@ -259,6 +260,28 @@ net_classes:
 
 Also accepted: `via_diameter_mm`, `via_drill_mm` (the drill must be smaller than
 the diameter — this is checked).
+
+### Routing is optional, and declarable
+
+```yaml
+net_classes:
+  rf:
+    trace_width_mm: 0.4
+    routing: manual
+    description: Drawn by hand against the antenna's reference layout.
+```
+
+`routing: manual` declares that this class's copper is not aipcb's to lay. The
+router never touches those nets, they are reported as `manual-pending` until copper
+appears and `manual-routed` after, and everything else — validation, placement,
+pours, ERC, DRC, the high-speed checks — is unaffected. A single net can override
+its class in either direction with its own `routing:`.
+
+Three modes fall out of that: full auto (declare nothing), hybrid (declare the
+critical nets), and fully manual (declare the lot, or never run the router). See
+[`docs/workflows.md`](workflows.md), and
+[`docs/external-routers.md`](external-routers.md) for handing the declared-manual
+nets to Freerouting headlessly.
 
 ### Layers and priority
 

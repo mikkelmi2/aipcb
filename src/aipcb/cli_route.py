@@ -125,6 +125,8 @@ def route_all(
     summary["vias"] = via_count
     if stitched.placed or stitched.total_skipped:
         summary["stitching"] = stitched.summary()
+    states = done.states()
+    summary["nets"] = states.to_dict()
     if as_json:
         payload = report.to_dict()
         payload["routing"] = summary
@@ -142,6 +144,12 @@ def route_all(
             typer.echo(
                 f"stitched {len(stitched.placed)} vias "
                 f"({stitched.total_skipped} positions skipped)"
+            )
+        pending = states.pending
+        if pending:
+            typer.echo(
+                f"  declared manual, still pending: "
+                f"{', '.join(n.net for n in pending)}"
             )
         for handed in routed.handed_over():
             typer.echo(

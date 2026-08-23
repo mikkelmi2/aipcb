@@ -3,12 +3,13 @@
 	(generator "aipcb")
 	(generator_version "9.0")
 	(uuid "fac7359a-0697-5d85-9732-947d62b06bc7")
-	(paper "A1")
+	(paper "A3")
 	(title_block
 		(title "pcie-sata")
 		(rev "A")
 		(company "")
 		(comment 1 "A PCI Express x1 to four-port SATA controller card. Eleven controlled-impedance pairs on a four-layer stackup, with a card-edge connector and AC-coupled transmit.")
+		(comment 9 "aipcb-sheet:04826eea1175bff3")
 	)
 	(lib_symbols
 		(symbol "Connector:Bus_PCI_Express_x1"
@@ -2736,6 +2737,112 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "power:GND"
+			(power)
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "#PWR"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Value" "GND"
+				(at 0 -3.81 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "global power"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "GND_0_1"
+				(polyline
+					(pts
+						(xy 0 0)
+						(xy 0 -1.27)
+						(xy 1.27 -1.27)
+						(xy 0 -2.54)
+						(xy -1.27 -1.27)
+						(xy 0 -1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "GND_1_1"
+				(pin power_in line
+					(at 0 0 270)
+					(length 0)
+					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "power:PWR_FLAG"
 			(power)
 			(pin_numbers
@@ -2842,10 +2949,138 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "power:VCC"
+			(power)
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "#PWR"
+				(at 0 -3.81 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Value" "VCC"
+				(at 0 3.556 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Power symbol creates a global label with name \"VCC\""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "global power"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "VCC_0_1"
+				(polyline
+					(pts
+						(xy -0.762 1.27)
+						(xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 2.54)
+						(xy 0.762 1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 0)
+						(xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "VCC_1_1"
+				(pin power_in line
+					(at 0 0 90)
+					(length 0)
+					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 	)
 	(symbol
 		(lib_id "Device:C")
-		(at 50.8 91.44 0)
+		(at 160.02 200.66 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2853,23 +3088,25 @@
 		(dnp no)
 		(uuid "a800bc1d-8f06-5800-af83-fc21cabaa5ea")
 		(property "Reference" "C1"
-			(at 50.8 73.66 0)
+			(at 163.83 199.39 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Value" "C_100N_0603"
-			(at 50.8 109.22 0)
+			(at 163.83 201.93 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
-			(at 50.8 91.44 0)
+			(at 160.02 200.66 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2878,7 +3115,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 50.8 91.44 0)
+			(at 160.02 200.66 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2887,7 +3124,7 @@
 			)
 		)
 		(property "Description" "100 nF X7R ceramic capacitor, 0603, 50 V"
-			(at 50.8 91.44 0)
+			(at 160.02 200.66 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2896,7 +3133,7 @@
 			)
 		)
 		(property "aipcb.reason" "The 12 V rail is not used on this card, but a rail brought onto a board and left undecoupled is an antenna."
-			(at 50.8 91.44 0)
+			(at 160.02 200.66 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2905,7 +3142,7 @@
 			)
 		)
 		(property "aipcb.role" "decoupling"
-			(at 50.8 91.44 0)
+			(at 160.02 200.66 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2914,7 +3151,7 @@
 			)
 		)
 		(property "aipcb.path" "C_12V"
-			(at 50.8 91.44 0)
+			(at 160.02 200.66 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2939,7 +3176,7 @@
 	)
 	(symbol
 		(lib_id "Device:C")
-		(at 101.6 91.44 0)
+		(at 234.95 120.65 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2947,23 +3184,25 @@
 		(dnp no)
 		(uuid "7ba26043-fd38-5be0-9d23-88b0310f7d33")
 		(property "Reference" "C2"
-			(at 101.6 73.66 0)
+			(at 238.76 119.38 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Value" "C_100N_0402"
-			(at 101.6 109.22 0)
+			(at 238.76 121.92 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
-			(at 101.6 91.44 0)
+			(at 234.95 120.65 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2972,7 +3211,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 101.6 91.44 0)
+			(at 234.95 120.65 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2981,7 +3220,7 @@
 			)
 		)
 		(property "Description" "100 nF X7R ceramic capacitor, 0402, 16 V -- the AC-coupling part for a PCIe transmit pair, small enough that the pair barely notices it."
-			(at 101.6 91.44 0)
+			(at 234.95 120.65 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2990,7 +3229,7 @@
 			)
 		)
 		(property "aipcb.reason" "The other half of the same discontinuity. Placed beside C_AC_P and at the same distance along the route, which is the only way the pair stays a pair through it."
-			(at 101.6 91.44 0)
+			(at 234.95 120.65 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2999,7 +3238,7 @@
 			)
 		)
 		(property "aipcb.role" "ac_coupling"
-			(at 101.6 91.44 0)
+			(at 234.95 120.65 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3008,7 +3247,7 @@
 			)
 		)
 		(property "aipcb.path" "C_AC_N"
-			(at 101.6 91.44 0)
+			(at 234.95 120.65 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3033,7 +3272,7 @@
 	)
 	(symbol
 		(lib_id "Device:C")
-		(at 152.4 91.44 0)
+		(at 234.95 161.29 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3041,23 +3280,25 @@
 		(dnp no)
 		(uuid "3905d3c7-2ec0-507d-bb2c-eadd17e2dad1")
 		(property "Reference" "C3"
-			(at 152.4 73.66 0)
+			(at 238.76 160.02 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Value" "C_100N_0402"
-			(at 152.4 109.22 0)
+			(at 238.76 162.56 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
-			(at 152.4 91.44 0)
+			(at 234.95 161.29 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3066,7 +3307,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 152.4 91.44 0)
+			(at 234.95 161.29 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3075,7 +3316,7 @@
 			)
 		)
 		(property "Description" "100 nF X7R ceramic capacitor, 0402, 16 V -- the AC-coupling part for a PCIe transmit pair, small enough that the pair barely notices it."
-			(at 152.4 91.44 0)
+			(at 234.95 161.29 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3084,7 +3325,7 @@
 			)
 		)
 		(property "aipcb.reason" "PCIe requires series capacitors on the transmitting end. This one and C_AC_N are a matched pair across the route, so the two halves see the same discontinuity at the same place."
-			(at 152.4 91.44 0)
+			(at 234.95 161.29 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3093,7 +3334,7 @@
 			)
 		)
 		(property "aipcb.role" "ac_coupling"
-			(at 152.4 91.44 0)
+			(at 234.95 161.29 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3102,7 +3343,7 @@
 			)
 		)
 		(property "aipcb.path" "C_AC_P"
-			(at 152.4 91.44 0)
+			(at 234.95 161.29 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3127,7 +3368,7 @@
 	)
 	(symbol
 		(lib_id "Device:C")
-		(at 203.2 91.44 0)
+		(at 204.47 222.25 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3135,23 +3376,25 @@
 		(dnp no)
 		(uuid "e0a14487-83a1-5920-bec3-19a22ab60be4")
 		(property "Reference" "C4"
-			(at 203.2 73.66 0)
+			(at 208.28 220.98 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Value" "C_10U_0805"
-			(at 203.2 109.22 0)
+			(at 208.28 223.52 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
-			(at 203.2 91.44 0)
+			(at 204.47 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3160,7 +3403,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 203.2 91.44 0)
+			(at 204.47 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3169,7 +3412,7 @@
 			)
 		)
 		(property "Description" "10 uF X5R ceramic capacitor, 0805, 16 V"
-			(at 203.2 91.44 0)
+			(at 204.47 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3178,7 +3421,7 @@
 			)
 		)
 		(property "aipcb.reason" "The card's reservoir on the 3.3 V rail coming in from the slot."
-			(at 203.2 91.44 0)
+			(at 204.47 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3187,7 +3430,7 @@
 			)
 		)
 		(property "aipcb.role" "bulk"
-			(at 203.2 91.44 0)
+			(at 204.47 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3196,7 +3439,7 @@
 			)
 		)
 		(property "aipcb.path" "C_BULK"
-			(at 203.2 91.44 0)
+			(at 204.47 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3221,7 +3464,7 @@
 	)
 	(symbol
 		(lib_id "Device:C")
-		(at 50.8 223.52 0)
+		(at 222.25 222.25 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3229,23 +3472,25 @@
 		(dnp no)
 		(uuid "3a3d0a91-1022-5162-9331-959dc83e30c2")
 		(property "Reference" "C5"
-			(at 50.8 205.74 0)
+			(at 226.06 220.98 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Value" "C_100N_0603"
-			(at 50.8 241.3 0)
+			(at 226.06 223.52 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
-			(at 50.8 223.52 0)
+			(at 222.25 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3254,7 +3499,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 50.8 223.52 0)
+			(at 222.25 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3263,7 +3508,7 @@
 			)
 		)
 		(property "Description" "100 nF X7R ceramic capacitor, 0603, 50 V"
-			(at 50.8 223.52 0)
+			(at 222.25 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3272,7 +3517,7 @@
 			)
 		)
 		(property "aipcb.reason" "Local charge for the controller's west supply pin."
-			(at 50.8 223.52 0)
+			(at 222.25 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3281,7 +3526,7 @@
 			)
 		)
 		(property "aipcb.role" "decoupling"
-			(at 50.8 223.52 0)
+			(at 222.25 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3290,7 +3535,7 @@
 			)
 		)
 		(property "aipcb.path" "C_D1"
-			(at 50.8 223.52 0)
+			(at 222.25 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3315,7 +3560,7 @@
 	)
 	(symbol
 		(lib_id "Device:C")
-		(at 101.6 223.52 0)
+		(at 240.03 222.25 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3323,23 +3568,25 @@
 		(dnp no)
 		(uuid "5743ad2b-c4e3-5171-8fd5-7fdc99ee01a0")
 		(property "Reference" "C6"
-			(at 101.6 205.74 0)
+			(at 243.84 220.98 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Value" "C_100N_0603"
-			(at 101.6 241.3 0)
+			(at 243.84 223.52 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
-			(at 101.6 223.52 0)
+			(at 240.03 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3348,7 +3595,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 101.6 223.52 0)
+			(at 240.03 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3357,7 +3604,7 @@
 			)
 		)
 		(property "Description" "100 nF X7R ceramic capacitor, 0603, 50 V"
-			(at 101.6 223.52 0)
+			(at 240.03 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3366,7 +3613,7 @@
 			)
 		)
 		(property "aipcb.reason" "Local charge for the controller's east supply pin."
-			(at 101.6 223.52 0)
+			(at 240.03 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3375,7 +3622,7 @@
 			)
 		)
 		(property "aipcb.role" "decoupling"
-			(at 101.6 223.52 0)
+			(at 240.03 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3384,7 +3631,7 @@
 			)
 		)
 		(property "aipcb.path" "C_D2"
-			(at 101.6 223.52 0)
+			(at 240.03 222.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3409,7 +3656,7 @@
 	)
 	(symbol
 		(lib_id "Connector:Bus_PCI_Express_x1")
-		(at 152.4 223.52 0)
+		(at 160.02 142.24 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3417,7 +3664,7 @@
 		(dnp no)
 		(uuid "ff4e7ba2-e55e-573d-8b8e-d3c77d30e132")
 		(property "Reference" "J1"
-			(at 152.4 203.2 0)
+			(at 160.02 96.52 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3425,7 +3672,7 @@
 			)
 		)
 		(property "Value" "PCIE_X1_EDGE"
-			(at 152.4 243.84 0)
+			(at 160.02 182.88 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3433,7 +3680,7 @@
 			)
 		)
 		(property "Footprint" "Connector_PCBEdge:BUS_PCIexpress_x1"
-			(at 152.4 223.52 0)
+			(at 160.02 142.24 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3442,7 +3689,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 152.4 223.52 0)
+			(at 160.02 142.24 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3451,7 +3698,7 @@
 			)
 		)
 		(property "Description" "PCI Express x1 card-edge fingers, 36 contacts at 1 mm pitch. The footprint carries the card outline and the keying notch as Edge.Cuts geometry; aipcb validates the board outline against it rather than emitting it."
-			(at 152.4 223.52 0)
+			(at 160.02 142.24 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3460,7 +3707,7 @@
 			)
 		)
 		(property "aipcb.reason" "The card's whole reason for existing, and the one component whose footprint dictates the board outline rather than sitting inside it."
-			(at 152.4 223.52 0)
+			(at 160.02 142.24 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3469,7 +3716,7 @@
 			)
 		)
 		(property "aipcb.role" "edge_connector"
-			(at 152.4 223.52 0)
+			(at 160.02 142.24 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3478,7 +3725,7 @@
 			)
 		)
 		(property "aipcb.path" "J_PCIE"
-			(at 152.4 223.52 0)
+			(at 160.02 142.24 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3605,7 +3852,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic_MountingPin:Conn_01x07_MountingPin")
-		(at 203.2 223.52 0)
+		(at 285.75 83.82 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3613,7 +3860,7 @@
 		(dnp no)
 		(uuid "81f36759-962c-587e-8c42-528c724a45ff")
 		(property "Reference" "J2"
-			(at 203.2 203.2 0)
+			(at 285.75 72.39 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3621,7 +3868,7 @@
 			)
 		)
 		(property "Value" "SATA_7P_1P25"
-			(at 203.2 243.84 0)
+			(at 285.75 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3629,7 +3876,7 @@
 			)
 		)
 		(property "Footprint" "Connector_JST:JST_GH_SM07B-GHS-TB_1x07-1MP_P1.25mm_Horizontal"
-			(at 203.2 223.52 0)
+			(at 285.75 83.82 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3638,7 +3885,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 203.2 223.52 0)
+			(at 285.75 83.82 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3647,7 +3894,7 @@
 			)
 		)
 		(property "Description" "7-way 1.25 mm side-entry connector standing in for a SATA data receptacle -- same contact count and very nearly the same pitch. Two shell pads, both numbered MP, which is the same shared-pad-number case as a USB receptacle's shield tabs."
-			(at 203.2 223.52 0)
+			(at 285.75 83.82 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3656,7 +3903,7 @@
 			)
 		)
 		(property "aipcb.reason" "SATA port 0, nearest the controller's north-west corner."
-			(at 203.2 223.52 0)
+			(at 285.75 83.82 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3665,7 +3912,7 @@
 			)
 		)
 		(property "aipcb.role" "connector"
-			(at 203.2 223.52 0)
+			(at 285.75 83.82 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3674,7 +3921,7 @@
 			)
 		)
 		(property "aipcb.path" "J_S0"
-			(at 203.2 223.52 0)
+			(at 285.75 83.82 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3717,7 +3964,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic_MountingPin:Conn_01x07_MountingPin")
-		(at 50.8 355.6 0)
+		(at 285.75 127 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3725,7 +3972,7 @@
 		(dnp no)
 		(uuid "82e2a07f-1cae-55ad-86bc-711ed83a647d")
 		(property "Reference" "J3"
-			(at 50.8 335.28 0)
+			(at 285.75 115.57 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3733,7 +3980,7 @@
 			)
 		)
 		(property "Value" "SATA_7P_1P25"
-			(at 50.8 375.92 0)
+			(at 285.75 151.13 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3741,7 +3988,7 @@
 			)
 		)
 		(property "Footprint" "Connector_JST:JST_GH_SM07B-GHS-TB_1x07-1MP_P1.25mm_Horizontal"
-			(at 50.8 355.6 0)
+			(at 285.75 127 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3750,7 +3997,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 50.8 355.6 0)
+			(at 285.75 127 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3759,7 +4006,7 @@
 			)
 		)
 		(property "Description" "7-way 1.25 mm side-entry connector standing in for a SATA data receptacle -- same contact count and very nearly the same pitch. Two shell pads, both numbered MP, which is the same shared-pad-number case as a USB receptacle's shield tabs."
-			(at 50.8 355.6 0)
+			(at 285.75 127 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3768,7 +4015,7 @@
 			)
 		)
 		(property "aipcb.reason" "SATA port 1."
-			(at 50.8 355.6 0)
+			(at 285.75 127 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3777,7 +4024,7 @@
 			)
 		)
 		(property "aipcb.role" "connector"
-			(at 50.8 355.6 0)
+			(at 285.75 127 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3786,7 +4033,7 @@
 			)
 		)
 		(property "aipcb.path" "J_S1"
-			(at 50.8 355.6 0)
+			(at 285.75 127 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3829,7 +4076,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic_MountingPin:Conn_01x07_MountingPin")
-		(at 101.6 355.6 0)
+		(at 285.75 170.18 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3837,7 +4084,7 @@
 		(dnp no)
 		(uuid "0ccfa2d0-1177-5117-b160-e2d83198b8f4")
 		(property "Reference" "J4"
-			(at 101.6 335.28 0)
+			(at 285.75 158.75 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3845,7 +4092,7 @@
 			)
 		)
 		(property "Value" "SATA_7P_1P25"
-			(at 101.6 375.92 0)
+			(at 285.75 194.31 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3853,7 +4100,7 @@
 			)
 		)
 		(property "Footprint" "Connector_JST:JST_GH_SM07B-GHS-TB_1x07-1MP_P1.25mm_Horizontal"
-			(at 101.6 355.6 0)
+			(at 285.75 170.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3862,7 +4109,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 101.6 355.6 0)
+			(at 285.75 170.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3871,7 +4118,7 @@
 			)
 		)
 		(property "Description" "7-way 1.25 mm side-entry connector standing in for a SATA data receptacle -- same contact count and very nearly the same pitch. Two shell pads, both numbered MP, which is the same shared-pad-number case as a USB receptacle's shield tabs."
-			(at 101.6 355.6 0)
+			(at 285.75 170.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3880,7 +4127,7 @@
 			)
 		)
 		(property "aipcb.reason" "SATA port 2, fed from the controller's east side."
-			(at 101.6 355.6 0)
+			(at 285.75 170.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3889,7 +4136,7 @@
 			)
 		)
 		(property "aipcb.role" "connector"
-			(at 101.6 355.6 0)
+			(at 285.75 170.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3898,7 +4145,7 @@
 			)
 		)
 		(property "aipcb.path" "J_S2"
-			(at 101.6 355.6 0)
+			(at 285.75 170.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3941,7 +4188,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic_MountingPin:Conn_01x07_MountingPin")
-		(at 152.4 355.6 0)
+		(at 285.75 213.36 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3949,7 +4196,7 @@
 		(dnp no)
 		(uuid "2be12114-c26a-5eef-a4bb-5ebb5fc8cddc")
 		(property "Reference" "J5"
-			(at 152.4 335.28 0)
+			(at 285.75 201.93 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3957,7 +4204,7 @@
 			)
 		)
 		(property "Value" "SATA_7P_1P25"
-			(at 152.4 375.92 0)
+			(at 285.75 237.49 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3965,7 +4212,7 @@
 			)
 		)
 		(property "Footprint" "Connector_JST:JST_GH_SM07B-GHS-TB_1x07-1MP_P1.25mm_Horizontal"
-			(at 152.4 355.6 0)
+			(at 285.75 213.36 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3974,7 +4221,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 152.4 355.6 0)
+			(at 285.75 213.36 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3983,7 +4230,7 @@
 			)
 		)
 		(property "Description" "7-way 1.25 mm side-entry connector standing in for a SATA data receptacle -- same contact count and very nearly the same pitch. Two shell pads, both numbered MP, which is the same shared-pad-number case as a USB receptacle's shield tabs."
-			(at 152.4 355.6 0)
+			(at 285.75 213.36 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3992,7 +4239,7 @@
 			)
 		)
 		(property "aipcb.reason" "SATA port 3, fed from the controller's west side."
-			(at 152.4 355.6 0)
+			(at 285.75 213.36 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4001,7 +4248,7 @@
 			)
 		)
 		(property "aipcb.role" "connector"
-			(at 152.4 355.6 0)
+			(at 285.75 213.36 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4010,7 +4257,7 @@
 			)
 		)
 		(property "aipcb.path" "J_S3"
-			(at 152.4 355.6 0)
+			(at 285.75 213.36 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4053,7 +4300,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic:Conn_01x49")
-		(at 203.2 355.6 0)
+		(at 222.25 140.97 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -4061,7 +4308,7 @@
 		(dnp no)
 		(uuid "76d1ceda-6a12-5031-88a9-d667de280c45")
 		(property "Reference" "U1"
-			(at 203.2 335.28 0)
+			(at 222.25 76.2 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4069,7 +4316,7 @@
 			)
 		)
 		(property "Value" "SATA_CTRL_QFN48"
-			(at 203.2 375.92 0)
+			(at 222.25 205.74 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4077,7 +4324,7 @@
 			)
 		)
 		(property "Footprint" "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.15x5.15mm"
-			(at 203.2 355.6 0)
+			(at 222.25 140.97 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4086,7 +4333,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 203.2 355.6 0)
+			(at 222.25 140.97 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4095,7 +4342,7 @@
 			)
 		)
 		(property "Description" "A PCIe x1 to 4-port SATA bridge controller, ASM1064 class, in a 48-pin QFN with an exposed pad. See the note at the top of this file about the symbol."
-			(at 203.2 355.6 0)
+			(at 222.25 140.97 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4104,7 +4351,7 @@
 			)
 		)
 		(property "aipcb.reason" "The bridge. Its south side faces the card edge so the PCIe lane runs straight down to the fingers; ports 2 and 3 leave to the west and ports 0 and 1 to the east, in the order their connectors sit in, so no SATA pair has to cross another."
-			(at 203.2 355.6 0)
+			(at 222.25 140.97 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4113,7 +4360,7 @@
 			)
 		)
 		(property "aipcb.role" "mcu"
-			(at 203.2 355.6 0)
+			(at 222.25 140.97 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4122,7 +4369,7 @@
 			)
 		)
 		(property "aipcb.path" "U1"
-			(at 203.2 355.6 0)
+			(at 222.25 140.97 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4287,16 +4534,16 @@
 		)
 	)
 	(symbol
-		(lib_id "power:PWR_FLAG")
-		(at 50.8 487.68 0)
+		(lib_id "power:VCC")
+		(at 160.02 193.04 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom no)
 		(on_board no)
 		(dnp no)
-		(uuid "69d499c7-ed77-58bc-9dbb-ef3fc8d27fb3")
-		(property "Reference" "#FLG01"
-			(at 50.8 487.68 0)
+		(uuid "49c1fcd4-9c2f-5745-8d3e-7ad471b15cef")
+		(property "Reference" "#PWR0001"
+			(at 160.02 193.04 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4304,8 +4551,8 @@
 				(hide yes)
 			)
 		)
-		(property "Value" "PWR_FLAG"
-			(at 50.8 485.14 0)
+		(property "Value" "P12V"
+			(at 160.02 189.23 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4313,7 +4560,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 50.8 487.68 0)
+			(at 160.02 193.04 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4322,7 +4569,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 50.8 487.68 0)
+			(at 160.02 193.04 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4331,7 +4578,982 @@
 			)
 		)
 		(property "Description" ""
-			(at 50.8 487.68 0)
+			(at 160.02 193.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "207fc86b-8708-5031-a9e4-32085ebb008b")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0001")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 160.02 208.28 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "2c776646-3e95-5bb9-a85c-aa111a8e18f7")
+		(property "Reference" "#PWR0002"
+			(at 160.02 208.28 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 160.02 212.09 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 160.02 208.28 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 160.02 208.28 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 160.02 208.28 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "eaeff82c-bf5e-5bea-bab9-4acf5e8aa49f")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0002")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:VCC")
+		(at 204.47 214.63 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "3f1003de-53d6-54f3-a91b-6460269ab85a")
+		(property "Reference" "#PWR0003"
+			(at 204.47 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "P3V3"
+			(at 204.47 210.82 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 204.47 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 204.47 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 204.47 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "aaebcbdf-474d-5712-a63c-46e4044f3a7c")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0003")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 204.47 229.87 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "38900358-4bfe-5ee7-af80-654dfbfb1bd2")
+		(property "Reference" "#PWR0004"
+			(at 204.47 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 204.47 233.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 204.47 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 204.47 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 204.47 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "bbaeb570-ad5a-5759-82cb-3bb039adcfe0")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0004")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:VCC")
+		(at 222.25 214.63 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "93e0adcb-cd58-57a8-81f1-9dd4bcb35376")
+		(property "Reference" "#PWR0005"
+			(at 222.25 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "P3V3"
+			(at 222.25 210.82 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 222.25 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 222.25 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 222.25 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "fccbefc4-f018-5cec-8eb6-84afad03cdb8")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0005")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 222.25 229.87 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "dfdd0ff0-81a6-5664-961d-37e2e1ff31f9")
+		(property "Reference" "#PWR0006"
+			(at 222.25 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 222.25 233.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 222.25 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 222.25 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 222.25 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "4806ac50-0888-5778-ab8e-4439a6b2d3bf")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0006")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:VCC")
+		(at 240.03 214.63 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "77963062-ffc0-54b2-8e63-8fd2a87c029a")
+		(property "Reference" "#PWR0007"
+			(at 240.03 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "P3V3"
+			(at 240.03 210.82 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 240.03 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 240.03 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 240.03 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "1dc84084-08f0-5786-8a01-74b654f6b235")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0007")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 240.03 229.87 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "ae4a7583-787d-5d64-a2e3-c0848c657dcd")
+		(property "Reference" "#PWR0008"
+			(at 240.03 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 240.03 233.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 240.03 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 240.03 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 240.03 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "89acbeb8-35c0-585f-a0e0-46a254bcfc97")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0008")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 285.75 100.33 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "a7628a21-8a6b-5d4e-b48f-ebabc3fd9f13")
+		(property "Reference" "#PWR0009"
+			(at 285.75 100.33 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 285.75 104.14 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 285.75 100.33 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 285.75 100.33 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 285.75 100.33 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "b5dabf45-aae4-57be-a974-76817f0aaa8a")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0009")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 285.75 143.51 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "ae39490c-5387-5f90-8776-c8cc575f236a")
+		(property "Reference" "#PWR0010"
+			(at 285.75 143.51 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 285.75 147.32 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 285.75 143.51 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 285.75 143.51 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 285.75 143.51 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "b22dd553-22e9-5add-8df6-c9c478d4aeb2")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0010")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 285.75 186.69 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "d49a2dcb-0790-52af-98f1-95af85880bc0")
+		(property "Reference" "#PWR0011"
+			(at 285.75 186.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 285.75 190.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 285.75 186.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 285.75 186.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 285.75 186.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "13aa0d5f-f6ac-5033-8f50-fe01c30b1190")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0011")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 285.75 229.87 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "c347b7a1-0859-5740-a892-c80b0819b194")
+		(property "Reference" "#PWR0012"
+			(at 285.75 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 285.75 233.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 285.75 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 285.75 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 285.75 229.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "f8744c47-18db-595f-b8c7-80e49ea412e5")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0012")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 129.54 67.31 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "8d28959b-2e97-5c34-a204-94a839e07454")
+		(property "Reference" "#PWR0013"
+			(at 129.54 67.31 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 129.54 71.12 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 129.54 67.31 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 129.54 67.31 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 129.54 67.31 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "4ffbbac4-1a92-5657-b67e-1a81085f9f49")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0013")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:VCC")
+		(at 152.4 57.15 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "f24b28a8-5983-5911-aeba-1299d88787ab")
+		(property "Reference" "#PWR0014"
+			(at 152.4 57.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "P12V"
+			(at 152.4 53.34 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 152.4 57.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 152.4 57.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 152.4 57.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "ab5676d2-fd61-5b20-8bd5-dfddfca1a226")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0014")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:VCC")
+		(at 175.26 57.15 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "747ad05a-25f2-5c6e-bac7-73f3543c1139")
+		(property "Reference" "#PWR0015"
+			(at 175.26 57.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "P3V3"
+			(at 175.26 53.34 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 175.26 57.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 175.26 57.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 175.26 57.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "ef1e2a8e-42c3-5224-a8fe-cc3b0cdf5bbf")
+		)
+		(instances
+			(project "pcie-sata"
+				(path "/fac7359a-0697-5d85-9732-947d62b06bc7"
+					(reference "#PWR0015")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 129.54 62.23 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "69d499c7-ed77-58bc-9dbb-ef3fc8d27fb3")
+		(property "Reference" "#FLG01"
+			(at 129.54 62.23 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 129.54 57.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 129.54 62.23 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 129.54 62.23 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 129.54 62.23 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4353,7 +5575,7 @@
 	)
 	(symbol
 		(lib_id "power:PWR_FLAG")
-		(at 101.6 487.68 0)
+		(at 152.4 62.23 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom no)
@@ -4361,7 +5583,7 @@
 		(dnp no)
 		(uuid "61ac082f-1ab9-562f-a3f7-75cf4df3dfed")
 		(property "Reference" "#FLG02"
-			(at 101.6 487.68 0)
+			(at 152.4 62.23 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4370,7 +5592,7 @@
 			)
 		)
 		(property "Value" "PWR_FLAG"
-			(at 101.6 485.14 0)
+			(at 152.4 67.31 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4378,7 +5600,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 101.6 487.68 0)
+			(at 152.4 62.23 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4387,7 +5609,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 101.6 487.68 0)
+			(at 152.4 62.23 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4396,7 +5618,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 101.6 487.68 0)
+			(at 152.4 62.23 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4418,7 +5640,7 @@
 	)
 	(symbol
 		(lib_id "power:PWR_FLAG")
-		(at 152.4 487.68 0)
+		(at 175.26 62.23 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom no)
@@ -4426,7 +5648,7 @@
 		(dnp no)
 		(uuid "1d044463-83ee-5e47-b7ef-340245213457")
 		(property "Reference" "#FLG03"
-			(at 152.4 487.68 0)
+			(at 175.26 62.23 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4435,7 +5657,7 @@
 			)
 		)
 		(property "Value" "PWR_FLAG"
-			(at 152.4 485.14 0)
+			(at 175.26 67.31 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4443,7 +5665,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 152.4 487.68 0)
+			(at 175.26 62.23 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4452,7 +5674,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 152.4 487.68 0)
+			(at 175.26 62.23 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4461,7 +5683,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 152.4 487.68 0)
+			(at 175.26 62.23 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4483,8 +5705,8 @@
 	)
 	(wire
 		(pts
-			(xy 50.8 87.63)
-			(xy 50.8 83.82)
+			(xy 160.02 196.85)
+			(xy 160.02 193.04)
 		)
 		(stroke
 			(width 0)
@@ -4492,21 +5714,10 @@
 		)
 		(uuid "5f639185-2197-5d16-b094-d834fa8655f5")
 	)
-	(global_label "P12V"
-		(shape input)
-		(at 50.8 83.82 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "e62114f1-b05b-5a6f-81ab-9520736a4c78")
-	)
 	(wire
 		(pts
-			(xy 50.8 95.25)
-			(xy 50.8 99.06)
+			(xy 160.02 204.47)
+			(xy 160.02 208.28)
 		)
 		(stroke
 			(width 0)
@@ -4514,21 +5725,10 @@
 		)
 		(uuid "ac3e273e-1bd9-513c-aa3c-82c070f03d15")
 	)
-	(global_label "GND"
-		(shape input)
-		(at 50.8 99.06 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "279e08cf-1bc5-522f-b2a7-d0cc30f9da8c")
-	)
 	(wire
 		(pts
-			(xy 101.6 87.63)
-			(xy 101.6 83.82)
+			(xy 234.95 116.84)
+			(xy 234.95 113.03)
 		)
 		(stroke
 			(width 0)
@@ -4538,7 +5738,7 @@
 	)
 	(global_label "PCIE_TXN"
 		(shape input)
-		(at 101.6 83.82 90)
+		(at 234.95 113.03 90)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4549,8 +5749,8 @@
 	)
 	(wire
 		(pts
-			(xy 101.6 95.25)
-			(xy 101.6 99.06)
+			(xy 234.95 124.46)
+			(xy 234.95 128.27)
 		)
 		(stroke
 			(width 0)
@@ -4560,7 +5760,7 @@
 	)
 	(global_label "PCIE_TXN_C"
 		(shape input)
-		(at 101.6 99.06 270)
+		(at 234.95 128.27 270)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4571,8 +5771,8 @@
 	)
 	(wire
 		(pts
-			(xy 152.4 87.63)
-			(xy 152.4 83.82)
+			(xy 234.95 157.48)
+			(xy 234.95 153.67)
 		)
 		(stroke
 			(width 0)
@@ -4582,7 +5782,7 @@
 	)
 	(global_label "PCIE_TXP_C"
 		(shape input)
-		(at 152.4 83.82 90)
+		(at 234.95 153.67 90)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4593,8 +5793,8 @@
 	)
 	(wire
 		(pts
-			(xy 152.4 95.25)
-			(xy 152.4 99.06)
+			(xy 234.95 165.1)
+			(xy 234.95 168.91)
 		)
 		(stroke
 			(width 0)
@@ -4604,7 +5804,7 @@
 	)
 	(global_label "PCIE_TXP"
 		(shape input)
-		(at 152.4 99.06 270)
+		(at 234.95 168.91 270)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4615,8 +5815,8 @@
 	)
 	(wire
 		(pts
-			(xy 203.2 87.63)
-			(xy 203.2 83.82)
+			(xy 204.47 218.44)
+			(xy 204.47 214.63)
 		)
 		(stroke
 			(width 0)
@@ -4624,21 +5824,10 @@
 		)
 		(uuid "7792b606-dca1-5df0-9106-93e2e1c1d341")
 	)
-	(global_label "P3V3"
-		(shape input)
-		(at 203.2 83.82 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "24e0ade1-cb83-531c-b928-1d67b5d03b3e")
-	)
 	(wire
 		(pts
-			(xy 203.2 95.25)
-			(xy 203.2 99.06)
+			(xy 204.47 226.06)
+			(xy 204.47 229.87)
 		)
 		(stroke
 			(width 0)
@@ -4646,21 +5835,10 @@
 		)
 		(uuid "bb6b1192-9b85-51b5-9979-10cbca0f7c08")
 	)
-	(global_label "GND"
-		(shape input)
-		(at 203.2 99.06 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "bad5a101-951b-5edc-829e-4f70220b1fe2")
-	)
 	(wire
 		(pts
-			(xy 50.8 219.71)
-			(xy 50.8 215.9)
+			(xy 222.25 218.44)
+			(xy 222.25 214.63)
 		)
 		(stroke
 			(width 0)
@@ -4668,21 +5846,10 @@
 		)
 		(uuid "271e06f6-8921-5a94-a895-9abeb5749e82")
 	)
-	(global_label "P3V3"
-		(shape input)
-		(at 50.8 215.9 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "b6e54cca-7bb2-5c9a-b32f-af6c88c490d6")
-	)
 	(wire
 		(pts
-			(xy 50.8 227.33)
-			(xy 50.8 231.14)
+			(xy 222.25 226.06)
+			(xy 222.25 229.87)
 		)
 		(stroke
 			(width 0)
@@ -4690,21 +5857,10 @@
 		)
 		(uuid "d4137687-b0b1-598c-bcb3-21fefac0277c")
 	)
-	(global_label "GND"
-		(shape input)
-		(at 50.8 231.14 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "7e946dc6-ea77-5db0-83c9-cdbda462fa76")
-	)
 	(wire
 		(pts
-			(xy 101.6 219.71)
-			(xy 101.6 215.9)
+			(xy 240.03 218.44)
+			(xy 240.03 214.63)
 		)
 		(stroke
 			(width 0)
@@ -4712,21 +5868,10 @@
 		)
 		(uuid "728175f8-818e-530f-8a90-37b05f314d4d")
 	)
-	(global_label "P3V3"
-		(shape input)
-		(at 101.6 215.9 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "e6b1f4cb-f50b-57ba-aac3-99b098c59e2d")
-	)
 	(wire
 		(pts
-			(xy 101.6 227.33)
-			(xy 101.6 231.14)
+			(xy 240.03 226.06)
+			(xy 240.03 229.87)
 		)
 		(stroke
 			(width 0)
@@ -4734,25 +5879,10 @@
 		)
 		(uuid "cab072ea-66d0-5517-b2e9-e914d7685e3d")
 	)
-	(global_label "GND"
-		(shape input)
-		(at 101.6 231.14 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "4cf3c91d-0e03-5438-aeda-c6a10115d7f1")
-	)
-	(no_connect
-		(at 137.16 220.98)
-		(uuid "c11897cd-e3ae-5ebc-a87f-a0ebcc7591e6")
-	)
 	(wire
 		(pts
-			(xy 154.94 198.12)
-			(xy 154.94 194.31)
+			(xy 162.56 116.84)
+			(xy 162.56 113.03)
 		)
 		(stroke
 			(width 0)
@@ -4762,7 +5892,7 @@
 	)
 	(global_label "P3V3"
 		(shape input)
-		(at 154.94 194.31 90)
+		(at 162.56 113.03 90)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4771,14 +5901,10 @@
 		)
 		(uuid "f9463db6-b6db-5cc2-8c05-8f750cbb2838")
 	)
-	(no_connect
-		(at 167.64 215.9)
-		(uuid "795f09a4-bec6-5d80-893d-4bdbe46dec69")
-	)
 	(wire
 		(pts
-			(xy 152.4 246.38)
-			(xy 152.4 250.19)
+			(xy 160.02 165.1)
+			(xy 160.02 168.91)
 		)
 		(stroke
 			(width 0)
@@ -4788,7 +5914,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 152.4 250.19 270)
+		(at 160.02 168.91 270)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4799,8 +5925,8 @@
 	)
 	(wire
 		(pts
-			(xy 137.16 213.36)
-			(xy 133.35 213.36)
+			(xy 144.78 132.08)
+			(xy 140.97 132.08)
 		)
 		(stroke
 			(width 0)
@@ -4810,7 +5936,7 @@
 	)
 	(global_label "REFCLKP"
 		(shape input)
-		(at 133.35 213.36 180)
+		(at 140.97 132.08 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4821,8 +5947,8 @@
 	)
 	(wire
 		(pts
-			(xy 137.16 215.9)
-			(xy 133.35 215.9)
+			(xy 144.78 134.62)
+			(xy 140.97 134.62)
 		)
 		(stroke
 			(width 0)
@@ -4832,7 +5958,7 @@
 	)
 	(global_label "REFCLKN"
 		(shape input)
-		(at 133.35 215.9 180)
+		(at 140.97 134.62 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4843,30 +5969,8 @@
 	)
 	(wire
 		(pts
-			(xy 152.4 246.38)
-			(xy 152.4 250.19)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "3b41140a-38d4-5212-9193-6be55a5e39a6")
-	)
-	(global_label "GND"
-		(shape input)
-		(at 152.4 250.19 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "acb1f2b3-215c-5c76-a036-c00abe665f22")
-	)
-	(wire
-		(pts
-			(xy 167.64 236.22)
-			(xy 171.45 236.22)
+			(xy 175.26 154.94)
+			(xy 179.07 154.94)
 		)
 		(stroke
 			(width 0)
@@ -4876,7 +5980,7 @@
 	)
 	(global_label "PCIE_RXP"
 		(shape input)
-		(at 171.45 236.22 0)
+		(at 179.07 154.94 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4887,8 +5991,8 @@
 	)
 	(wire
 		(pts
-			(xy 167.64 238.76)
-			(xy 171.45 238.76)
+			(xy 175.26 157.48)
+			(xy 179.07 157.48)
 		)
 		(stroke
 			(width 0)
@@ -4898,7 +6002,7 @@
 	)
 	(global_label "PCIE_RXN"
 		(shape input)
-		(at 171.45 238.76 0)
+		(at 179.07 157.48 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4909,30 +6013,8 @@
 	)
 	(wire
 		(pts
-			(xy 152.4 246.38)
-			(xy 152.4 250.19)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "7d0e8160-afc2-5297-9760-52b9cfc8979b")
-	)
-	(global_label "GND"
-		(shape input)
-		(at 152.4 250.19 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "5e1a6ce3-6936-56d4-b7e1-cd3878e8d945")
-	)
-	(wire
-		(pts
-			(xy 149.86 198.12)
-			(xy 149.86 194.31)
+			(xy 157.48 116.84)
+			(xy 157.48 113.03)
 		)
 		(stroke
 			(width 0)
@@ -4942,7 +6024,7 @@
 	)
 	(global_label "P12V"
 		(shape input)
-		(at 149.86 194.31 90)
+		(at 157.48 113.03 90)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4953,146 +6035,8 @@
 	)
 	(wire
 		(pts
-			(xy 149.86 198.12)
-			(xy 149.86 194.31)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "5100a468-35c0-5a71-b609-23c212bbb99c")
-	)
-	(global_label "P12V"
-		(shape input)
-		(at 149.86 194.31 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "5ea1d86e-7f58-51bf-bf23-a62ee3e0934a")
-	)
-	(wire
-		(pts
-			(xy 152.4 246.38)
-			(xy 152.4 250.19)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "1ce2d363-8b47-5500-af56-2c328e2d50fe")
-	)
-	(global_label "GND"
-		(shape input)
-		(at 152.4 250.19 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "8451a932-82e4-5462-96ff-653d80452202")
-	)
-	(no_connect
-		(at 167.64 223.52)
-		(uuid "5e8217d9-83e2-5d3f-b94e-55140a79af1b")
-	)
-	(no_connect
-		(at 167.64 226.06)
-		(uuid "36d35e16-823c-581b-8d43-707e44b33690")
-	)
-	(no_connect
-		(at 167.64 228.6)
-		(uuid "76210521-1b12-599c-902a-884dcd72bf59")
-	)
-	(no_connect
-		(at 167.64 231.14)
-		(uuid "a30192a5-e40d-5e5e-b9b5-d7fc07df96c8")
-	)
-	(wire
-		(pts
-			(xy 154.94 198.12)
-			(xy 154.94 194.31)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "6150a631-45ef-53f4-83d7-2ab2666c981b")
-	)
-	(global_label "P3V3"
-		(shape input)
-		(at 154.94 194.31 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "5f7c58ff-9710-5367-81f0-02058b17eeb2")
-	)
-	(wire
-		(pts
-			(xy 149.86 198.12)
-			(xy 149.86 194.31)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "924ad0bf-88fb-5daa-b013-c438383bf71a")
-	)
-	(global_label "P12V"
-		(shape input)
-		(at 149.86 194.31 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "0e0549ba-e391-5acf-b3a8-c933bf75e0ae")
-	)
-	(no_connect
-		(at 152.4 198.12)
-		(uuid "d154fc26-b21b-55ff-8148-e38222c3ee2c")
-	)
-	(no_connect
-		(at 167.64 213.36)
-		(uuid "77c1f935-7cca-561c-98e7-52f5e5ce8f3f")
-	)
-	(no_connect
-		(at 167.64 208.28)
-		(uuid "bd1d8b3b-6822-590a-b323-50b40d1317ae")
-	)
-	(wire
-		(pts
-			(xy 152.4 246.38)
-			(xy 152.4 250.19)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "45818dc5-b0f2-55d3-9a82-1dc26456e76e")
-	)
-	(global_label "GND"
-		(shape input)
-		(at 152.4 250.19 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "c67d9e2d-6ce4-5cda-aa4f-c87036ce0bbe")
-	)
-	(wire
-		(pts
-			(xy 137.16 236.22)
-			(xy 133.35 236.22)
+			(xy 144.78 154.94)
+			(xy 140.97 154.94)
 		)
 		(stroke
 			(width 0)
@@ -5102,7 +6046,7 @@
 	)
 	(global_label "PCIE_TXP_C"
 		(shape input)
-		(at 133.35 236.22 180)
+		(at 140.97 154.94 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5113,8 +6057,8 @@
 	)
 	(wire
 		(pts
-			(xy 137.16 238.76)
-			(xy 133.35 238.76)
+			(xy 144.78 157.48)
+			(xy 140.97 157.48)
 		)
 		(stroke
 			(width 0)
@@ -5124,7 +6068,7 @@
 	)
 	(global_label "PCIE_TXN_C"
 		(shape input)
-		(at 133.35 238.76 180)
+		(at 140.97 157.48 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5135,178 +6079,8 @@
 	)
 	(wire
 		(pts
-			(xy 152.4 246.38)
-			(xy 152.4 250.19)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "e964b4ff-115b-5f01-97bb-7f27f40b43a2")
-	)
-	(global_label "GND"
-		(shape input)
-		(at 152.4 250.19 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "b0c50452-8c7a-53c1-9c65-a632f107f7ef")
-	)
-	(no_connect
-		(at 137.16 223.52)
-		(uuid "d1cef073-9c27-51be-9856-0f88efd9ce0a")
-	)
-	(wire
-		(pts
-			(xy 152.4 246.38)
-			(xy 152.4 250.19)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "2c8227fe-1d64-518d-9d8d-b498daf81c75")
-	)
-	(global_label "GND"
-		(shape input)
-		(at 152.4 250.19 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "3c1105c1-ca48-5a20-b2df-e49b254ad041")
-	)
-	(wire
-		(pts
-			(xy 149.86 198.12)
-			(xy 149.86 194.31)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "e8a5a447-8197-574d-aec2-78ac077145d9")
-	)
-	(global_label "P12V"
-		(shape input)
-		(at 149.86 194.31 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "27149c5f-ea0a-51f7-8070-4c8ac72bb05c")
-	)
-	(wire
-		(pts
-			(xy 149.86 198.12)
-			(xy 149.86 194.31)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a29603bd-884f-5247-a561-a21217c998d5")
-	)
-	(global_label "P12V"
-		(shape input)
-		(at 149.86 194.31 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "79c37233-b580-5f3c-815b-af31b162381b")
-	)
-	(wire
-		(pts
-			(xy 152.4 246.38)
-			(xy 152.4 250.19)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "9c2191ed-69c0-58c7-985b-cbb81347ec92")
-	)
-	(global_label "GND"
-		(shape input)
-		(at 152.4 250.19 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "6746ff7f-8243-5f1d-b5dd-447de3220cb3")
-	)
-	(no_connect
-		(at 137.16 205.74)
-		(uuid "c4414b76-4697-5788-b15a-bbaf180961b7")
-	)
-	(no_connect
-		(at 137.16 208.28)
-		(uuid "b80447e6-d018-5886-9039-58942ba5bf28")
-	)
-	(wire
-		(pts
-			(xy 152.4 246.38)
-			(xy 152.4 250.19)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c3a000fd-c5da-56ae-ab63-095a1872cd8a")
-	)
-	(global_label "GND"
-		(shape input)
-		(at 152.4 250.19 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "86478551-c0ff-5ff7-8277-d975f0024e7c")
-	)
-	(wire
-		(pts
-			(xy 154.94 198.12)
-			(xy 154.94 194.31)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c330b42c-f263-5d7a-b619-b0d9c9d60db3")
-	)
-	(global_label "P3V3"
-		(shape input)
-		(at 154.94 194.31 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "94cd9408-1c22-5065-a630-997a8be20b18")
-	)
-	(no_connect
-		(at 167.64 220.98)
-		(uuid "ac342775-64d1-50f5-a44d-bcb557db55af")
-	)
-	(wire
-		(pts
-			(xy 198.12 215.9)
-			(xy 194.31 215.9)
+			(xy 280.67 76.2)
+			(xy 276.86 76.2)
 		)
 		(stroke
 			(width 0)
@@ -5316,7 +6090,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 194.31 215.9 180)
+		(at 276.86 76.2 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5327,8 +6101,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 218.44)
-			(xy 194.31 218.44)
+			(xy 280.67 78.74)
+			(xy 276.86 78.74)
 		)
 		(stroke
 			(width 0)
@@ -5338,7 +6112,7 @@
 	)
 	(global_label "SATA0_TXP"
 		(shape input)
-		(at 194.31 218.44 180)
+		(at 276.86 78.74 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5349,8 +6123,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 220.98)
-			(xy 194.31 220.98)
+			(xy 280.67 81.28)
+			(xy 276.86 81.28)
 		)
 		(stroke
 			(width 0)
@@ -5360,7 +6134,7 @@
 	)
 	(global_label "SATA0_TXN"
 		(shape input)
-		(at 194.31 220.98 180)
+		(at 276.86 81.28 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5371,8 +6145,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 223.52)
-			(xy 194.31 223.52)
+			(xy 280.67 83.82)
+			(xy 276.86 83.82)
 		)
 		(stroke
 			(width 0)
@@ -5382,7 +6156,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 194.31 223.52 180)
+		(at 276.86 83.82 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5393,8 +6167,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 226.06)
-			(xy 194.31 226.06)
+			(xy 280.67 86.36)
+			(xy 276.86 86.36)
 		)
 		(stroke
 			(width 0)
@@ -5404,7 +6178,7 @@
 	)
 	(global_label "SATA0_RXN"
 		(shape input)
-		(at 194.31 226.06 180)
+		(at 276.86 86.36 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5415,8 +6189,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 228.6)
-			(xy 194.31 228.6)
+			(xy 280.67 88.9)
+			(xy 276.86 88.9)
 		)
 		(stroke
 			(width 0)
@@ -5426,7 +6200,7 @@
 	)
 	(global_label "SATA0_RXP"
 		(shape input)
-		(at 194.31 228.6 180)
+		(at 276.86 88.9 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5437,8 +6211,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 231.14)
-			(xy 194.31 231.14)
+			(xy 280.67 91.44)
+			(xy 276.86 91.44)
 		)
 		(stroke
 			(width 0)
@@ -5448,7 +6222,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 194.31 231.14 180)
+		(at 276.86 91.44 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5459,8 +6233,8 @@
 	)
 	(wire
 		(pts
-			(xy 203.2 236.22)
-			(xy 203.2 240.03)
+			(xy 285.75 96.52)
+			(xy 285.75 100.33)
 		)
 		(stroke
 			(width 0)
@@ -5468,21 +6242,10 @@
 		)
 		(uuid "e7fb9a77-bb40-5834-ae5e-f6b203f57966")
 	)
-	(global_label "GND"
-		(shape input)
-		(at 203.2 240.03 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "4c64190b-51cb-58c3-a284-d9a443411daa")
-	)
 	(wire
 		(pts
-			(xy 45.72 347.98)
-			(xy 41.91 347.98)
+			(xy 280.67 119.38)
+			(xy 276.86 119.38)
 		)
 		(stroke
 			(width 0)
@@ -5492,7 +6255,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 41.91 347.98 180)
+		(at 276.86 119.38 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5503,8 +6266,8 @@
 	)
 	(wire
 		(pts
-			(xy 45.72 350.52)
-			(xy 41.91 350.52)
+			(xy 280.67 121.92)
+			(xy 276.86 121.92)
 		)
 		(stroke
 			(width 0)
@@ -5514,7 +6277,7 @@
 	)
 	(global_label "SATA1_TXP"
 		(shape input)
-		(at 41.91 350.52 180)
+		(at 276.86 121.92 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5525,8 +6288,8 @@
 	)
 	(wire
 		(pts
-			(xy 45.72 353.06)
-			(xy 41.91 353.06)
+			(xy 280.67 124.46)
+			(xy 276.86 124.46)
 		)
 		(stroke
 			(width 0)
@@ -5536,7 +6299,7 @@
 	)
 	(global_label "SATA1_TXN"
 		(shape input)
-		(at 41.91 353.06 180)
+		(at 276.86 124.46 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5547,8 +6310,8 @@
 	)
 	(wire
 		(pts
-			(xy 45.72 355.6)
-			(xy 41.91 355.6)
+			(xy 280.67 127)
+			(xy 276.86 127)
 		)
 		(stroke
 			(width 0)
@@ -5558,7 +6321,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 41.91 355.6 180)
+		(at 276.86 127 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5569,8 +6332,8 @@
 	)
 	(wire
 		(pts
-			(xy 45.72 358.14)
-			(xy 41.91 358.14)
+			(xy 280.67 129.54)
+			(xy 276.86 129.54)
 		)
 		(stroke
 			(width 0)
@@ -5580,7 +6343,7 @@
 	)
 	(global_label "SATA1_RXN"
 		(shape input)
-		(at 41.91 358.14 180)
+		(at 276.86 129.54 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5591,8 +6354,8 @@
 	)
 	(wire
 		(pts
-			(xy 45.72 360.68)
-			(xy 41.91 360.68)
+			(xy 280.67 132.08)
+			(xy 276.86 132.08)
 		)
 		(stroke
 			(width 0)
@@ -5602,7 +6365,7 @@
 	)
 	(global_label "SATA1_RXP"
 		(shape input)
-		(at 41.91 360.68 180)
+		(at 276.86 132.08 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5613,8 +6376,8 @@
 	)
 	(wire
 		(pts
-			(xy 45.72 363.22)
-			(xy 41.91 363.22)
+			(xy 280.67 134.62)
+			(xy 276.86 134.62)
 		)
 		(stroke
 			(width 0)
@@ -5624,7 +6387,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 41.91 363.22 180)
+		(at 276.86 134.62 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5635,8 +6398,8 @@
 	)
 	(wire
 		(pts
-			(xy 50.8 368.3)
-			(xy 50.8 372.11)
+			(xy 285.75 139.7)
+			(xy 285.75 143.51)
 		)
 		(stroke
 			(width 0)
@@ -5644,21 +6407,10 @@
 		)
 		(uuid "b5135d24-25b1-5e56-9f95-fb76e451bbb9")
 	)
-	(global_label "GND"
-		(shape input)
-		(at 50.8 372.11 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "32fc227c-a05b-5e06-81a1-96d92a11fbb9")
-	)
 	(wire
 		(pts
-			(xy 96.52 347.98)
-			(xy 92.71 347.98)
+			(xy 280.67 162.56)
+			(xy 276.86 162.56)
 		)
 		(stroke
 			(width 0)
@@ -5668,7 +6420,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 92.71 347.98 180)
+		(at 276.86 162.56 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5679,8 +6431,8 @@
 	)
 	(wire
 		(pts
-			(xy 96.52 350.52)
-			(xy 92.71 350.52)
+			(xy 280.67 165.1)
+			(xy 276.86 165.1)
 		)
 		(stroke
 			(width 0)
@@ -5690,7 +6442,7 @@
 	)
 	(global_label "SATA2_TXP"
 		(shape input)
-		(at 92.71 350.52 180)
+		(at 276.86 165.1 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5701,8 +6453,8 @@
 	)
 	(wire
 		(pts
-			(xy 96.52 353.06)
-			(xy 92.71 353.06)
+			(xy 280.67 167.64)
+			(xy 276.86 167.64)
 		)
 		(stroke
 			(width 0)
@@ -5712,7 +6464,7 @@
 	)
 	(global_label "SATA2_TXN"
 		(shape input)
-		(at 92.71 353.06 180)
+		(at 276.86 167.64 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5723,8 +6475,8 @@
 	)
 	(wire
 		(pts
-			(xy 96.52 355.6)
-			(xy 92.71 355.6)
+			(xy 280.67 170.18)
+			(xy 276.86 170.18)
 		)
 		(stroke
 			(width 0)
@@ -5734,7 +6486,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 92.71 355.6 180)
+		(at 276.86 170.18 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5745,8 +6497,8 @@
 	)
 	(wire
 		(pts
-			(xy 96.52 358.14)
-			(xy 92.71 358.14)
+			(xy 280.67 172.72)
+			(xy 276.86 172.72)
 		)
 		(stroke
 			(width 0)
@@ -5756,7 +6508,7 @@
 	)
 	(global_label "SATA2_RXN"
 		(shape input)
-		(at 92.71 358.14 180)
+		(at 276.86 172.72 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5767,8 +6519,8 @@
 	)
 	(wire
 		(pts
-			(xy 96.52 360.68)
-			(xy 92.71 360.68)
+			(xy 280.67 175.26)
+			(xy 276.86 175.26)
 		)
 		(stroke
 			(width 0)
@@ -5778,7 +6530,7 @@
 	)
 	(global_label "SATA2_RXP"
 		(shape input)
-		(at 92.71 360.68 180)
+		(at 276.86 175.26 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5789,8 +6541,8 @@
 	)
 	(wire
 		(pts
-			(xy 96.52 363.22)
-			(xy 92.71 363.22)
+			(xy 280.67 177.8)
+			(xy 276.86 177.8)
 		)
 		(stroke
 			(width 0)
@@ -5800,7 +6552,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 92.71 363.22 180)
+		(at 276.86 177.8 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5811,8 +6563,8 @@
 	)
 	(wire
 		(pts
-			(xy 101.6 368.3)
-			(xy 101.6 372.11)
+			(xy 285.75 182.88)
+			(xy 285.75 186.69)
 		)
 		(stroke
 			(width 0)
@@ -5820,21 +6572,10 @@
 		)
 		(uuid "a2dfcf55-739a-573d-ae30-607987282e80")
 	)
-	(global_label "GND"
-		(shape input)
-		(at 101.6 372.11 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "b062b9c9-cb74-5126-abe5-1aa5b272821e")
-	)
 	(wire
 		(pts
-			(xy 147.32 347.98)
-			(xy 143.51 347.98)
+			(xy 280.67 205.74)
+			(xy 276.86 205.74)
 		)
 		(stroke
 			(width 0)
@@ -5844,7 +6585,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 143.51 347.98 180)
+		(at 276.86 205.74 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5855,8 +6596,8 @@
 	)
 	(wire
 		(pts
-			(xy 147.32 350.52)
-			(xy 143.51 350.52)
+			(xy 280.67 208.28)
+			(xy 276.86 208.28)
 		)
 		(stroke
 			(width 0)
@@ -5866,7 +6607,7 @@
 	)
 	(global_label "SATA3_TXP"
 		(shape input)
-		(at 143.51 350.52 180)
+		(at 276.86 208.28 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5877,8 +6618,8 @@
 	)
 	(wire
 		(pts
-			(xy 147.32 353.06)
-			(xy 143.51 353.06)
+			(xy 280.67 210.82)
+			(xy 276.86 210.82)
 		)
 		(stroke
 			(width 0)
@@ -5888,7 +6629,7 @@
 	)
 	(global_label "SATA3_TXN"
 		(shape input)
-		(at 143.51 353.06 180)
+		(at 276.86 210.82 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5899,8 +6640,8 @@
 	)
 	(wire
 		(pts
-			(xy 147.32 355.6)
-			(xy 143.51 355.6)
+			(xy 280.67 213.36)
+			(xy 276.86 213.36)
 		)
 		(stroke
 			(width 0)
@@ -5910,7 +6651,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 143.51 355.6 180)
+		(at 276.86 213.36 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5921,8 +6662,8 @@
 	)
 	(wire
 		(pts
-			(xy 147.32 358.14)
-			(xy 143.51 358.14)
+			(xy 280.67 215.9)
+			(xy 276.86 215.9)
 		)
 		(stroke
 			(width 0)
@@ -5932,7 +6673,7 @@
 	)
 	(global_label "SATA3_RXN"
 		(shape input)
-		(at 143.51 358.14 180)
+		(at 276.86 215.9 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5943,8 +6684,8 @@
 	)
 	(wire
 		(pts
-			(xy 147.32 360.68)
-			(xy 143.51 360.68)
+			(xy 280.67 218.44)
+			(xy 276.86 218.44)
 		)
 		(stroke
 			(width 0)
@@ -5954,7 +6695,7 @@
 	)
 	(global_label "SATA3_RXP"
 		(shape input)
-		(at 143.51 360.68 180)
+		(at 276.86 218.44 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5965,8 +6706,8 @@
 	)
 	(wire
 		(pts
-			(xy 147.32 363.22)
-			(xy 143.51 363.22)
+			(xy 280.67 220.98)
+			(xy 276.86 220.98)
 		)
 		(stroke
 			(width 0)
@@ -5976,7 +6717,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 143.51 363.22 180)
+		(at 276.86 220.98 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5987,8 +6728,8 @@
 	)
 	(wire
 		(pts
-			(xy 152.4 368.3)
-			(xy 152.4 372.11)
+			(xy 285.75 226.06)
+			(xy 285.75 229.87)
 		)
 		(stroke
 			(width 0)
@@ -5996,25 +6737,10 @@
 		)
 		(uuid "fba8cd95-c03a-5e19-90cc-80aa1fce0119")
 	)
-	(global_label "GND"
-		(shape input)
-		(at 152.4 372.11 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "538e28c3-2de2-5f09-a548-8f8b3204ee84")
-	)
-	(no_connect
-		(at 198.12 294.64)
-		(uuid "ea8a919a-fc8a-56e9-bef5-ba0b3e7f3e64")
-	)
 	(wire
 		(pts
-			(xy 198.12 297.18)
-			(xy 194.31 297.18)
+			(xy 217.17 82.55)
+			(xy 213.36 82.55)
 		)
 		(stroke
 			(width 0)
@@ -6024,7 +6750,7 @@
 	)
 	(global_label "SATA2_TXP"
 		(shape input)
-		(at 194.31 297.18 180)
+		(at 213.36 82.55 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6035,8 +6761,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 299.72)
-			(xy 194.31 299.72)
+			(xy 217.17 85.09)
+			(xy 213.36 85.09)
 		)
 		(stroke
 			(width 0)
@@ -6046,7 +6772,7 @@
 	)
 	(global_label "SATA2_TXN"
 		(shape input)
-		(at 194.31 299.72 180)
+		(at 213.36 85.09 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6057,8 +6783,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 302.26)
-			(xy 194.31 302.26)
+			(xy 217.17 87.63)
+			(xy 213.36 87.63)
 		)
 		(stroke
 			(width 0)
@@ -6068,7 +6794,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 194.31 302.26 180)
+		(at 213.36 87.63 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6079,8 +6805,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 304.8)
-			(xy 194.31 304.8)
+			(xy 217.17 90.17)
+			(xy 213.36 90.17)
 		)
 		(stroke
 			(width 0)
@@ -6090,7 +6816,7 @@
 	)
 	(global_label "SATA2_RXN"
 		(shape input)
-		(at 194.31 304.8 180)
+		(at 213.36 90.17 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6101,8 +6827,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 307.34)
-			(xy 194.31 307.34)
+			(xy 217.17 92.71)
+			(xy 213.36 92.71)
 		)
 		(stroke
 			(width 0)
@@ -6112,7 +6838,7 @@
 	)
 	(global_label "SATA2_RXP"
 		(shape input)
-		(at 194.31 307.34 180)
+		(at 213.36 92.71 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6121,14 +6847,10 @@
 		)
 		(uuid "e5b8de9c-9493-5471-925b-abf16607256f")
 	)
-	(no_connect
-		(at 198.12 309.88)
-		(uuid "852d2c96-9bba-547b-af0d-90593bc46b07")
-	)
 	(wire
 		(pts
-			(xy 198.12 312.42)
-			(xy 194.31 312.42)
+			(xy 217.17 97.79)
+			(xy 213.36 97.79)
 		)
 		(stroke
 			(width 0)
@@ -6138,7 +6860,7 @@
 	)
 	(global_label "SATA3_TXP"
 		(shape input)
-		(at 194.31 312.42 180)
+		(at 213.36 97.79 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6149,8 +6871,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 314.96)
-			(xy 194.31 314.96)
+			(xy 217.17 100.33)
+			(xy 213.36 100.33)
 		)
 		(stroke
 			(width 0)
@@ -6160,7 +6882,7 @@
 	)
 	(global_label "SATA3_TXN"
 		(shape input)
-		(at 194.31 314.96 180)
+		(at 213.36 100.33 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6171,8 +6893,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 317.5)
-			(xy 194.31 317.5)
+			(xy 217.17 102.87)
+			(xy 213.36 102.87)
 		)
 		(stroke
 			(width 0)
@@ -6182,7 +6904,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 194.31 317.5 180)
+		(at 213.36 102.87 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6193,8 +6915,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 320.04)
-			(xy 194.31 320.04)
+			(xy 217.17 105.41)
+			(xy 213.36 105.41)
 		)
 		(stroke
 			(width 0)
@@ -6204,7 +6926,7 @@
 	)
 	(global_label "SATA3_RXN"
 		(shape input)
-		(at 194.31 320.04 180)
+		(at 213.36 105.41 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6215,8 +6937,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 322.58)
-			(xy 194.31 322.58)
+			(xy 217.17 107.95)
+			(xy 213.36 107.95)
 		)
 		(stroke
 			(width 0)
@@ -6226,7 +6948,7 @@
 	)
 	(global_label "SATA3_RXP"
 		(shape input)
-		(at 194.31 322.58 180)
+		(at 213.36 107.95 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6235,14 +6957,10 @@
 		)
 		(uuid "d5f56910-474d-5dba-b7dc-914d21a4eaf4")
 	)
-	(no_connect
-		(at 198.12 325.12)
-		(uuid "4597ab7b-d0f1-5eab-a5a7-cd4818f886f8")
-	)
 	(wire
 		(pts
-			(xy 198.12 327.66)
-			(xy 194.31 327.66)
+			(xy 217.17 113.03)
+			(xy 213.36 113.03)
 		)
 		(stroke
 			(width 0)
@@ -6252,7 +6970,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 194.31 327.66 180)
+		(at 213.36 113.03 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6263,8 +6981,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 330.2)
-			(xy 194.31 330.2)
+			(xy 217.17 115.57)
+			(xy 213.36 115.57)
 		)
 		(stroke
 			(width 0)
@@ -6274,7 +6992,7 @@
 	)
 	(global_label "REFCLKP"
 		(shape input)
-		(at 194.31 330.2 180)
+		(at 213.36 115.57 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6285,8 +7003,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 332.74)
-			(xy 194.31 332.74)
+			(xy 217.17 118.11)
+			(xy 213.36 118.11)
 		)
 		(stroke
 			(width 0)
@@ -6296,7 +7014,7 @@
 	)
 	(global_label "REFCLKN"
 		(shape input)
-		(at 194.31 332.74 180)
+		(at 213.36 118.11 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6307,8 +7025,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 335.28)
-			(xy 194.31 335.28)
+			(xy 217.17 120.65)
+			(xy 213.36 120.65)
 		)
 		(stroke
 			(width 0)
@@ -6318,7 +7036,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 194.31 335.28 180)
+		(at 213.36 120.65 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6329,8 +7047,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 337.82)
-			(xy 194.31 337.82)
+			(xy 217.17 123.19)
+			(xy 213.36 123.19)
 		)
 		(stroke
 			(width 0)
@@ -6340,7 +7058,7 @@
 	)
 	(global_label "PCIE_TXP"
 		(shape input)
-		(at 194.31 337.82 180)
+		(at 213.36 123.19 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6351,8 +7069,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 340.36)
-			(xy 194.31 340.36)
+			(xy 217.17 125.73)
+			(xy 213.36 125.73)
 		)
 		(stroke
 			(width 0)
@@ -6362,7 +7080,7 @@
 	)
 	(global_label "PCIE_TXN"
 		(shape input)
-		(at 194.31 340.36 180)
+		(at 213.36 125.73 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6373,8 +7091,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 342.9)
-			(xy 194.31 342.9)
+			(xy 217.17 128.27)
+			(xy 213.36 128.27)
 		)
 		(stroke
 			(width 0)
@@ -6384,7 +7102,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 194.31 342.9 180)
+		(at 213.36 128.27 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6393,14 +7111,10 @@
 		)
 		(uuid "8e58f27f-a7cd-584f-ba7b-0f9b3b5450cd")
 	)
-	(no_connect
-		(at 198.12 345.44)
-		(uuid "7e03b6cc-e1d9-5515-92ee-85274ba9a709")
-	)
 	(wire
 		(pts
-			(xy 198.12 347.98)
-			(xy 194.31 347.98)
+			(xy 217.17 133.35)
+			(xy 213.36 133.35)
 		)
 		(stroke
 			(width 0)
@@ -6410,7 +7124,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 194.31 347.98 180)
+		(at 213.36 133.35 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6421,8 +7135,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 350.52)
-			(xy 194.31 350.52)
+			(xy 217.17 135.89)
+			(xy 213.36 135.89)
 		)
 		(stroke
 			(width 0)
@@ -6432,7 +7146,7 @@
 	)
 	(global_label "PCIE_RXP"
 		(shape input)
-		(at 194.31 350.52 180)
+		(at 213.36 135.89 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6443,8 +7157,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 353.06)
-			(xy 194.31 353.06)
+			(xy 217.17 138.43)
+			(xy 213.36 138.43)
 		)
 		(stroke
 			(width 0)
@@ -6454,7 +7168,7 @@
 	)
 	(global_label "PCIE_RXN"
 		(shape input)
-		(at 194.31 353.06 180)
+		(at 213.36 138.43 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6465,8 +7179,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 355.6)
-			(xy 194.31 355.6)
+			(xy 217.17 140.97)
+			(xy 213.36 140.97)
 		)
 		(stroke
 			(width 0)
@@ -6476,7 +7190,7 @@
 	)
 	(global_label "SATA0_TXP"
 		(shape input)
-		(at 194.31 355.6 180)
+		(at 213.36 140.97 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6487,8 +7201,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 358.14)
-			(xy 194.31 358.14)
+			(xy 217.17 143.51)
+			(xy 213.36 143.51)
 		)
 		(stroke
 			(width 0)
@@ -6498,7 +7212,7 @@
 	)
 	(global_label "SATA0_TXN"
 		(shape input)
-		(at 194.31 358.14 180)
+		(at 213.36 143.51 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6509,8 +7223,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 360.68)
-			(xy 194.31 360.68)
+			(xy 217.17 146.05)
+			(xy 213.36 146.05)
 		)
 		(stroke
 			(width 0)
@@ -6520,7 +7234,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 194.31 360.68 180)
+		(at 213.36 146.05 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6531,8 +7245,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 363.22)
-			(xy 194.31 363.22)
+			(xy 217.17 148.59)
+			(xy 213.36 148.59)
 		)
 		(stroke
 			(width 0)
@@ -6542,7 +7256,7 @@
 	)
 	(global_label "SATA0_RXN"
 		(shape input)
-		(at 194.31 363.22 180)
+		(at 213.36 148.59 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6553,8 +7267,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 365.76)
-			(xy 194.31 365.76)
+			(xy 217.17 151.13)
+			(xy 213.36 151.13)
 		)
 		(stroke
 			(width 0)
@@ -6564,7 +7278,7 @@
 	)
 	(global_label "SATA0_RXP"
 		(shape input)
-		(at 194.31 365.76 180)
+		(at 213.36 151.13 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6573,14 +7287,10 @@
 		)
 		(uuid "c55b3e95-aebc-5691-b463-c5aec2952197")
 	)
-	(no_connect
-		(at 198.12 368.3)
-		(uuid "d190c6fc-eaa4-5d6c-94bd-9516222a2f49")
-	)
 	(wire
 		(pts
-			(xy 198.12 370.84)
-			(xy 194.31 370.84)
+			(xy 217.17 156.21)
+			(xy 213.36 156.21)
 		)
 		(stroke
 			(width 0)
@@ -6590,7 +7300,7 @@
 	)
 	(global_label "SATA1_TXP"
 		(shape input)
-		(at 194.31 370.84 180)
+		(at 213.36 156.21 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6601,8 +7311,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 373.38)
-			(xy 194.31 373.38)
+			(xy 217.17 158.75)
+			(xy 213.36 158.75)
 		)
 		(stroke
 			(width 0)
@@ -6612,7 +7322,7 @@
 	)
 	(global_label "SATA1_TXN"
 		(shape input)
-		(at 194.31 373.38 180)
+		(at 213.36 158.75 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6623,8 +7333,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 375.92)
-			(xy 194.31 375.92)
+			(xy 217.17 161.29)
+			(xy 213.36 161.29)
 		)
 		(stroke
 			(width 0)
@@ -6634,7 +7344,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 194.31 375.92 180)
+		(at 213.36 161.29 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6645,8 +7355,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 378.46)
-			(xy 194.31 378.46)
+			(xy 217.17 163.83)
+			(xy 213.36 163.83)
 		)
 		(stroke
 			(width 0)
@@ -6656,7 +7366,7 @@
 	)
 	(global_label "SATA1_RXN"
 		(shape input)
-		(at 194.31 378.46 180)
+		(at 213.36 163.83 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6667,8 +7377,8 @@
 	)
 	(wire
 		(pts
-			(xy 198.12 381)
-			(xy 194.31 381)
+			(xy 217.17 166.37)
+			(xy 213.36 166.37)
 		)
 		(stroke
 			(width 0)
@@ -6678,7 +7388,7 @@
 	)
 	(global_label "SATA1_RXP"
 		(shape input)
-		(at 194.31 381 180)
+		(at 213.36 166.37 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6687,18 +7397,10 @@
 		)
 		(uuid "407b6795-5810-56f9-ab10-5f806186c66e")
 	)
-	(no_connect
-		(at 198.12 383.54)
-		(uuid "7055a52c-c678-58b2-ba99-bd87b9b367cd")
-	)
-	(no_connect
-		(at 198.12 386.08)
-		(uuid "7d6f731a-c347-5ef2-a882-8bd219340585")
-	)
 	(wire
 		(pts
-			(xy 198.12 388.62)
-			(xy 194.31 388.62)
+			(xy 217.17 173.99)
+			(xy 213.36 173.99)
 		)
 		(stroke
 			(width 0)
@@ -6708,7 +7410,7 @@
 	)
 	(global_label "P3V3"
 		(shape input)
-		(at 194.31 388.62 180)
+		(at 213.36 173.99 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6717,22 +7419,10 @@
 		)
 		(uuid "71d703c0-fc04-55b4-9e96-717d95208bcf")
 	)
-	(no_connect
-		(at 198.12 391.16)
-		(uuid "47d9205d-7fcf-581d-9fb8-cb75936be49e")
-	)
-	(no_connect
-		(at 198.12 393.7)
-		(uuid "6bb99d88-5cc6-56df-958e-04d5b91ce1e2")
-	)
-	(no_connect
-		(at 198.12 396.24)
-		(uuid "6054475d-43ce-5ae3-9c3c-099dc9ee7bbf")
-	)
 	(wire
 		(pts
-			(xy 198.12 398.78)
-			(xy 194.31 398.78)
+			(xy 217.17 184.15)
+			(xy 213.36 184.15)
 		)
 		(stroke
 			(width 0)
@@ -6742,7 +7432,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 194.31 398.78 180)
+		(at 213.36 184.15 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6751,18 +7441,10 @@
 		)
 		(uuid "25bfc457-7728-5202-ba5a-e289cd6ddb23")
 	)
-	(no_connect
-		(at 198.12 401.32)
-		(uuid "385a60ce-310f-5c3a-8d6b-3f297f50179e")
-	)
-	(no_connect
-		(at 198.12 403.86)
-		(uuid "687ffbc2-9c97-54ae-805e-0a524a4230ea")
-	)
 	(wire
 		(pts
-			(xy 198.12 406.4)
-			(xy 194.31 406.4)
+			(xy 217.17 191.77)
+			(xy 213.36 191.77)
 		)
 		(stroke
 			(width 0)
@@ -6772,7 +7454,7 @@
 	)
 	(global_label "P3V3"
 		(shape input)
-		(at 194.31 406.4 180)
+		(at 213.36 191.77 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6781,22 +7463,10 @@
 		)
 		(uuid "16004330-ca7a-5267-86ac-c13df0a53b25")
 	)
-	(no_connect
-		(at 198.12 408.94)
-		(uuid "42da8388-78cb-57e2-b4c7-43d696fdf0c3")
-	)
-	(no_connect
-		(at 198.12 411.48)
-		(uuid "edc1c152-c511-5010-ae47-78b3a5ef23e4")
-	)
-	(no_connect
-		(at 198.12 414.02)
-		(uuid "14646e0a-2ca8-5d4a-8c1b-b9edbbd23d80")
-	)
 	(wire
 		(pts
-			(xy 198.12 416.56)
-			(xy 194.31 416.56)
+			(xy 217.17 201.93)
+			(xy 213.36 201.93)
 		)
 		(stroke
 			(width 0)
@@ -6806,7 +7476,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 194.31 416.56 180)
+		(at 213.36 201.93 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6817,8 +7487,8 @@
 	)
 	(wire
 		(pts
-			(xy 50.8 487.68)
-			(xy 50.8 491.49)
+			(xy 129.54 62.23)
+			(xy 129.54 67.31)
 		)
 		(stroke
 			(width 0)
@@ -6826,21 +7496,10 @@
 		)
 		(uuid "4fa05bd6-b1a3-5f92-9715-e4e10cf1cc14")
 	)
-	(global_label "GND"
-		(shape input)
-		(at 50.8 491.49 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "6fbe9e00-da18-523c-91cf-9a5c129b80db")
-	)
 	(wire
 		(pts
-			(xy 101.6 487.68)
-			(xy 101.6 491.49)
+			(xy 152.4 62.23)
+			(xy 152.4 57.15)
 		)
 		(stroke
 			(width 0)
@@ -6848,21 +7507,10 @@
 		)
 		(uuid "791a95c6-87c4-5911-87f3-d8156fe612d3")
 	)
-	(global_label "P12V"
-		(shape input)
-		(at 101.6 491.49 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "2f7e2d61-4d4f-51b1-bfaf-a0f8116d8db4")
-	)
 	(wire
 		(pts
-			(xy 152.4 487.68)
-			(xy 152.4 491.49)
+			(xy 175.26 62.23)
+			(xy 175.26 57.15)
 		)
 		(stroke
 			(width 0)
@@ -6870,16 +7518,117 @@
 		)
 		(uuid "974e485d-b305-5f73-a06f-d975480fbe76")
 	)
-	(global_label "P3V3"
-		(shape input)
-		(at 152.4 491.49 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "a70f1a47-d3eb-52e4-b932-d55223f29d65")
+	(no_connect
+		(at 144.78 139.7)
+		(uuid "c11897cd-e3ae-5ebc-a87f-a0ebcc7591e6")
+	)
+	(no_connect
+		(at 175.26 134.62)
+		(uuid "795f09a4-bec6-5d80-893d-4bdbe46dec69")
+	)
+	(no_connect
+		(at 175.26 142.24)
+		(uuid "5e8217d9-83e2-5d3f-b94e-55140a79af1b")
+	)
+	(no_connect
+		(at 175.26 144.78)
+		(uuid "36d35e16-823c-581b-8d43-707e44b33690")
+	)
+	(no_connect
+		(at 175.26 147.32)
+		(uuid "76210521-1b12-599c-902a-884dcd72bf59")
+	)
+	(no_connect
+		(at 175.26 149.86)
+		(uuid "a30192a5-e40d-5e5e-b9b5-d7fc07df96c8")
+	)
+	(no_connect
+		(at 160.02 116.84)
+		(uuid "d154fc26-b21b-55ff-8148-e38222c3ee2c")
+	)
+	(no_connect
+		(at 175.26 132.08)
+		(uuid "77c1f935-7cca-561c-98e7-52f5e5ce8f3f")
+	)
+	(no_connect
+		(at 175.26 127)
+		(uuid "bd1d8b3b-6822-590a-b323-50b40d1317ae")
+	)
+	(no_connect
+		(at 144.78 142.24)
+		(uuid "d1cef073-9c27-51be-9856-0f88efd9ce0a")
+	)
+	(no_connect
+		(at 144.78 124.46)
+		(uuid "c4414b76-4697-5788-b15a-bbaf180961b7")
+	)
+	(no_connect
+		(at 144.78 127)
+		(uuid "b80447e6-d018-5886-9039-58942ba5bf28")
+	)
+	(no_connect
+		(at 175.26 139.7)
+		(uuid "ac342775-64d1-50f5-a44d-bcb557db55af")
+	)
+	(no_connect
+		(at 217.17 80.01)
+		(uuid "ea8a919a-fc8a-56e9-bef5-ba0b3e7f3e64")
+	)
+	(no_connect
+		(at 217.17 95.25)
+		(uuid "852d2c96-9bba-547b-af0d-90593bc46b07")
+	)
+	(no_connect
+		(at 217.17 110.49)
+		(uuid "4597ab7b-d0f1-5eab-a5a7-cd4818f886f8")
+	)
+	(no_connect
+		(at 217.17 130.81)
+		(uuid "7e03b6cc-e1d9-5515-92ee-85274ba9a709")
+	)
+	(no_connect
+		(at 217.17 153.67)
+		(uuid "d190c6fc-eaa4-5d6c-94bd-9516222a2f49")
+	)
+	(no_connect
+		(at 217.17 168.91)
+		(uuid "7055a52c-c678-58b2-ba99-bd87b9b367cd")
+	)
+	(no_connect
+		(at 217.17 171.45)
+		(uuid "7d6f731a-c347-5ef2-a882-8bd219340585")
+	)
+	(no_connect
+		(at 217.17 176.53)
+		(uuid "47d9205d-7fcf-581d-9fb8-cb75936be49e")
+	)
+	(no_connect
+		(at 217.17 179.07)
+		(uuid "6bb99d88-5cc6-56df-958e-04d5b91ce1e2")
+	)
+	(no_connect
+		(at 217.17 181.61)
+		(uuid "6054475d-43ce-5ae3-9c3c-099dc9ee7bbf")
+	)
+	(no_connect
+		(at 217.17 186.69)
+		(uuid "385a60ce-310f-5c3a-8d6b-3f297f50179e")
+	)
+	(no_connect
+		(at 217.17 189.23)
+		(uuid "687ffbc2-9c97-54ae-805e-0a524a4230ea")
+	)
+	(no_connect
+		(at 217.17 194.31)
+		(uuid "42da8388-78cb-57e2-b4c7-43d696fdf0c3")
+	)
+	(no_connect
+		(at 217.17 196.85)
+		(uuid "edc1c152-c511-5010-ae47-78b3a5ef23e4")
+	)
+	(no_connect
+		(at 217.17 199.39)
+		(uuid "14646e0a-2ca8-5d4a-8c1b-b9edbbd23d80")
 	)
 	(sheet_instances
 		(path "/"

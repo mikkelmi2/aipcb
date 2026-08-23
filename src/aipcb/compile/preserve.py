@@ -30,15 +30,19 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from aipcb.diagnostics import Report
-from aipcb.kicad.sexpr import SNode
+from aipcb.kicad.sexpr import SNode, quoted, sym
 from aipcb.netlist import ElabComponent, Netlist
 
 __all__ = [
     "FINGERPRINT_PROPERTY",
     "PRESERVED_ITEMS",
+    "SHEET_STAMP_COMMENT",
+    "SHEET_STAMP_PREFIX",
     "MergeStats",
     "component_fingerprint",
     "merge_board",
+    "schematic_was_edited",
+    "stamp_schematic",
 ]
 
 #: Where a footprint records what the source said about it when it was generated.
@@ -408,3 +412,85 @@ def _report(stats: MergeStats, report: Report) -> None:
             f"removed copper belonging to nets the design no longer has: {dropped}",
             hint="an orphaned track is a short waiting to happen",
         )
+
+
+# ---------------------------------------------------------------------------
+# the schematic: a view, not a document
+# ---------------------------------------------------------------------------
+
+#: Where a generated schematic records the hash of its own content. The title
+#: block's ninth comment is used because it survives KiCad's own round-trip, is not
+#: drawn on the default worksheet, and needs no extension to the file format.
+SHEET_STAMP_COMMENT = "9"
+SHEET_STAMP_PREFIX = "aipcb-sheet:"
+
+
+def stamp_schematic(root: SNode) -> SNode:
+    """Record a hash of the sheet in the sheet, so a later build can spot an edit."""
+    block = root.child("title_block")
+    if block is None:
+        block = SNode("title_block")
+        root.items.insert(_title_block_index(root), block)
+    _drop_stamp(block)
+    digest = _sheet_digest(root)
+    block.add(
+        SNode("comment").add(
+            sym(SHEET_STAMP_COMMENT), quoted(f"{SHEET_STAMP_PREFIX}{digest}")
+        )
+    )
+    return root
+
+
+def schematic_was_edited(existing: SNode) -> bool | None:
+    """Whether a schematic on disk has been changed since aipcb wrote it.
+
+    ``None`` means the question cannot be answered: the file carries no stamp, so it
+    was written by something else, or by a version of aipcb from before M14. The
+    caller reports that differently from a positive answer, because "somebody edited
+    this" and "I do not know who wrote this" call for different sentences.
+    """
+    block = existing.child("title_block")
+    if block is None:
+        return None
+    recorded = None
+    for comment in block.children("comment"):
+        value = comment.value(1)
+        if value is not None and value.startswith(SHEET_STAMP_PREFIX):
+            recorded = value[len(SHEET_STAMP_PREFIX) :]
+    if recorded is None:
+        return None
+    return recorded != _sheet_digest(existing)
+
+
+def _title_block_index(root: SNode) -> int:
+    for index, item in enumerate(root.items):
+        if isinstance(item, SNode) and item.name == "paper":
+            return index + 1
+    return len(root.items)
+
+
+def _drop_stamp(block: SNode) -> None:
+    block.items = [
+        item
+        for item in block.items
+        if not (
+            isinstance(item, SNode)
+            and item.name == "comment"
+            and (item.value(1) or "").startswith(SHEET_STAMP_PREFIX)
+        )
+    ]
+
+
+def _sheet_digest(root: SNode) -> str:
+    """Hash everything on the sheet except the stamp itself.
+
+    Done on a copy, so neither the tree being written nor the tree just read off
+    disk is changed by being measured.
+    """
+    from aipcb.kicad.sexpr import dump, parse
+
+    copy = parse(dump(root))
+    block = copy.child("title_block")
+    if block is not None:
+        _drop_stamp(block)
+    return hashlib.sha256(dump(copy).encode("utf-8")).hexdigest()[:16]

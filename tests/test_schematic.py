@@ -137,7 +137,7 @@ class TestPowerFlags:
         netlist = compile_netlist(
             REPO_ROOT / "examples" / "ldo-supply" / "design.yaml", Report()
         )
-        symbols = _resolve_symbols(netlist, needs_power_flag=False)
+        symbols = _resolve_symbols(netlist, extra=())
         flagged = undriven_power_nets(netlist, symbols)
         # VIN and GND come in on a passive header; VOUT is driven by the regulator.
         assert "VOUT" not in flagged

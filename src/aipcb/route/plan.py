@@ -50,6 +50,7 @@ from aipcb.route.geometry import (
 )
 from aipcb.route.graph import RoutePath, Terminal, search_path
 from aipcb.route.invariant import Crossing, check_no_crossings
+from aipcb.route.manual import manual_nets
 from aipcb.route.model import RouteTopology
 from aipcb.route.negotiate import Connection, Negotiation, default_priority, negotiate
 from aipcb.route.obstacles import (
@@ -147,6 +148,8 @@ class RoutedBoard:
     total_length: float = 0.0
     crossings: list[Crossing] = field(default_factory=list)
     """Places two nets' finished copper overlaps. Empty on any board worth having."""
+    manual: list[str] = field(default_factory=list)
+    """Nets the source declared `routing: manual`, which this router did not touch."""
 
     @property
     def ok(self) -> bool:
@@ -182,6 +185,7 @@ class RoutedBoard:
                 self.transitions.summary() if self.transitions is not None else None
             ),
             "crossings": [c.describe() for c in self.crossings],
+            "manual": list(self.manual),
         }
 
 
@@ -324,14 +328,68 @@ def route_board(
         explicit.add((route.net, route.from_, route.to))
         explicit.add((route.net, route.to, route.from_))
 
+    # Declared-manual nets are the router's business only in that it must stay off
+    # them. Excluded here, once, before anything is paired, negotiated or sketched:
+    # a net skipped in one place and routed in another would be worse than not
+    # having the field at all.
+    declared_manual = set(manual_nets(netlist))
+    # `manual_copper` is false only on the exploratory pass the CLI makes to learn
+    # which copper on the board is its own from a previous run. Reporting on that
+    # pass would say everything twice, so the notes below are the real pass's.
+    speaking = manual_copper
+    if declared_manual and speaking:
+        report.info(
+            "routing-manual-declared",
+            f"{len(declared_manual)} net"
+            f"{'s' if len(declared_manual) != 1 else ''} declared `routing: manual` "
+            f"and left alone: {', '.join(sorted(declared_manual))}",
+            hint="their copper comes from a hand route or an external router; "
+            "`aipcb check` lists any that are still pending",
+        )
+    outcome.manual = sorted(declared_manual)
+
+    # A pattern generator is not the router, and the two declarations can both be
+    # true at once: `fanout:` asks for a specific escape shape on a specific package,
+    # and `routing: manual` says the *router* stays off a net. A net that is both
+    # gets its escape stub and nothing else. Honouring `routing: manual` here instead
+    # would silently disable the other declaration, which is the worse of the two
+    # surprises -- but neither is allowed to be a surprise, so it is said out loud.
+    generated_on_manual = sorted(
+        {
+            piece.net
+            for source in (outcome.fanout, outcome.transitions)
+            if source is not None
+            for piece in source.connections
+            if piece.net in declared_manual
+        }
+    )
+    if generated_on_manual and speaking:
+        report.info(
+            "manual-net-has-generated-pattern",
+            f"{', '.join(generated_on_manual)} "
+            f"{'are' if len(generated_on_manual) != 1 else 'is'} declared "
+            "`routing: manual` and also carries copper from a declared pattern "
+            "(a fanout escape or a pair via transition)",
+            hint="a pattern generator is not the router: the source asked for that "
+            "shape by name. The rest of the net is still yours",
+        )
+
     pairs = [
-        *transitions.pairs,
-        *find_pairs(netlist, base, report, skip=transitions.handled),
+        pair
+        for pair in (
+            *transitions.pairs,
+            *find_pairs(netlist, base, report, skip=transitions.handled | declared_manual),
+        )
+        if pair.positive not in declared_manual and pair.negative not in declared_manual
     ]
     paired_nets = {n for pair in pairs for n in (pair.positive, pair.negative)}
 
     sketched = _route_sketches(
-        [r for r in topologies if r.net not in paired_nets],
+        [
+            r
+            for r in topologies
+            if r.net not in paired_nets and r.net not in declared_manual
+        ],
         base,
         netlist,
         stack,
@@ -344,7 +402,8 @@ def route_board(
 
     # 2. Everything else negotiates.
     connections = _connections(
-        netlist, base, field_, stack, allowed, pairs, explicit, sketched, congestion
+        netlist, base, field_, stack, allowed, pairs, explicit, sketched, congestion,
+        declared_manual,
     )
     settled = negotiate(
         field_,
@@ -683,6 +742,7 @@ def _connections(
     explicit: set[tuple[str, str, str]],
     sketched: set[tuple[str, str]],
     congestion: float,
+    declared_manual: set[str],
 ) -> list[Connection]:
     """Every connection the negotiation has to find a home for."""
     connections: list[Connection] = []
@@ -694,7 +754,7 @@ def _connections(
             connections.append(connection)
 
     for net in sorted(netlist.nets):
-        if net in paired_nets:
+        if net in paired_nets or net in declared_manual:
             continue
         pads = sorted(key for key, pad_net in base.pad_nets.items() if pad_net == net)
         net_class = class_for(netlist, net)

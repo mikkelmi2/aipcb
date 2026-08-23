@@ -9,6 +9,7 @@ hint.
 
 from __future__ import annotations
 
+import shutil
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,6 +54,9 @@ class CheckResult:
     """The high-speed verification report, when the design declares one (M11e)."""
     filled_board: Path | None = None
     """The staged, filled copy DRC actually ran against."""
+    states: Any | None = None
+    """Every net's routing state: manual-routed, manual-pending, auto-routed or
+    handed over (M14d). Present whenever a board was produced."""
 
     def summary(self) -> dict[str, Any]:
         out = {
@@ -72,6 +76,8 @@ class CheckResult:
             out["planes"] = [plane.to_dict() for plane in self.planes]
         if self.highspeed is not None:
             out["highspeed"] = self.highspeed.to_dict()
+        if self.states is not None:
+            out["nets"] = self.states.to_dict()
         return out
 
     @property
@@ -88,6 +94,7 @@ def check_design(
     schematic: bool = True,
     board: bool = True,
     route: bool = True,
+    board_file: Path | None = None,
 ) -> CheckResult:
     """Build a design, route it, and run KiCad's checks against the result.
 
@@ -103,13 +110,25 @@ def check_design(
     What the router refuses comes back as a machine-readable hand-over list rather
     than as marginal geometry, so the DRC result stays meaningful: zero violations on
     whatever *is* routed, plus an explicit account of what is not.
+
+    ``board_file`` checks *that* board's copper instead of the freshly generated
+    one's, using the fresh build only for the schematic, the project file and the
+    library tables that DRC needs beside it. `aipcb import --ses` needs this and
+    nothing else does: the copper it wants judged came from an external router and
+    exists only in the board on disk, and a fresh build has none of it. Without this
+    the import reported DRC on an empty board -- zero errors, and meaningless, which
+    is the exact shape of wrongness this toolchain exists to remove.
     """
     report = report if report is not None else Report()
 
     if out_dir is not None:
-        return _check_into(design_path, out_dir, report, schematic, board, route)
+        return _check_into(
+            design_path, out_dir, report, schematic, board, route, board_file
+        )
     with tempfile.TemporaryDirectory(prefix="aipcb-check-") as tmp:
-        return _check_into(design_path, Path(tmp), report, schematic, board, route)
+        return _check_into(
+            design_path, Path(tmp), report, schematic, board, route, board_file
+        )
 
 
 def _check_into(
@@ -119,6 +138,7 @@ def _check_into(
     schematic: bool,
     board: bool,
     route: bool,
+    board_file: Path | None = None,
 ) -> CheckResult:
     # `fresh=True` and not the default incremental merge, since M13.5. A check is a
     # question about the *source*, so it has to be a function of the source alone --
@@ -141,6 +161,16 @@ def _check_into(
     result = CheckResult(netlist=build.netlist, build=build)
 
     board_path = next((p for p in build.written if p.suffix == ".kicad_pcb"), None)
+    # The caller may have copper it wants judged that a fresh build does not have.
+    # The generated board is still what supplies the project file, the schematic and
+    # the library tables around it; only the copper comes from elsewhere.
+    if (
+        board_file is not None
+        and board_path is not None
+        and board_file.exists()
+        and board_file.resolve() != board_path.resolve()
+    ):
+        shutil.copy2(board_file, board_path)
     if route and board_path is not None:
         result.routing, result.stitching = _route_in_place(
             board_path, build.netlist, report
@@ -150,6 +180,9 @@ def _check_into(
         path = next((p for p in build.written if p.suffix == ".kicad_sch"), None)
         if path is not None:
             result.erc = run_erc(path, index, report, work=target)
+    if board_path is not None:
+        _classify_nets(board_path, build.netlist, report, result)
+
     if board and board_path is not None:
         checked = _fill_for_checking(board_path, build.netlist, target, report, result)
         if checked is None:
@@ -284,3 +317,41 @@ def _route_in_place(
     stitched = stitch_board(tree, netlist, report)
     board_path.write_text(dump(tree), encoding="utf-8")
     return routed, stitched
+
+
+def _classify_nets(
+    board_path: Path, netlist: Netlist, report: Report, result: CheckResult
+) -> None:
+    """Say which nets have copper, and by whose hand -- including the ones with none.
+
+    A declared-manual net with no copper on it is the state this milestone exists to
+    make visible. It is not an error: it is where a board sits between "these pairs
+    are mine" and "I have drawn them", and both a person and an agent need to be told
+    which pairs are still outstanding rather than having to infer it from a
+    connection count.
+    """
+    from aipcb.kicad.sexpr import SExprError, parse
+    from aipcb.route.manual import routing_states
+
+    try:
+        tree = parse(board_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, SExprError):  # pragma: no cover - just built
+        return
+    auto = {c.net for c in result.routing.connections} if result.routing else set()
+    handed = (
+        {f.net: f.reason for f in result.routing.failed} if result.routing else {}
+    )
+    result.states = routing_states(
+        tree, netlist, auto_routed=auto, handed_over=handed
+    )
+    pending = result.states.pending
+    if pending:
+        report.warning(
+            "routing-manual-pending",
+            f"{len(pending)} net{'s' if len(pending) != 1 else ''} declared "
+            f"`routing: manual` still have no copper: "
+            f"{', '.join(n.net for n in pending)}",
+            hint="route them in KiCad, or send them to an external router with "
+            "`aipcb export --dsn` and bring the result back with `aipcb import "
+            "--ses`. See docs/external-routers.md",
+        )

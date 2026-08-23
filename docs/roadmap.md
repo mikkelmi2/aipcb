@@ -19,6 +19,17 @@ and a third tool's is neither).
 Where the router is not good enough, the answer is another *pattern generator* —
 the M9e fanout generator is the worked example — or an honest hand-over.
 
+**M14e refined the position without reversing it.** Integration is still rejected,
+for exactly the three reasons above. What M14e added is a **documented bridge**,
+which is a different object: `aipcb export --dsn` writes a Specctra file with all
+existing copper marked unmovable, an *agent* runs whatever router it likes as a
+visible step, and `aipcb import --ses` splices the result in, verifies its geometry
+against the source and checks it. The three broken properties are not repaired —
+they are *stated*, in [`docs/external-routers.md`](external-routers.md): external
+copper is manual copper, it has no source mapping, and it is explicitly exempt from
+the determinism bar. aipcb still never invokes a router, parses its logs, or offers
+an `--engine` flag. See the [ADR 0006 amendment](decisions/0006-routing-approach.md).
+
 ## Mechanical (after M9)
 
 **MCAD import.** `aipcb import-mech`, reading DXF or STEP reference points and
@@ -162,6 +173,38 @@ there is dropped inside KiCad with nothing in the report saying a category went
 missing. The list is version-specific by construction. ADR 0009's rule applies: it
 wants re-measuring at each KiCad major, and `tests/test_check_loop.py` carries the
 60-rule catalogue with the version attached so the diff is visible when it moves.
+
+## Schematics
+
+**Multi-sheet output.** M14a asked for one sheet per top-level module above a
+configurable component count, and it was not built. The reason is that the largest
+bundled example has 12 components and the median has 7: any threshold worth
+configuring is far above that, so a hierarchical splitter would have shipped with no
+design in the repository exercising it — the failure mode `CLAUDE.md` exists to
+prevent, one level up.
+
+The groundwork is real and non-obvious. Because ADR 0003 chose **global** labels,
+whose names carry no sheet scope, splitting symbols across sheets would not rename a
+single net — which is what makes the netlist-identity guardrail survivable at all.
+What is missing is the child `.kicad_sch` files, the `sheet` nodes on the root, the
+per-sheet instance paths, and a design big enough to prove them. Blocked on a
+design, not on machinery.
+
+**Buses.** M14b asked for buses where the source declares grouped nets. No bundled
+design declares a group wider than two nets — differential pairs and `max_skew_mm`
+classes are both two-net groups, and a two-net bus makes a sheet less readable
+rather than more. Deferred until a design has a byte-wide group.
+
+**A tall rank does not wrap.** A column whose blocks stack past the page grows the
+paper instead of splitting into two sub-columns. It is why `led-blinker` grew 8 % in
+area under M14 and why `routing-demo` needed the flag band trimmed to stay on A4. On
+a fifty-component design it will matter considerably more than it does now.
+
+**A reviewer cannot trace a drawn conductor** from one end of a net to the other:
+connectivity is names on stubs (ADR 0003), and that is what keeps it correct by
+construction. Whether a hybrid — short direct wires inside a cluster, labels between
+clusters — is worth the correctness risk it reintroduces is a genuinely open
+question, and M14 did not attempt it.
 
 ## Generated files
 

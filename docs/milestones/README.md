@@ -8,7 +8,7 @@ with the numbers.
 > **These files describe planned or historical work.** They are only relevant when a
 > milestone is explicitly being executed. If you are doing ordinary development
 > work, do not read a future milestone file as a description of existing
-> functionality — nothing in `m10`–`m12` is built. For what the project *does*
+> functionality — nothing beyond the executed rows below is built. For what the project *does*
 > today, read [`README.md`](../../README.md), [`docs/format.md`](../format.md) and
 > the ADRs in [`docs/decisions/`](../decisions/).
 
@@ -21,6 +21,8 @@ with the numbers.
 | [`m11-highspeed.md`](m11-highspeed.md) | M11 — controlled impedance, edge connectors, via transitions | pending |
 | [`m12-simulation.md`](m12-simulation.md) | M12 — SI simulation integration (openEMS/gerber2ems) | pending |
 | [`orchestrator-m10-m12.md`](orchestrator-m10-m12.md) | runs M10 → M11 → M12 unattended, with gates between them | pending |
+| M13 | routing correctness, the impedance model, the skew verdict | executed — [`m13.md`](../reports/m13.md) |
+| M14 | readable schematics, optional routing, the external-router bridge | executed — [`m14.md`](../reports/m14.md) |
 
 The delivery report requirement was introduced with M10, so the earlier
 milestones ran without one. [`m8.md`](../reports/m8.md) was reconstructed after the

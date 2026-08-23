@@ -1,16 +1,22 @@
 """Compiling an elaborated netlist into a ``.kicad_sch``.
 
-The schematic this produces is a *correct* schematic, not a pretty one. Symbols are
-laid out on a grid, grouped by module instance, and connectivity is expressed with
-net labels on short stubs rather than with routed wires between pins. That is the
-netlist-first idiom: KiCad joins two pins carrying the same label, so connectivity
-is exactly what the source says regardless of where anything sits on the sheet.
+Connectivity is names. Every pin gets a short stub, and on the end of that stub sits
+either a net label or a power symbol carrying the net's name; KiCad joins everything
+that shares a name. That is the netlist-first idiom ADR 0003 chose, and it is why
+this file can rearrange a whole sheet without any risk of connecting the wrong two
+things: the drawing has no say in what is connected.
 
-Two things are emitted purely to satisfy ERC, and both are honest rather than
+What M14 changed is everything *else*. Where the symbols go, which way round they
+are, which cluster they belong to and what sits on the end of a power pin are now
+decided by :mod:`aipcb.compile.sheet` from the roles, ``for:`` references and module
+structure the source already carries. The sheet reads left to right, decoupling caps
+stand at the IC they decouple, rails point up and grounds point down.
+
+Two things are still emitted purely to satisfy ERC, and both are honest rather than
 cosmetic:
 
-* a ``PWR_FLAG`` on every power and ground net, which is how a KiCad schematic
-  declares "this rail is fed from somewhere ERC cannot see";
+* a ``PWR_FLAG`` on every power and ground net KiCad would consider undriven, which
+  is how a schematic declares "this rail is fed from somewhere ERC cannot see";
 * a no-connect marker on every pin the design deliberately leaves unconnected,
   which is the difference between "I meant this" and "I forgot".
 
@@ -24,73 +30,63 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from aipcb.compile.geometry import Point, place_direction, place_point
+from aipcb.compile.sheet import (
+    PAPER_SIZES,
+    SheetPlan,
+    SymbolPlacement,
+    TextPlace,
+    dense_sides,
+    plan_sheet,
+    snap,
+)
 from aipcb.ids import element_uuid
 from aipcb.kicad.sexpr import SNode, num, quoted, sym
 from aipcb.kicad.symbols import Symbol, SymbolNotFound, flatten_symbol, resolve_symbol
 from aipcb.kicad.symbols import _load_library as load_symbol_library
 from aipcb.netlist import ElabComponent, Netlist
 
-__all__ = ["PAPER_SIZES", "SCHEMATIC_VERSION", "SchematicLayout", "build_schematic"]
+__all__ = [
+    "PAPER_SIZES",
+    "SCHEMATIC_VERSION",
+    "SheetPlan",
+    "build_schematic",
+    "plan_sheet",
+    "undriven_power_nets",
+]
 
 #: The ``.kicad_sch`` format version this writer emits. KiCad 9.0 reads and writes it.
 SCHEMATIC_VERSION = "20250114"
 GENERATOR = "aipcb"
 GENERATOR_VERSION = "9.0"
 
-#: Sheet sizes in millimetres, smallest first. The page grows to fit the design.
-PAPER_SIZES: tuple[tuple[str, float, float], ...] = (
-    ("A4", 297.0, 210.0),
-    ("A3", 420.0, 297.0),
-    ("A2", 594.0, 420.0),
-    ("A1", 841.0, 594.0),
-    ("A0", 1189.0, 841.0),
-)
-
-#: KiCad connects items by exact coordinate, and its editor works on a 1.27 mm
-#: (50 mil) grid. Everything we emit is snapped to it: an off-grid pin is legal but
-#: unusable, because a human cannot then draw a wire that meets it.
-GRID = 1.27
-
-#: One grid cell per component. Generous, because labels need room around a symbol.
-#: These are the *minimum*: a cell grows to hold whatever the biggest symbol on the
-#: sheet needs, because a symbol wider than its cell puts its pins on top of its
-#: neighbour's stubs, and two pins at one coordinate are connected. A 33-pin MCU is
-#: 76 mm tall and found this the hard way.
-CELL_W = 50.8
-CELL_H = 45.72
-MARGIN = 25.4
-STUB = 3.81
 LABEL_FONT = 1.27
 PROPERTY_FONT = 1.27
+BLOCK_FONT = 1.778
 
 #: The power symbol used to tell ERC a rail is driven.
 PWR_FLAG_LIB_ID = "power:PWR_FLAG"
+
+#: Graphics used for a rail and for a ground when the net's own name is not itself
+#: a stock power symbol. Both carry the net name in their ``Value``, which is what
+#: KiCad names the net after -- these are shapes, not identities.
+RAIL_LIB_ID = "power:VCC"
+GROUND_LIB_ID = "power:GND"
+
 _POWER_CLASSES = frozenset({"power", "ground"})
 
+#: How far a ``PWR_FLAG`` sits from the power symbol it drives.
+FLAG_DROP = 5.08
+
 
 @dataclass(frozen=True, slots=True)
-class Placement:
-    """Where one component sits on the sheet."""
+class _PowerPoint:
+    """One place a power symbol has to be drawn."""
 
-    origin: Point
+    net: str
+    at: Point
+    lib_id: str
+    uuid: str
     rotation: float = 0.0
-
-
-@dataclass(frozen=True, slots=True)
-class SchematicLayout:
-    """The computed sheet layout, kept separate so it can be inspected and tested."""
-
-    paper: str
-    width: float
-    height: float
-    placements: dict[str, Placement]
-    flags: dict[str, Point]
-    """Net name to the position of its ``PWR_FLAG``."""
-
-
-# ---------------------------------------------------------------------------
-# layout
-# ---------------------------------------------------------------------------
 
 
 def undriven_power_nets(netlist: Netlist, symbols: Mapping[str, Symbol]) -> list[str]:
@@ -122,100 +118,20 @@ def undriven_power_nets(netlist: Netlist, symbols: Mapping[str, Symbol]) -> list
     return undriven
 
 
-def plan_layout(
-    netlist: Netlist,
-    flag_nets: Sequence[str] = (),
-    symbols: Mapping[str, Symbol] | None = None,
-) -> SchematicLayout:
-    """Place components on a grid, grouped by module instance.
+def power_symbol_for(net_name: str, ground: bool) -> str:
+    """Which stock graphic draws this rail.
 
-    Grouping by instance is what makes the sheet navigable at all: everything a
-    module contributed lands together, in source order, rather than being scattered
-    by reference designator.
-
-    The cell is sized to hold the biggest symbol on the sheet. That is not
-    cosmetic: every pin gets a stub and a label, and a symbol taller than its cell
-    puts its pins on top of the row below's stubs -- where KiCad, which connects by
-    exact coordinate, joins them. A 33-pin MCU shorted VCC to GND that way.
+    A net whose name *is* a stock power symbol gets that symbol, so a design that
+    calls its ground ``GND`` or its rail ``+3V3`` comes out drawn exactly the way
+    every other KiCad schematic draws it. Anything else gets the generic rail or
+    ground shape with its own name written on it, which is what a human does by hand
+    when the library has no symbol for ``P3V3``.
     """
-    groups = netlist.module_instances()
-    ordered: list[ElabComponent] = []
-    for key in sorted(groups, key=lambda k: (k != "", k)):
-        ordered.extend(groups[key])
-
-    flags = list(flag_nets)
-    total = len(ordered) + len(flags)
-    columns = max(1, _columns_for(total))
-    cell_w, cell_h = _cell_size(symbols)
-
-    paper, width, height = _paper_for(total, columns, cell_w, cell_h)
-    placements: dict[str, Placement] = {}
-    for index, component in enumerate(ordered):
-        placements[component.refdes] = Placement(
-            _cell_centre(index, columns, cell_w, cell_h)
-        )
-
-    flag_positions: dict[str, Point] = {}
-    for offset, net in enumerate(flags):
-        flag_positions[net] = _cell_centre(
-            len(ordered) + offset, columns, cell_w, cell_h
-        )
-
-    return SchematicLayout(paper, width, height, placements, flag_positions)
-
-
-#: Clear space kept between one symbol's stubs and the next cell, in millimetres.
-_CELL_GAP = 2 * GRID
-
-
-def _cell_size(symbols: Mapping[str, Symbol] | None) -> tuple[float, float]:
-    """How big a cell has to be for the symbols actually on this sheet.
-
-    Never smaller than the standing minimum, so a sheet of ordinary parts comes out
-    exactly as it always has.
-    """
-    width, height = CELL_W, CELL_H
-    for symbol in (symbols or {}).values():
-        if not symbol.pins:
-            continue
-        half_w = max(abs(pin.x) for pin in symbol.pins) + STUB
-        half_h = max(abs(pin.y) for pin in symbol.pins) + STUB
-        width = max(width, 2 * half_w + _CELL_GAP)
-        height = max(height, 2 * half_h + _CELL_GAP)
-    return (_snap(width), _snap(height))
-
-
-def _cell_centre(index: int, columns: int, cell_w: float, cell_h: float) -> Point:
-    row, col = divmod(index, columns)
-    return Point(
-        _snap(MARGIN + col * cell_w + cell_w / 2),
-        _snap(MARGIN + row * cell_h + cell_h / 2),
-    )
-
-
-def _snap(value: float, grid: float = GRID) -> float:
-    """Round to the connection grid, avoiding floating-point drift in the result."""
-    return round(round(value / grid) * grid, 4)
-
-
-def _columns_for(count: int) -> int:
-    """Choose a column count that keeps the sheet roughly as wide as it is tall."""
-    columns = 1
-    while columns * columns < count:
-        columns += 1
-    return columns
-
-
-def _paper_for(
-    count: int, columns: int, cell_w: float = CELL_W, cell_h: float = CELL_H
-) -> tuple[str, float, float]:
-    rows = -(-count // columns) if columns else 1
-    need_w = 2 * MARGIN + columns * cell_w
-    need_h = 2 * MARGIN + rows * cell_h
-    for name, width, height in PAPER_SIZES:
-        if need_w <= width and need_h <= height:
-            return name, width, height
-    return PAPER_SIZES[-1]
+    try:
+        resolve_symbol(f"power:{net_name}")
+    except SymbolNotFound:
+        return GROUND_LIB_ID if ground else RAIL_LIB_ID
+    return f"power:{net_name}"
 
 
 # ---------------------------------------------------------------------------
@@ -231,45 +147,81 @@ def build_schematic(netlist: Netlist, *, project: str | None = None) -> SNode:
     user error.
     """
     project = project or netlist.name
-    # Symbols must be resolved before the layout, because whether a rail needs a
-    # PWR_FLAG -- and therefore how many cells the sheet needs -- depends on the
-    # symbols' pin types.
-    placed_symbols = _resolve_symbols(netlist, needs_power_flag=False)
+    # Symbols must be resolved before the plan, because whether a rail needs a
+    # PWR_FLAG -- and therefore what has to fit on the sheet -- depends on the
+    # symbols' pin types, and how big a cluster is depends on their geometry.
+    placed_symbols = _resolve_symbols(netlist, extra=())
     flag_nets = undriven_power_nets(netlist, placed_symbols)
-    layout = plan_layout(netlist, flag_nets, placed_symbols)
+    plan = plan_sheet(netlist, placed_symbols, flag_nets)
     sheet_uuid = element_uuid("sheet", "/")
+
+    ground_nets = frozenset(
+        n.name for n in netlist.sorted_nets() if n.net_class == "ground"
+    )
+    power_nets = frozenset(
+        n.name for n in netlist.sorted_nets() if n.net_class in _POWER_CLASSES
+    )
+
+    wires, points, markers = _connections(
+        netlist, placed_symbols, plan, power_nets, ground_nets
+    )
+    flag_points, flag_wires = _flag_geometry(plan, flag_nets, ground_nets)
+    points.extend(flag_points)
+    wires.extend(flag_wires)
+
+    extra = {p.lib_id for p in points}
+    if flag_nets:
+        extra.add(PWR_FLAG_LIB_ID)
+    symbols = _resolve_symbols(netlist, extra=tuple(sorted(extra)))
 
     root = SNode("kicad_sch")
     root.add(SNode("version").add(sym(SCHEMATIC_VERSION)))
     root.add(SNode("generator").add(quoted(GENERATOR)))
     root.add(SNode("generator_version").add(quoted(GENERATOR_VERSION)))
     root.add(SNode("uuid").add(quoted(sheet_uuid)))
-    root.add(SNode("paper").add(quoted(layout.paper)))
+    root.add(SNode("paper").add(quoted(plan.paper)))
     root.add(_title_block(netlist))
-
-    symbols = _resolve_symbols(netlist, needs_power_flag=bool(flag_nets))
     root.add(_lib_symbols(symbols))
+
+    for node in _block_frames(plan):
+        root.add(node)
 
     for component in netlist.sorted_components():
         symbol = symbols[component.part.symbol] if component.part else None
         if symbol is None:
             continue
-        placement = layout.placements[component.refdes]
-        root.add(_symbol_instance(component, symbol, placement, project, sheet_uuid))
+        root.add(
+            _symbol_instance(
+                component,
+                symbol,
+                plan.placements[component.refdes],
+                project,
+                sheet_uuid,
+                plan.texts[component.refdes],
+            )
+        )
+
+    for index, point in enumerate(points, start=1):
+        root.add(
+            _power_symbol(point, symbols[point.lib_id], project, sheet_uuid, index)
+        )
 
     for net_name in flag_nets:
         root.add(
             _power_flag(
                 net_name,
-                layout.flags[net_name],
+                plan.power_flags[net_name],
                 symbols[PWR_FLAG_LIB_ID],
                 project,
                 sheet_uuid,
                 flag_nets,
+                ground=net_name in ground_nets,
             )
         )
 
-    for node in _connections(netlist, symbols, layout):
+    for node in wires:
+        root.add(node)
+    for node in markers:
         root.add(node)
 
     root.add(
@@ -300,12 +252,11 @@ def _one_line(text: str) -> str:
     return " ".join(text.split())
 
 
-def _resolve_symbols(netlist: Netlist, *, needs_power_flag: bool) -> dict[str, Symbol]:
+def _resolve_symbols(netlist: Netlist, *, extra: Sequence[str]) -> dict[str, Symbol]:
     wanted = {
         c.part.symbol for c in netlist.components.values() if c.part is not None
     }
-    if needs_power_flag:
-        wanted.add(PWR_FLAG_LIB_ID)
+    wanted.update(extra)
     return {lib_id: resolve_symbol(lib_id) for lib_id in sorted(wanted)}
 
 
@@ -323,8 +274,12 @@ def _lib_symbols(symbols: dict[str, Symbol]) -> SNode:
     return node
 
 
-def _effects(size: float = PROPERTY_FONT, *, hide: bool = False, justify: str = "") -> SNode:
-    effects = SNode("effects").add(SNode("font").add(SNode("size").add(num(size), num(size))))
+def _effects(
+    size: float = PROPERTY_FONT, *, hide: bool = False, justify: str = ""
+) -> SNode:
+    effects = SNode("effects").add(
+        SNode("font").add(SNode("size").add(num(size), num(size)))
+    )
     if justify:
         effects.add(SNode("justify").add(*[sym(word) for word in justify.split()]))
     if hide:
@@ -332,12 +287,15 @@ def _effects(size: float = PROPERTY_FONT, *, hide: bool = False, justify: str = 
     return effects
 
 
-def _property(key: str, value: str, at: Point, *, hide: bool = False) -> SNode:
+def _property(
+    key: str, value: str, at: Point, *, hide: bool = False, justify: str = "",
+    angle: float = 0.0,
+) -> SNode:
     return SNode("property").add(
         quoted(key),
         quoted(value),
-        SNode("at").add(num(at.x), num(at.y), num(0)),
-        _effects(hide=hide),
+        SNode("at").add(num(at.x), num(at.y), num(angle)),
+        _effects(hide=hide, justify=justify),
     )
 
 
@@ -351,9 +309,10 @@ def _library_flag(symbol: Symbol, token: str) -> str:
 def _symbol_instance(
     component: ElabComponent,
     symbol: Symbol,
-    placement: Placement,
+    placement: SymbolPlacement,
     project: str,
     sheet_uuid: str,
+    text: TextPlace,
 ) -> SNode:
     origin = placement.origin
     part = component.part
@@ -373,20 +332,26 @@ def _symbol_instance(
     node.add(SNode("dnp").add(sym("yes" if component.dnp else "no")))
     node.add(SNode("uuid").add(quoted(component.uuid)))
 
-    # Keep the visible text clear of the stub labels, which are rotated to follow
-    # their pins and so reach much further than their font size suggests.
-    offset = _text_offset(symbol)
-    node.add(_property("Reference", component.refdes, Point(origin.x, origin.y - offset)))
-    node.add(_property("Value", component.display_value, Point(origin.x, origin.y + offset)))
-    node.add(_property("Footprint", part.footprint, origin, hide=True))
-    node.add(
-        _property("Datasheet", part.supplier.datasheet or "", origin, hide=True)
+    # The planner already decided where these go, from the same extent it used to
+    # keep the neighbours clear of them.
+    reference_at = Point(
+        snap(origin.x + text.reference.x), snap(origin.y + text.reference.y)
     )
+    value_at = Point(snap(origin.x + text.value.x), snap(origin.y + text.value.y))
+    justify = text.justify
+    node.add(_property("Reference", component.refdes, reference_at, justify=justify))
+    node.add(
+        _property("Value", component.display_value, value_at, justify=justify)
+    )
+    node.add(_property("Footprint", part.footprint, origin, hide=True))
+    node.add(_property("Datasheet", part.supplier.datasheet or "", origin, hide=True))
     node.add(_property("Description", part.description or "", origin, hide=True))
     if component.reason:
         # Intent survives into the KiCad file, so a human opening the schematic sees
         # the same rationale the source carries.
-        node.add(_property("aipcb.reason", _one_line(component.reason), origin, hide=True))
+        node.add(
+            _property("aipcb.reason", _one_line(component.reason), origin, hide=True)
+        )
     if component.role:
         node.add(_property("aipcb.role", component.role, origin, hide=True))
     node.add(_property("aipcb.path", component.path_text, origin, hide=True))
@@ -395,7 +360,9 @@ def _symbol_instance(
         node.add(
             SNode("pin").add(
                 quoted(pin.number),
-                SNode("uuid").add(quoted(element_uuid("pin", *component.hier, pin.number))),
+                SNode("uuid").add(
+                    quoted(element_uuid("pin", *component.hier, pin.number))
+                ),
             )
         )
 
@@ -414,10 +381,56 @@ def _symbol_instance(
     return node
 
 
-def _text_offset(symbol: Symbol) -> float:
-    """How far above and below a symbol its reference and value text should sit."""
-    reach = max((abs(pin.y) for pin in symbol.pins), default=0.0)
-    return min(_snap(reach + STUB + 10.16), CELL_H / 2 - 2.54)
+def _power_symbol(
+    point: _PowerPoint,
+    symbol: Symbol,
+    project: str,
+    sheet_uuid: str,
+    index: int,
+) -> SNode:
+    """A rail or ground symbol standing on the end of a stub.
+
+    Its ``Value`` is the net name, and a KiCad power symbol names its net after its
+    value -- so this carries exactly the connectivity the label it replaced carried,
+    in the shape a reader expects to see it in.
+    """
+    refdes = f"#PWR{index:04d}"
+    node = SNode("symbol")
+    node.add(SNode("lib_id").add(quoted(point.lib_id)))
+    node.add(SNode("at").add(num(point.at.x), num(point.at.y), num(point.rotation)))
+    node.add(SNode("unit").add(sym("1")))
+    node.add(SNode("exclude_from_sim").add(sym("no")))
+    node.add(SNode("in_bom").add(sym("no")))
+    node.add(SNode("on_board").add(sym("no")))
+    node.add(SNode("dnp").add(sym("no")))
+    node.add(SNode("uuid").add(quoted(point.uuid)))
+    node.add(_property("Reference", refdes, point.at, hide=True))
+    ground = point.lib_id == GROUND_LIB_ID or point.lib_id == "power:GND"
+    text_at = Point(point.at.x, snap(point.at.y + (3.81 if ground else -3.81)))
+    node.add(_property("Value", point.net, text_at))
+    node.add(_property("Footprint", "", point.at, hide=True))
+    node.add(_property("Datasheet", "", point.at, hide=True))
+    node.add(_property("Description", "", point.at, hide=True))
+    for pin in symbol.pins:
+        node.add(
+            SNode("pin").add(
+                quoted(pin.number),
+                SNode("uuid").add(quoted(element_uuid("pwrsym-pin", point.uuid, pin.number))),
+            )
+        )
+    node.add(
+        SNode("instances").add(
+            SNode("project").add(
+                quoted(project),
+                SNode("path").add(
+                    quoted(f"/{sheet_uuid}"),
+                    SNode("reference").add(quoted(refdes)),
+                    SNode("unit").add(sym("1")),
+                ),
+            )
+        )
+    )
+    return node
 
 
 def _power_flag(
@@ -427,12 +440,18 @@ def _power_flag(
     project: str,
     sheet_uuid: str,
     order: Sequence[str],
+    *,
+    ground: bool,
 ) -> SNode:
     """A ``PWR_FLAG`` declaring that a rail is driven from outside the schematic."""
     uuid = element_uuid("pwrflag", net_name)
+    # The flag's own pin points down with its body above. On a ground it therefore
+    # stands above the ground symbol as drawn; on a rail it is turned over so the
+    # rail symbol keeps the top of the column, which is where a reader looks for it.
+    rotation = 0.0 if ground else 180.0
     node = SNode("symbol")
     node.add(SNode("lib_id").add(quoted(PWR_FLAG_LIB_ID)))
-    node.add(SNode("at").add(num(position.x), num(position.y), num(0)))
+    node.add(SNode("at").add(num(position.x), num(position.y), num(rotation)))
     node.add(SNode("unit").add(sym("1")))
     node.add(SNode("exclude_from_sim").add(sym("no")))
     node.add(SNode("in_bom").add(sym("no")))
@@ -441,7 +460,10 @@ def _power_flag(
     node.add(SNode("uuid").add(quoted(uuid)))
     refdes = _flag_refdes(net_name, order)
     node.add(_property("Reference", refdes, position, hide=True))
-    node.add(_property("Value", "PWR_FLAG", Point(position.x, position.y - 2.54)))
+    # The flag body reaches about 2.5 mm past its pin, on the side it is turned to.
+    # Its name goes just beyond that, on the same side, where nothing else is.
+    text_at = Point(position.x, snap(position.y + (-5.08 if ground else 5.08)))
+    node.add(_property("Value", "PWR_FLAG", text_at))
     node.add(_property("Footprint", "", position, hide=True))
     node.add(_property("Datasheet", "", position, hide=True))
     node.add(_property("Description", "", position, hide=True))
@@ -449,7 +471,9 @@ def _power_flag(
         node.add(
             SNode("pin").add(
                 quoted(pin.number),
-                SNode("uuid").add(quoted(element_uuid("pwrflag-pin", net_name, pin.number))),
+                SNode("uuid").add(
+                    quoted(element_uuid("pwrflag-pin", net_name, pin.number))
+                ),
             )
         )
     node.add(
@@ -477,11 +501,91 @@ def _flag_refdes(net_name: str, order: Sequence[str]) -> str:
     return f"#FLG{order.index(net_name) + 1:02d}"
 
 
-def _connections(
-    netlist: Netlist, symbols: dict[str, Symbol], layout: SchematicLayout
-) -> list[SNode]:
-    """Emit a stub and a label for every connected pin, and markers for the rest."""
+def _flag_geometry(
+    plan: SheetPlan, flag_nets: Sequence[str], ground_nets: frozenset[str]
+) -> tuple[list[_PowerPoint], list[SNode]]:
+    """A power symbol under each flag, and the wire that ties the two together."""
+    points: list[_PowerPoint] = []
+    wires: list[SNode] = []
+    for net_name in flag_nets:
+        flag_at = plan.power_flags[net_name]
+        ground = net_name in ground_nets
+        # Each symbol's body hangs away from its own pin: a ground's downward, a
+        # rail's upward, a flag's whichever way it is turned. So the pair is stacked
+        # in the order that leaves both bodies outside the wire between them -- flag
+        # above ground, rail above flag -- and neither's text lands on the other.
+        symbol_at = Point(
+            flag_at.x, snap(flag_at.y + (FLAG_DROP if ground else -FLAG_DROP))
+        )
+        wires.append(
+            _wire(flag_at, symbol_at, element_uuid("pwrflag-wire", net_name))
+        )
+        points.append(
+            _PowerPoint(
+                net=net_name,
+                at=symbol_at,
+                lib_id=power_symbol_for(net_name, ground),
+                uuid=element_uuid("pwrflag-sym", net_name),
+            )
+        )
+    return points, wires
+
+
+def _block_frames(plan: SheetPlan) -> list[SNode]:
+    """A light frame and a name around every module instance.
+
+    The module hierarchy is real structure the source declares, and until now it was
+    invisible on the sheet. Drawing it is pure graphics -- no pin, no net, nothing
+    ERC or the netlister looks at -- and it is what turns "a page of symbols" into
+    "three blocks with names".
+    """
     nodes: list[SNode] = []
+    pad = 3.81
+    for block in plan.blocks:
+        if not block.is_module:
+            continue
+        left = snap(block.origin.x - block.extent.left - pad)
+        right = snap(block.origin.x + block.extent.right + pad)
+        top = snap(block.origin.y - block.extent.up - pad)
+        bottom = snap(block.origin.y + block.extent.down + pad)
+        nodes.append(
+            SNode("rectangle").add(
+                SNode("start").add(num(left), num(top)),
+                SNode("end").add(num(right), num(bottom)),
+                SNode("stroke").add(
+                    SNode("width").add(num(0.1524)), SNode("type").add(sym("dash"))
+                ),
+                SNode("fill").add(SNode("type").add(sym("none"))),
+                SNode("uuid").add(quoted(element_uuid("block-frame", block.key))),
+            )
+        )
+        nodes.append(
+            SNode("text").add(
+                quoted(block.label),
+                SNode("exclude_from_sim").add(sym("no")),
+                SNode("at").add(num(snap(left + 1.27)), num(snap(top - 1.27)), num(0)),
+                _effects(BLOCK_FONT, justify="left bottom"),
+                SNode("uuid").add(quoted(element_uuid("block-text", block.key))),
+            )
+        )
+    return nodes
+
+
+def _connections(
+    netlist: Netlist,
+    symbols: Mapping[str, Symbol],
+    plan: SheetPlan,
+    power_nets: frozenset[str],
+    ground_nets: frozenset[str],
+) -> tuple[list[SNode], list[_PowerPoint], list[SNode]]:
+    """A stub for every connected pin, with a label or a power symbol on the end.
+
+    Returns the wires, the power symbols to draw, and the no-connect markers, kept
+    apart so the file can be written in a fixed section order.
+    """
+    wires: list[SNode] = []
+    points: list[_PowerPoint] = []
+    markers: list[SNode] = []
 
     for component in netlist.sorted_components():
         if component.part is None:
@@ -489,49 +593,61 @@ def _connections(
         symbol = symbols.get(component.part.symbol)
         if symbol is None:
             continue
-        placement = layout.placements[component.refdes]
+        placement = plan.placements[component.refdes]
+        dense = dense_sides(symbol, placement.rotation)
+        # KiCad's own libraries stack a part's repeated power pins on one coordinate
+        # -- the PCIe x1 edge symbol draws its nine grounds as a single pin, and its
+        # five 12 V pins as another. Drawing a stub and a label for each of them
+        # produces nine identical labels on top of one another, which was 21 of the
+        # 22 overlaps left on the pcie-sata sheet. One point carrying one net is one
+        # connection, and gets drawn once. Connectivity is unaffected: every pin at
+        # that coordinate is joined by the one wire, which is exactly why the library
+        # draws them that way.
+        drawn: set[tuple[Point, str | None]] = set()
 
         for pin in symbol.pins:
             anchor, outward = _pin_geometry(symbol, pin.number, placement)
             if anchor is None or outward is None:
                 continue
             net_name = component.connections.get(pin.number)
+            stacked = (anchor, net_name)
+            if stacked in drawn:
+                continue
+            drawn.add(stacked)
             if net_name is None:
-                nodes.append(_no_connect(anchor, component, pin.number))
+                markers.append(_no_connect(anchor, component, pin.number))
                 continue
-            end = Point(anchor.x + outward.x * STUB, anchor.y + outward.y * STUB)
-            nodes.append(_wire(anchor, end, element_uuid("wire", *component.hier, pin.number)))
-            nodes.append(
-                _label(
-                    net_name,
-                    end,
-                    _label_angle(outward),
-                    element_uuid("label", *component.hier, pin.number),
-                )
+            stub = plan.stub(component.refdes, pin.number)
+            end = Point(
+                snap(anchor.x + outward.x * stub), snap(anchor.y + outward.y * stub)
             )
-
-    flag_symbol = symbols.get(PWR_FLAG_LIB_ID)
-    if flag_symbol is not None:
-        for net_name, position in sorted(layout.flags.items()):
-            placement = Placement(position)
-            anchor, outward = _pin_geometry(flag_symbol, "1", placement)
-            if anchor is None or outward is None:
-                continue
-            end = Point(anchor.x + outward.x * STUB, anchor.y + outward.y * STUB)
-            nodes.append(_wire(anchor, end, element_uuid("pwrflag-wire", net_name)))
-            nodes.append(
-                _label(
-                    net_name,
-                    end,
-                    _label_angle(outward),
-                    element_uuid("pwrflag-label", net_name),
-                )
+            wires.append(
+                _wire(anchor, end, element_uuid("wire", *component.hier, pin.number))
             )
-    return nodes
+            side = (round(outward.x), round(outward.y))
+            if net_name in power_nets and side not in dense:
+                points.append(
+                    _PowerPoint(
+                        net=net_name,
+                        at=end,
+                        lib_id=power_symbol_for(net_name, net_name in ground_nets),
+                        uuid=element_uuid("pwrsym", *component.hier, pin.number),
+                    )
+                )
+            else:
+                wires.append(
+                    _label(
+                        net_name,
+                        end,
+                        _label_angle(outward),
+                        element_uuid("label", *component.hier, pin.number),
+                    )
+                )
+    return wires, points, markers
 
 
 def _pin_geometry(
-    symbol: Symbol, number: str, placement: Placement
+    symbol: Symbol, number: str, placement: SymbolPlacement
 ) -> tuple[Point | None, Point | None]:
     """Return a pin's sheet position and the unit vector pointing away from the body."""
     pin = symbol.pin(number)
@@ -548,7 +664,9 @@ def _wire(start: Point, end: Point, uuid: str) -> SNode:
             SNode("xy").add(num(start.x), num(start.y)),
             SNode("xy").add(num(end.x), num(end.y)),
         ),
-        SNode("stroke").add(SNode("width").add(num(0)), SNode("type").add(sym("default"))),
+        SNode("stroke").add(
+            SNode("width").add(num(0)), SNode("type").add(sym("default"))
+        ),
         SNode("uuid").add(quoted(uuid)),
     )
 

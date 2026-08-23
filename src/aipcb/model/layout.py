@@ -118,6 +118,13 @@ class NetClass(Strict):
         default="normal",
         description="How readily the negotiating router may rip this class up.",
     )
+    routing: Literal["auto", "manual"] = Field(
+        default="auto",
+        description="`manual` declares that this class's copper is drawn by hand or "
+        "by an external router, and aipcb's router must never touch it. The nets "
+        "are still checked, still preserved, and are listed as pending until they "
+        "have copper.",
+    )
     description: str | None = None
 
     @property

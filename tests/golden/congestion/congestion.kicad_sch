@@ -9,6 +9,7 @@
 		(rev "A")
 		(company "")
 		(comment 1 "Two headers wired in reverse across a narrow board, which is not routable on one layer and is routable on two.")
+		(comment 9 "aipcb-sheet:e2bd99b8f21e4bd3")
 	)
 	(lib_symbols
 		(symbol "Connector_Generic:Conn_01x04"
@@ -214,7 +215,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic:Conn_01x04")
-		(at 50.8 48.26 0)
+		(at 153.67 92.71 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -222,7 +223,7 @@
 		(dnp no)
 		(uuid "e5e0dc37-2d3f-5462-94d0-b31a150c4fd2")
 		(property "Reference" "J1"
-			(at 50.8 29.21 0)
+			(at 153.67 86.36 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -230,7 +231,7 @@
 			)
 		)
 		(property "Value" "CONN_BRK_1X04"
-			(at 50.8 67.31 0)
+			(at 153.67 101.6 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -238,7 +239,7 @@
 			)
 		)
 		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical"
-			(at 50.8 48.26 0)
+			(at 153.67 92.71 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -247,7 +248,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 50.8 48.26 0)
+			(at 153.67 92.71 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -256,7 +257,7 @@
 			)
 		)
 		(property "Description" "4-pin 2.54 mm breakout header"
-			(at 50.8 48.26 0)
+			(at 153.67 92.71 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -265,7 +266,7 @@
 			)
 		)
 		(property "aipcb.reason" "The left-hand side of the reversal."
-			(at 50.8 48.26 0)
+			(at 153.67 92.71 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -274,7 +275,7 @@
 			)
 		)
 		(property "aipcb.role" "connector"
-			(at 50.8 48.26 0)
+			(at 153.67 92.71 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -283,7 +284,7 @@
 			)
 		)
 		(property "aipcb.path" "J1"
-			(at 50.8 48.26 0)
+			(at 153.67 92.71 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -314,7 +315,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic:Conn_01x04")
-		(at 101.6 48.26 0)
+		(at 153.67 115.57 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -322,7 +323,7 @@
 		(dnp no)
 		(uuid "2baaa32e-49e8-5a85-a53e-6ce43a4f04c1")
 		(property "Reference" "J2"
-			(at 101.6 29.21 0)
+			(at 153.67 109.22 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -330,7 +331,7 @@
 			)
 		)
 		(property "Value" "CONN_BRK_1X04"
-			(at 101.6 67.31 0)
+			(at 153.67 124.46 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -338,7 +339,7 @@
 			)
 		)
 		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical"
-			(at 101.6 48.26 0)
+			(at 153.67 115.57 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -347,7 +348,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 101.6 48.26 0)
+			(at 153.67 115.57 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -356,7 +357,7 @@
 			)
 		)
 		(property "Description" "4-pin 2.54 mm breakout header"
-			(at 101.6 48.26 0)
+			(at 153.67 115.57 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -365,7 +366,7 @@
 			)
 		)
 		(property "aipcb.reason" "The right-hand side. Its pin order is the reverse of J1's, which is what makes the four connections a permutation no plane can hold."
-			(at 101.6 48.26 0)
+			(at 153.67 115.57 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -374,7 +375,7 @@
 			)
 		)
 		(property "aipcb.role" "connector"
-			(at 101.6 48.26 0)
+			(at 153.67 115.57 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -383,7 +384,7 @@
 			)
 		)
 		(property "aipcb.path" "J2"
-			(at 101.6 48.26 0)
+			(at 153.67 115.57 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -414,8 +415,8 @@
 	)
 	(wire
 		(pts
-			(xy 45.72 45.72)
-			(xy 41.91 45.72)
+			(xy 148.59 90.17)
+			(xy 144.78 90.17)
 		)
 		(stroke
 			(width 0)
@@ -425,7 +426,7 @@
 	)
 	(global_label "SWAP_A"
 		(shape input)
-		(at 41.91 45.72 180)
+		(at 144.78 90.17 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -436,8 +437,8 @@
 	)
 	(wire
 		(pts
-			(xy 45.72 48.26)
-			(xy 41.91 48.26)
+			(xy 148.59 92.71)
+			(xy 144.78 92.71)
 		)
 		(stroke
 			(width 0)
@@ -447,7 +448,7 @@
 	)
 	(global_label "SWAP_B"
 		(shape input)
-		(at 41.91 48.26 180)
+		(at 144.78 92.71 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -458,8 +459,8 @@
 	)
 	(wire
 		(pts
-			(xy 45.72 50.8)
-			(xy 41.91 50.8)
+			(xy 148.59 95.25)
+			(xy 144.78 95.25)
 		)
 		(stroke
 			(width 0)
@@ -469,7 +470,7 @@
 	)
 	(global_label "SWAP_C"
 		(shape input)
-		(at 41.91 50.8 180)
+		(at 144.78 95.25 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -480,8 +481,8 @@
 	)
 	(wire
 		(pts
-			(xy 45.72 53.34)
-			(xy 41.91 53.34)
+			(xy 148.59 97.79)
+			(xy 144.78 97.79)
 		)
 		(stroke
 			(width 0)
@@ -491,7 +492,7 @@
 	)
 	(global_label "SWAP_D"
 		(shape input)
-		(at 41.91 53.34 180)
+		(at 144.78 97.79 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -502,8 +503,8 @@
 	)
 	(wire
 		(pts
-			(xy 96.52 45.72)
-			(xy 92.71 45.72)
+			(xy 148.59 113.03)
+			(xy 144.78 113.03)
 		)
 		(stroke
 			(width 0)
@@ -513,7 +514,7 @@
 	)
 	(global_label "SWAP_D"
 		(shape input)
-		(at 92.71 45.72 180)
+		(at 144.78 113.03 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -524,8 +525,8 @@
 	)
 	(wire
 		(pts
-			(xy 96.52 48.26)
-			(xy 92.71 48.26)
+			(xy 148.59 115.57)
+			(xy 144.78 115.57)
 		)
 		(stroke
 			(width 0)
@@ -535,7 +536,7 @@
 	)
 	(global_label "SWAP_C"
 		(shape input)
-		(at 92.71 48.26 180)
+		(at 144.78 115.57 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -546,8 +547,8 @@
 	)
 	(wire
 		(pts
-			(xy 96.52 50.8)
-			(xy 92.71 50.8)
+			(xy 148.59 118.11)
+			(xy 144.78 118.11)
 		)
 		(stroke
 			(width 0)
@@ -557,7 +558,7 @@
 	)
 	(global_label "SWAP_B"
 		(shape input)
-		(at 92.71 50.8 180)
+		(at 144.78 118.11 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -568,8 +569,8 @@
 	)
 	(wire
 		(pts
-			(xy 96.52 53.34)
-			(xy 92.71 53.34)
+			(xy 148.59 120.65)
+			(xy 144.78 120.65)
 		)
 		(stroke
 			(width 0)
@@ -579,7 +580,7 @@
 	)
 	(global_label "SWAP_A"
 		(shape input)
-		(at 92.71 53.34 180)
+		(at 144.78 120.65 180)
 		(effects
 			(font
 				(size 1.27 1.27)
