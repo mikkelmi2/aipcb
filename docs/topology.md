@@ -178,9 +178,8 @@ reserves it.
 
 ### A cut has a capacity
 
-Every interior edge of a triangulation is a *cut* across the free space, and Maley's
-criterion says a set of routes can be turned into legal geometry exactly when no cut
-is over-subscribed:
+A *cut* is a segment across the free space, and Maley's criterion says a set of
+routes can be turned into legal geometry exactly when no cut is over-subscribed:
 
 ```
 capacity(cut) = length(cut) + reference clearance
@@ -191,8 +190,32 @@ That makes "does this board fit" a local question, checkable before any geometry
 exists — and, crucially, an *undoable* one. Ripping a route up subtracts its demand
 and nothing else, which is what makes the negotiation below affordable.
 
-`aipcb route check` reports over-subscribed cuts across every layer, naming the nets
-that share them.
+**Which cuts, though?** Maley quantifies over all of them; a triangulation offers
+the ones it drew. Two families are charged here:
+
+* **Every interior edge of the triangulation.** The obvious ones.
+* **The second diagonal of every convex adjacent triangle pair** — the segment
+  joining the two far vertices of the quadrilateral two triangles make. A wire that
+  enters a triangle through its other two edges never crosses the triangulation's
+  own diagonal at all; it rounds the apex, and the room it has to do that is this
+  segment. The CDT declined to draw it, which is exactly the case where it is the
+  shorter one: on the bundled examples, 4–29% of diagonals per layer have a shorter
+  partner. [ADR 0014](decisions/0014-special-cuts.md) has the measurement.
+
+Even together those are a **subset**, so the answer is a *lower bound on
+congestion* rather than the criterion in full: a segment between two obstacle
+vertices spanning more than one triangle pair is a cut nothing charges. A clean
+capacity report is evidence, not proof. Legality does not rest on it — the
+stretcher builds each route inside free space that already excludes every other
+net, and a final invariant asks the finished board whether two nets overlap — so
+what the remaining gap costs is a route that fails or detours somewhere the report
+called comfortable, never a short circuit.
+
+`aipcb route check` reports over-subscribed cuts across every layer, naming the
+nets that share them and which kind of cut it was. The router's own cost model is
+charged for the triangulation's diagonals only; charging it for the second
+diagonals as well changes routing decisions, and that is a trade the
+[roadmap](roadmap.md) requires to be measured on `aipcb bench` before it is made.
 
 ## Routing a whole board
 
@@ -327,7 +350,8 @@ built as sketched: waypoint 1 is not in the routable area
 
 It also asks the question no individual route can answer — whether they all fit
 *together*. Every cut has a capacity, and a set of sketches that over-subscribes one
-cannot be built however sound each of them is on its own:
+cannot be built however sound each of them is on its own. Silence from this check
+is a lower bound rather than a guarantee, for the reason [above](#a-cut-has-a-capacity):
 
 ```
 design.yaml: error[route-cut-over-subscribed]: X1, X2 together need 0.90 mm of a

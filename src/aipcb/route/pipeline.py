@@ -24,6 +24,7 @@ from aipcb.kicad.sexpr import SNode, dump, parse
 from aipcb.route.manual import RoutingStates
 from aipcb.route.plan import DEFAULT_CONGESTION, RoutedBoard
 from aipcb.route.stitch import StitchResult
+from aipcb.route.timing import Stages, stage
 
 __all__ = ["RoutedDesign", "build_and_parse", "route_design"]
 
@@ -39,6 +40,8 @@ class RoutedDesign:
     stitched: StitchResult
     segments: int
     vias: int
+    stages: Stages | None = None
+    """Wall clock per pipeline stage, when a benchmark asked for it (M16c)."""
 
     def states(self) -> RoutingStates:
         """Every net's routing state, read off the board this run just wrote.
@@ -74,14 +77,21 @@ def route_design(
     *,
     layers: tuple[str, ...] | None = None,
     congestion: float = DEFAULT_CONGESTION,
+    stages: Stages | None = None,
 ) -> RoutedDesign:
-    """Build ``design`` into ``out``, route it, and write the tracks into the board."""
+    """Build ``design`` into ``out``, route it, and write the tracks into the board.
+
+    ``stages`` is the benchmark's stopwatch (M16c). Passing it times the build, the
+    router's own phases, the stitching and the write; passing ``None`` -- which is
+    what every other caller does -- makes the whole apparatus disappear.
+    """
     from aipcb.route.emit import attach_copper, drop_generated, generated_uuids
     from aipcb.route.plan import route_board
     from aipcb.route.stitch import stitch_board, stitch_uuids
     from aipcb.route.transition import transition_uuids
 
-    result, board_path, board = build_and_parse(design, out, report)
+    with stage(stages, "build"):
+        result, board_path, board = build_and_parse(design, out, report)
     topologies = tuple(result.netlist.layout.routes) if result.netlist.layout else ()
 
     def run(manual_copper: bool) -> RoutedBoard:
@@ -93,6 +103,12 @@ def route_design(
             topologies=topologies,
             congestion=congestion,
             manual_copper=manual_copper,
+            # Only the real pass is timed. The exploratory one exists to learn
+            # which copper on the board is ours from a previous run, it happens
+            # only when there is copper to sort out, and counting it would make a
+            # rebuild look slower than a first build for a reason that has nothing
+            # to do with the router.
+            stages=stages if manual_copper else None,
         )
 
     # Copper already in the board is either somebody's hand routing, which must
@@ -112,11 +128,14 @@ def route_design(
         owned = generated_uuids(run(False).connections)
         drop_generated(board, owned)
     routed = run(True)
-    count, via_count = attach_copper(
-        board, routed.connections, sorted(result.netlist.nets)
-    )
-    stitched = stitch_board(board, result.netlist, report)
-    board_path.write_text(dump(board), encoding="utf-8")
+    with stage(stages, "emit"):
+        count, via_count = attach_copper(
+            board, routed.connections, sorted(result.netlist.nets)
+        )
+    with stage(stages, "stitch"):
+        stitched = stitch_board(board, result.netlist, report)
+    with stage(stages, "write"):
+        board_path.write_text(dump(board), encoding="utf-8")
     return RoutedDesign(
         build=result,
         board_path=board_path,
@@ -125,4 +144,5 @@ def route_design(
         stitched=stitched,
         segments=count,
         vias=via_count,
+        stages=stages,
     )

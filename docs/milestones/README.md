@@ -24,6 +24,7 @@ with the numbers.
 | M13 | routing correctness, the impedance model, the skew verdict | executed — [`m13.md`](../reports/m13.md) |
 | M14 | readable schematics, optional routing, the external-router bridge | executed — [`m14.md`](../reports/m14.md) |
 | [`m15-public.md`](m15-public.md) | M15 — hygiene sweep, licence package, the public README, contributor surface, CI | executed — [`m15.md`](../reports/m15.md) |
+| M16 | toporouter lessons, part 1 — the capacity check's honesty, the exposure guards, the benchmark harness | executed — [`m16.md`](../reports/m16.md) |
 
 The delivery report requirement was introduced with M10, so the earlier
 milestones ran without one. [`m8.md`](../reports/m8.md) was reconstructed after the

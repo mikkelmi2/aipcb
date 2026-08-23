@@ -14,7 +14,9 @@ would, and a class that cannot be built is one that does not exist.
 There is a second question a per-route check cannot answer: whether the sketches fit
 *alongside each other*. Every cut across the free space has a capacity, and a set of
 routes that over-subscribes one cannot be built however sound each of them is on its
-own. That is what :func:`check_capacity` adds, across every layer at once.
+own. That is what :func:`check_capacity` adds, across every layer at once -- as a
+lower bound rather than as the criterion in full, which that function's docstring is
+careful to say out loud.
 """
 
 from __future__ import annotations
@@ -138,6 +140,21 @@ def check_capacity(
     this module answers by building it. A sketch can be perfectly realizable on its
     own and impossible alongside the three others that want the same corridor, and
     the only way to see that is to add the corridors up.
+
+    **What this does not promise.** Maley's criterion quantifies over every cut
+    across the free space. This charges two families of them: the triangulation's
+    own diagonals, and -- since M16a -- the second diagonal of every convex adjacent
+    triangle pair, the cut a wire crosses when it rounds a triangle's apex without
+    ever touching the diagonal (ADR 0014, and the toporouter postmortem §A.6, whose
+    author named these "special cuts" in 2009). Both families together are still a
+    *subset*: any segment between two obstacle vertices spanning more than one
+    triangle pair is a cut nothing here charges. **So a clean result is evidence,
+    not a proof.** It is a lower bound on congestion; what it reports is real, what
+    it stays silent about may not be. Legality does not rest on it -- the stretcher
+    builds each route inside free space that already excludes every other net, and
+    :func:`aipcb.route.invariant.check_no_crossings` asks the finished board -- so
+    the cost of the remaining gap is a route that fails or detours somewhere this
+    said was fine, never a short circuit.
     """
     if not topologies:
         return
@@ -158,11 +175,12 @@ def check_capacity(
             via_radius=max(c.via_diameter_mm / 2 for c in classes),
             layout=netlist.layout,
             origin=netlist.layout.origin_mm if netlist.layout else (0.0, 0.0),
+            special_cuts=True,
         )
     except FreeSpaceError:
         return
 
-    owners: dict[tuple[str, int], list[str]] = {}
+    owners: dict[tuple[str, str, int], list[str]] = {}
     for route in topologies:
         rules = rules_for(netlist, route.net)
         demand = rules.track_width + rules.clearance
@@ -182,25 +200,44 @@ def check_capacity(
                 continue
             for edge in layer_field.cuts_crossed(leg.points):
                 layer_field.used[edge] += demand
-                owners.setdefault((leg.layer, edge), []).append(route.net)
+                owners.setdefault(("diagonal", leg.layer, edge), []).append(route.net)
+            for cut in layer_field.special_cuts_crossed(leg.points):
+                layer_field.special_used[cut] += demand
+                owners.setdefault(("special", leg.layer, cut), []).append(route.net)
 
-    for layer, edges in field_.congested().items():
-        for edge in edges:
-            layer_field = field_.layers[layer]
-            nets = sorted(set(owners.get((layer, edge), ())))
+    for layer, layer_field in sorted(field_.layers.items()):
+        found = [
+            ("diagonal", edge, layer_field.capacity[edge], layer_field.used[edge])
+            for edge in layer_field.over_subscribed()
+        ] + [
+            (
+                "special",
+                cut,
+                layer_field.special_capacity[cut],
+                layer_field.special_used[cut],
+            )
+            for cut in layer_field.over_subscribed_special()
+        ]
+        for kind, index, capacity, used in found:
+            nets = sorted(set(owners.get((kind, layer, index), ())))
             outcome.over_subscribed.append(
                 {
                     "layer": layer,
-                    "width_mm": round(layer_field.capacity[edge], 3),
-                    "demand_mm": round(layer_field.used[edge], 3),
+                    "cut": kind,
+                    "width_mm": round(capacity, 3),
+                    "demand_mm": round(used, 3),
                     "nets": nets,
                 }
+            )
+            where = (
+                f"a corridor on {layer}"
+                if kind == "diagonal"
+                else f"the gap on {layer} they have to round a corner through"
             )
             report.error(
                 "route-cut-over-subscribed",
                 f"{', '.join(nets)} together need "
-                f"{layer_field.used[edge]:.2f} mm of a corridor on {layer} that is "
-                f"{layer_field.capacity[edge]:.2f} mm wide",
+                f"{used:.2f} mm of {where} that is {capacity:.2f} mm wide",
                 path=("layout", "routes"),
                 hint="one of them has to go somewhere else: another layer, another "
                 "side of the obstacle between them, or a different placement",

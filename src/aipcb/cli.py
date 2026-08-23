@@ -679,6 +679,140 @@ def schema(
 
 
 @app.command()
+def bench(
+    examples: Annotated[
+        str | None,
+        typer.Option(
+            "--examples",
+            help="Comma-separated example names. Defaults to every bundled example.",
+        ),
+    ] = None,
+    smoke: Annotated[
+        bool,
+        typer.Option(
+            "--smoke",
+            help="Run only the small CI subset, for a fast regression check.",
+        ),
+    ] = False,
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--out",
+            "-o",
+            help="Where to write the results file. Defaults to "
+            "bench/results/<commit>.json.",
+        ),
+    ] = None,
+    no_write: Annotated[
+        bool, typer.Option("--no-write", help="Measure and print, write nothing.")
+    ] = False,
+    baseline: Annotated[
+        Path | None,
+        typer.Option(
+            "--compare",
+            help="A previous results file to diff this run against. Exits 1 on a "
+            "regression.",
+        ),
+    ] = None,
+    runtime_threshold: Annotated[
+        float | None,
+        typer.Option(
+            "--runtime-threshold",
+            help="How much slower than the baseline counts as a regression, in "
+            "percent. Set this high when the baseline was measured elsewhere.",
+        ),
+    ] = None,
+    length_threshold: Annotated[
+        float | None,
+        typer.Option(
+            "--length-threshold",
+            help="How much more copper counts as a regression, in percent.",
+        ),
+    ] = None,
+    as_json: JsonOpt = False,
+) -> None:
+    """Route every example and record what it cost and what it was worth.
+
+    The benchmark the toporouter never had. Runtime -- not correctness -- is what
+    made that router unusable, and it is one of the three conditions autorouting
+    has to meet to leave beta. `--compare` diffs against a committed baseline so a
+    change to the router has to show its numbers.
+    """
+    from aipcb import bench as harness
+
+    thresholds = {
+        "runtime_threshold": harness.DEFAULT_RUNTIME_THRESHOLD
+        if runtime_threshold is None
+        else runtime_threshold,
+        "length_threshold": harness.DEFAULT_LENGTH_THRESHOLD
+        if length_threshold is None
+        else length_threshold,
+    }
+    root = harness.repository_root()
+    names: tuple[str, ...] | None = None
+    if smoke:
+        names = harness.SMOKE_EXAMPLES
+    if examples:
+        names = tuple(part.strip() for part in examples.split(",") if part.strip())
+    try:
+        designs = harness.resolve(names, root)
+    except KeyError as exc:
+        _err(f"error: {exc.args[0]}")
+        raise typer.Exit(EXIT_UNREADABLE) from exc
+    if not designs:
+        _err("error: no example designs found to benchmark")
+        raise typer.Exit(EXIT_UNREADABLE)
+
+    # The router's own diagnostics are not this command's output. A benchmark that
+    # printed every board's notes would bury the table it exists to produce, and the
+    # findings that matter -- crossings, failed connections -- are columns in it.
+    # A design that will not *build*, though, is not a measurement at all.
+    try:
+        result = harness.bench_examples(designs, report=Report())
+    except SourceError as exc:
+        _err(f"error: {exc}")
+        raise typer.Exit(EXIT_UNREADABLE) from exc
+    except AipcbError as exc:
+        _err(exc.report.render(color=sys.stdout.isatty()))
+        raise typer.Exit(EXIT_ERRORS) from exc
+
+    written: Path | None = None
+    if not no_write:
+        written = out or harness.default_output(result, root)
+        harness.write(result, written)
+
+    outcome = None
+    if baseline is not None:
+        try:
+            previous = harness.load(baseline)
+        except (OSError, ValueError) as exc:
+            _err(f"error: cannot read the baseline {baseline}: {exc}")
+            raise typer.Exit(EXIT_UNREADABLE) from exc
+        outcome = harness.compare(
+            previous, result, expect_all=names is None, **thresholds
+        )
+
+    if as_json:
+        payload: dict[str, Any] = result.to_dict()
+        if written is not None:
+            payload["written"] = str(written)
+        if outcome is not None:
+            payload["comparison"] = outcome.to_dict()
+        typer.echo(json.dumps(payload, indent=2))
+    else:
+        typer.echo(harness.render_table(result))
+        typer.echo("")
+        typer.echo(harness.render_stages(result))
+        if written is not None:
+            typer.echo(f"\nwrote {written}")
+        if outcome is not None:
+            typer.echo(f"\nagainst {baseline}:")
+            typer.echo(harness.render_comparison(outcome))
+
+    raise typer.Exit(EXIT_ERRORS if outcome is not None and not outcome.ok else EXIT_OK)
+
+
+@app.command()
 def version() -> None:
     """Print the version of aipcb, and of the KiCad it will drive."""
     from aipcb import __version__

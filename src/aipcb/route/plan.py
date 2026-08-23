@@ -51,7 +51,12 @@ from aipcb.route.geometry import (
     with_copper,
 )
 from aipcb.route.graph import RoutePath, Terminal, search_path
-from aipcb.route.invariant import Crossing, check_no_crossings
+from aipcb.route.invariant import (
+    Crossing,
+    SelfCrossing,
+    check_no_crossings,
+    check_no_self_crossings,
+)
 from aipcb.route.manual import manual_nets
 from aipcb.route.model import RouteTopology
 from aipcb.route.negotiate import Connection, Negotiation, default_priority, negotiate
@@ -74,6 +79,7 @@ from aipcb.route.stretch import (
     Via,
     stretch_route,
 )
+from aipcb.route.timing import Stages, stage
 from aipcb.route.transition import TransitionResult, generate_transitions
 from aipcb.route.triangulate import FreeSpaceError
 
@@ -150,6 +156,8 @@ class RoutedBoard:
     total_length: float = 0.0
     crossings: list[Crossing] = field(default_factory=list)
     """Places two nets' finished copper overlaps. Empty on any board worth having."""
+    self_crossings: list[SelfCrossing] = field(default_factory=list)
+    """Places one connection's copper meets its own (M16b, postmortem exposure E2)."""
     manual: list[str] = field(default_factory=list)
     """Nets the source declared `routing: manual`, which this router did not touch."""
 
@@ -187,6 +195,7 @@ class RoutedBoard:
                 self.transitions.summary() if self.transitions is not None else None
             ),
             "crossings": [c.describe() for c in self.crossings],
+            "self_crossings": [c.describe() for c in self.self_crossings],
             "manual": list(self.manual),
         }
 
@@ -251,12 +260,17 @@ def route_board(
     congestion: float = DEFAULT_CONGESTION,
     costs: CostModel = DEFAULT_COSTS,
     manual_copper: bool = True,
+    stages: Stages | None = None,
 ) -> RoutedBoard:
     """Route every net that needs it, across every layer the stackup allows.
 
     ``manual_copper`` decides whether copper already in the board is treated as a
     fixed obstacle. It is, always, except for the one pass the CLI makes to work out
     which of that copper is its own from a previous run.
+
+    ``stages`` collects wall clock per phase when a benchmark is watching, and is
+    ``None`` on every other path (M16c). Only the boundaries below are timed --
+    never anything inside them.
     """
     outcome = RoutedBoard()
     stack = stack_for(netlist.layout, costs)
@@ -280,10 +294,11 @@ def route_board(
     #    and the escape vias become the terminals the router sees in place of the
     #    package's own pads. Nothing downstream knows a fanout happened.
     placed: list[Obstacle] = []
-    fanout = generate_fanout(
-        board, base, netlist, stack, report, congestion=congestion
-    )
-    fanout.apply(base)
+    with stage(stages, "fanout"):
+        fanout = generate_fanout(
+            board, base, netlist, stack, report, congestion=congestion
+        )
+        fanout.apply(base)
     outcome.fanout = fanout
     for escape in fanout.connections:
         outcome.connections.append(escape)
@@ -292,10 +307,11 @@ def route_board(
     #    The same regime, one tenant later: a declared pair via transition is two
     #    signal vias, its return vias, and two coupled segments for the router to
     #    route between (M11c).
-    transitions = generate_transitions(
-        board, base, netlist, stack, report, congestion=congestion
-    )
-    transitions.apply(base)
+    with stage(stages, "transitions"):
+        transitions = generate_transitions(
+            board, base, netlist, stack, report, congestion=congestion
+        )
+        transitions.apply(base)
     outcome.transitions = transitions
     for piece in transitions.connections:
         outcome.connections.append(piece)
@@ -308,15 +324,16 @@ def route_board(
     origin = netlist.layout.origin_mm if netlist.layout else (0.0, 0.0)
 
     try:
-        field_ = build_field(
-            base,
-            stack,
-            reference_clearance=reference_clearance,
-            reference_width=reference_width,
-            via_radius=via_radius,
-            layout=netlist.layout,
-            origin=origin,
-        )
+        with stage(stages, "field"):
+            field_ = build_field(
+                base,
+                stack,
+                reference_clearance=reference_clearance,
+                reference_width=reference_width,
+                via_radius=via_radius,
+                layout=netlist.layout,
+                origin=origin,
+            )
     except FreeSpaceError as exc:
         report.warning("routing-impossible", str(exc))
         return outcome
@@ -407,54 +424,59 @@ def route_board(
         netlist, base, field_, stack, allowed, pairs, explicit, sketched, congestion,
         declared_manual,
     )
-    settled = negotiate(
-        field_,
-        connections,
-        costs=costs,
-        congestion_weight=congestion,
-        report=report,
-    )
+    with stage(stages, "negotiate"):
+        settled = negotiate(
+            field_,
+            connections,
+            costs=costs,
+            congestion_weight=congestion,
+            report=report,
+        )
     outcome.negotiation = settled
     outcome.contested_cuts = _blocking_cuts(field_, settled, connections)
 
     by_key = {c.key: c for c in connections}
-    for key, path in settled.paths.items():
-        connection = by_key[key]
-        try:
-            if connection.pair is not None:
-                coupled = realize_pair(
-                    connection, path, base, placed, netlist, stack, congestion,
-                    report, outcome.pair_audits,
-                )
-                if coupled is None:
-                    _route_pair_halves(
-                        connection, base, netlist, stack, field_, placed,
-                        congestion, outcome, report, allowed,
+    # Every negotiated path becomes geometry here, including the repairs a
+    # failure triggers: the retry is part of what tightening cost, not a
+    # separate stage, and a benchmark that split them would understate it.
+    with stage(stages, "tighten"):
+        for key, path in settled.paths.items():
+            connection = by_key[key]
+            try:
+                if connection.pair is not None:
+                    coupled = realize_pair(
+                        connection, path, base, placed, netlist, stack, congestion,
+                        report, outcome.pair_audits,
                     )
+                    if coupled is None:
+                        _route_pair_halves(
+                            connection, base, netlist, stack, field_, placed,
+                            congestion, outcome, report, allowed,
+                        )
+                        continue
+                    outcome.pairs.append(connection.pair)  # type: ignore[arg-type]
+                    _accept(outcome, placed, coupled, stack, trim=False)
                     continue
-                outcome.pairs.append(connection.pair)  # type: ignore[arg-type]
-                _accept(outcome, placed, coupled, stack, trim=False)
+                realized = _realize(
+                    connection, path, base, placed, netlist, stack, congestion
+                )
+            except (StretchError, FreeSpaceError) as exc:
+                _retry(
+                    connection, exc, base, placed, netlist, stack, field_,
+                    congestion, outcome, report,
+                )
                 continue
-            realized = _realize(
-                connection, path, base, placed, netlist, stack, congestion
-            )
-        except (StretchError, FreeSpaceError) as exc:
-            _retry(
-                connection, exc, base, placed, netlist, stack, field_,
-                congestion, outcome, report,
-            )
-            continue
-        _accept(outcome, placed, realized, stack)
+            _accept(outcome, placed, realized, stack)
 
-    for key, reason in sorted(settled.failed.items()):
-        # The symbolic search itself found nothing, which is a different answer from
-        # "a plan was found and would not tighten": there is no corridor at all.
-        _retry(
-            by_key[key],
-            StretchError(reason),
-            base, placed, netlist, stack, field_, congestion, outcome, report,
-            kind="no_path",
-        )
+        for key, reason in sorted(settled.failed.items()):
+            # The symbolic search itself found nothing, which is a different answer from
+            # "a plan was found and would not tighten": there is no corridor at all.
+            _retry(
+                by_key[key],
+                StretchError(reason),
+                base, placed, netlist, stack, field_, congestion, outcome, report,
+                kind="no_path",
+            )
 
     # The fanout proposed an escape for every pad before any of this happened. Now
     # that the copper is real, the ones the router did not take up come back out.
@@ -479,22 +501,30 @@ def route_board(
             "fabricator, and two overlapping drill hits to KiCad",
         )
 
-    outcome.skew = measure_skew(outcome.pairs, outcome.connections, report, netlist)
+    with stage(stages, "skew"):
+        outcome.skew = measure_skew(
+            outcome.pairs, outcome.connections, report, netlist
+        )
     # The invariant, last: everything above builds copper inside free space that
     # already has the other nets removed from it, so this should never find
     # anything -- and it is exactly because it should never find anything that it
     # is worth asking. M11 shipped a repair pass that crossed two REFCLK tracks
     # and nothing noticed for a milestone and a half.
-    outcome.crossings = check_no_crossings(
-        outcome.connections,
-        report,
-        barrel_layers={
-            f"{a}/{b}": stack.barrel_span(a, b)
-            for a in stack.copper
-            for b in stack.copper
-            if a != b
-        },
-    )
+    with stage(stages, "invariant"):
+        outcome.crossings = check_no_crossings(
+            outcome.connections,
+            report,
+            barrel_layers={
+                f"{a}/{b}": stack.barrel_span(a, b)
+                for a in stack.copper
+                for b in stack.copper
+                if a != b
+            },
+        )
+        # And the same question asked of one route rather than two.
+        # `crossing_nets` skips same-net pairs by design, so until M16b nothing
+        # anywhere looked at a connection's geometry against its own.
+        outcome.self_crossings = check_no_self_crossings(outcome.connections, report)
     return outcome
 
 

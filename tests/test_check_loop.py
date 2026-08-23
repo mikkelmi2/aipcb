@@ -305,6 +305,22 @@ class TestCheckLoop:
                 # stand-ins; this is KiCad saying the same thing, and it is the only
                 # thing four unpinned rules were hiding.
                 "kicad-footprint-filters-mismatch",
+                # Newly visible in M16b, and a real defect rather than a KiCad
+                # opinion. The self-crossing invariant (postmortem exposure E2) was
+                # expected to find nothing anywhere -- "which is the point", said
+                # the note -- and found that GND's `U1.17>U1.49` travels four
+                # millimetres east, hops to B.Cu for half a millimetre, hops
+                # straight back to F.Cu, and retraces its own path home. Eight
+                # millimetres of copper and two vias that buy nothing.
+                #
+                # It is listed here rather than fixed because the fix is a search
+                # and cost-model change -- the roadmap's post-convergence detour
+                # pass -- which trades runtime for quality and is therefore gated
+                # on the M16c benchmark by decision. The net is electrically
+                # correct and the board is DRC-clean; what is wrong is the amount
+                # of copper. `tests/test_routing.py::TestSelfCrossingInvariant`
+                # pins the count at exactly one, so a second one fails the suite.
+                "route-doubles-back",
             }
         ),
     }

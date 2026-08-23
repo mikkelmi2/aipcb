@@ -497,6 +497,10 @@ class TestBetaNotice:
         "routed", "failed", "length_mm", "vias", "layers", "nets", "iterations",
         "converged", "handed_over", "fanout", "pairs", "transitions", "crossings",
         "manual", "segments",
+        # M16b. `crossings` is two nets in one place; this is one connection
+        # meeting itself. Both are lists of sentences and both are empty on a
+        # board worth having.
+        "self_crossings",
     }
 
     def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -530,7 +534,12 @@ class TestBetaNotice:
     def test_json_is_schema_stable_apart_from_the_new_field(
         self, tmp_path: Path
     ) -> None:
-        """The only difference from the pre-M15.1 payload is ``maturity``."""
+        """The payload's shape is part of its contract, so additions are deliberate.
+
+        `maturity` arrived in M15.1 and `self_crossings` in M16b; both are listed in
+        `ROUTING_KEYS` above rather than waved past, so that the next field to
+        appear has to be added on purpose.
+        """
         design = REPO_ROOT / "examples" / "ldo-supply" / "design.yaml"
         payload = json.loads(
             self._run("all", str(design), "--out", str(tmp_path), "--json").stdout
@@ -993,3 +1002,477 @@ class TestRepairDoesNotCrossAnotherNet:
         drc = json.loads(drc_path.read_text(encoding="utf-8"))
         crossing = [v for v in drc["violations"] if v["type"] == "tracks_crossing"]
         assert not crossing, [v["description"] for v in crossing]
+
+
+# ---------------------------------------------------------------------------
+# M16a: the cuts the triangulation never drew
+# ---------------------------------------------------------------------------
+
+
+class TestSpecialCuts:
+    """The second diagonal of an adjacent triangle pair is a cut too.
+
+    The toporouter postmortem's §A.6 is the find this milestone acts on: aipcb
+    stated Maley's realizability criterion and then charged only the diagonals its
+    triangulation happened to draw. A wire that enters a triangle through its two
+    non-diagonal edges never crosses that diagonal at all -- it rounds the apex --
+    and the room it has to do that is the *other* diagonal of the quadrilateral,
+    which the CDT declined to draw precisely because it is the shorter one.
+    """
+
+    def test_a_convex_pair_yields_the_other_diagonal(self) -> None:
+        from aipcb.route.triangulate import Diagonal, Triangulation, special_cuts
+
+        # A unit square split by its own diagonal. Both apexes exist, the quad is
+        # convex, so the flip diagonal is the square's other diagonal.
+        square = Triangulation(
+            triangles=[
+                ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0)),
+                ((0.0, 0.0), (1.0, 1.0), (0.0, 1.0)),
+            ],
+            diagonals=[Diagonal(0, (0.0, 0.0), (1.0, 1.0), (0, 1))],
+            by_triangle={0: [0], 1: [0]},
+        )
+        cuts = special_cuts(square)
+        assert len(cuts) == 1
+        assert {cuts[0].a, cuts[0].b} == {(1.0, 0.0), (0.0, 1.0)}
+        assert cuts[0].diagonal == 0
+
+    def test_a_re_entrant_pair_yields_nothing(self) -> None:
+        """A segment that leaves the free space is not a cut across it.
+
+        The CDT is free to leave a re-entrant pair unflipped, and flipping it would
+        put the new diagonal outside the shape. Charging wires to a segment that is
+        not in the free area would invent congestion where there is none.
+        """
+        from aipcb.route.triangulate import Diagonal, Triangulation, special_cuts
+
+        # (2, 0) is a reflex vertex of the quad (0,0) (4,1) (2,0) (1,-1), so the
+        # apex-to-apex segment passes outside it entirely.
+        dart = Triangulation(
+            triangles=[
+                ((0.0, 0.0), (2.0, 0.0), (4.0, 1.0)),
+                ((0.0, 0.0), (1.0, -1.0), (2.0, 0.0)),
+            ],
+            diagonals=[Diagonal(0, (0.0, 0.0), (2.0, 0.0), (0, 1))],
+            by_triangle={0: [0], 1: [0]},
+        )
+        assert special_cuts(dart) == []
+
+    def test_apexes_on_one_side_yield_nothing(self) -> None:
+        """Two triangles that overlap are not a quadrilateral at all.
+
+        A triangulation never produces this, which is exactly why the guard is
+        worth having: it means the derivation is correct on its own terms rather
+        than only while its caller behaves.
+        """
+        from aipcb.route.triangulate import Diagonal, Triangulation, special_cuts
+
+        overlapping = Triangulation(
+            triangles=[
+                ((0.0, 0.0), (2.0, 0.0), (1.0, 0.4)),
+                ((0.0, 0.0), (1.0, 2.0), (2.0, 0.0)),
+            ],
+            diagonals=[Diagonal(0, (0.0, 0.0), (2.0, 0.0), (0, 1))],
+            by_triangle={0: [0], 1: [0]},
+        )
+        assert special_cuts(overlapping) == []
+
+    def test_the_apex_rounding_wire_is_charged(self) -> None:
+        """The postmortem's exact scenario, end to end.
+
+        A wire enters a triangle through one of its non-diagonal edges and leaves
+        through the other, rounding the apex. It never touches the CDT diagonal --
+        so the old accounting charged it nothing at all -- and it does cross the
+        second diagonal of the pair, which is what M16a now charges.
+        """
+        from aipcb.route.field import LayerField
+        from aipcb.route.triangulate import Diagonal, Triangulation
+
+        # Two triangles sharing the long diagonal (0,0)-(4,0). The upper apex sits
+        # just above it, so the flip diagonal (2, 0.3)-(2, -3) is much shorter than
+        # the 4 mm diagonal it pairs with -- and it is the one that binds.
+        pair = Triangulation(
+            triangles=[
+                ((0.0, 0.0), (4.0, 0.0), (2.0, 0.3)),
+                ((0.0, 0.0), (2.0, -3.0), (4.0, 0.0)),
+            ],
+            diagonals=[Diagonal(0, (0.0, 0.0), (4.0, 0.0), (0, 1))],
+            by_triangle={0: [0], 1: [0]},
+        )
+        cuts = pair.special_cuts()
+        assert len(cuts) == 1
+        assert cuts[0].length() == pytest.approx(3.3)
+        assert cuts[0].length() < pair.gate_width(0)
+
+        field_ = LayerField(
+            layer="F.Cu",
+            free=None,
+            triangulation=pair,
+            capacity=[pair.gate_width(0) + 0.2],
+            used=[0.0],
+            history=[0.0],
+            special=cuts,
+            special_capacity=[cuts[0].length() + 0.2],
+            special_used=[0.0],
+        )
+        # In through the left edge, round the apex, out through the right edge.
+        rounding = [(1.0, 0.1), (2.0, 0.2), (3.0, 0.1)]
+        assert field_.cuts_crossed(rounding) == [], (
+            "the wire never meets the CDT diagonal, which is the whole problem"
+        )
+        assert field_.special_cuts_crossed(rounding) == [0]
+
+    def test_a_wire_that_does_cross_the_diagonal_still_is(self) -> None:
+        """The new cut set adds to the old one rather than replacing it."""
+        from aipcb.route.field import LayerField
+        from aipcb.route.triangulate import Diagonal, Triangulation
+
+        pair = Triangulation(
+            triangles=[
+                ((0.0, 0.0), (4.0, 0.0), (2.0, 0.3)),
+                ((0.0, 0.0), (2.0, -3.0), (4.0, 0.0)),
+            ],
+            diagonals=[Diagonal(0, (0.0, 0.0), (4.0, 0.0), (0, 1))],
+            by_triangle={0: [0], 1: [0]},
+        )
+        cuts = pair.special_cuts()
+        field_ = LayerField(
+            layer="F.Cu",
+            free=None,
+            triangulation=pair,
+            capacity=[pair.gate_width(0) + 0.2],
+            used=[0.0],
+            history=[0.0],
+            special=cuts,
+            special_capacity=[cuts[0].length() + 0.2],
+            special_used=[0.0],
+        )
+        assert field_.cuts_crossed([(2.0, 0.2), (2.0, -1.0)]) == [0]
+
+    def test_over_subscription_is_reported_separately(self) -> None:
+        from aipcb.route.field import LayerField
+        from aipcb.route.triangulate import Diagonal, Triangulation
+
+        pair = Triangulation(
+            triangles=[
+                ((0.0, 0.0), (4.0, 0.0), (2.0, 0.3)),
+                ((0.0, 0.0), (2.0, -3.0), (4.0, 0.0)),
+            ],
+            diagonals=[Diagonal(0, (0.0, 0.0), (4.0, 0.0), (0, 1))],
+            by_triangle={0: [0], 1: [0]},
+        )
+        cuts = pair.special_cuts()
+        field_ = LayerField(
+            layer="F.Cu",
+            free=None,
+            triangulation=pair,
+            capacity=[10.0],
+            used=[0.0],
+            history=[0.0],
+            special=cuts,
+            special_capacity=[0.5],
+            special_used=[0.9],
+        )
+        assert field_.over_subscribed() == []
+        assert field_.over_subscribed_special() == [0]
+
+    @needs_kicad_libraries
+    def test_the_corpus_has_plenty_of_them(self, tmp_path: Path) -> None:
+        """The measurement C2 asked for before anything was built.
+
+        The candidate said to count how often a flip diagonal is *shorter* than the
+        diagonal it pairs with, and to scope the work down to a tidy-up if the
+        answer was near zero. It is not near zero -- 11% to 29% of diagonals per
+        layer on the bundled corpus at M16 -- which is why the cuts are charged
+        rather than merely documented. The bar here is deliberately loose: the
+        claim under test is "this geometry is common", not a golden number.
+        """
+        from aipcb.route.obstacles import extract_obstacles
+        from aipcb.route.triangulate import free_space, triangulate_free
+
+        report = Report()
+        result = build_design(
+            REPO_ROOT / "examples" / "led-blinker" / "design.yaml",
+            out_dir=tmp_path,
+            report=report,
+        )
+        board = parse(
+            next(p for p in result.written if p.suffix == ".kicad_pcb").read_text(
+                encoding="utf-8"
+            )
+        )
+        environment = extract_obstacles(board)
+        blocking = environment.blocking(frozenset(), "F.Cu", clearance=0.2)
+        triangulation = triangulate_free(free_space(environment, blocking))
+        cuts = triangulation.special_cuts()
+        shorter = [
+            cut
+            for cut in cuts
+            if cut.length() < triangulation.gate_width(cut.diagonal)
+        ]
+        assert len(shorter) / len(triangulation.diagonals) > 0.05, (
+            f"{len(shorter)} shorter of {len(triangulation.diagonals)} diagonals"
+        )
+
+
+# ---------------------------------------------------------------------------
+# M16b: exposure E2, a route against itself
+# ---------------------------------------------------------------------------
+
+
+class TestSelfCrossingInvariant:
+    """Nothing anywhere asked whether one connection crosses itself.
+
+    `crossing_nets` skips same-net pairs and must -- two connections of one net are
+    supposed to meet. A single funnel output is simple by construction; a route that
+    changes layer is a concatenation of several, and that argument stops at the
+    join. The toporouter's tightener produced exactly this class of geometry, and
+    its arc-loop checks existed for no other reason.
+    """
+
+    def test_a_leg_that_crosses_itself_is_found(self) -> None:
+        from aipcb.route.invariant import self_crossings
+        from aipcb.route.stretch import RoutedConnection
+
+        # A bowtie: out, across, back, across again. The two segments cross in
+        # their interiors, at a point that is in none of the polyline's own
+        # coordinates -- which is exactly the case the diagnostic has to find, or
+        # it points a reader at the wrong end of the wire.
+        loop = _leg(
+            "A", "F.Cu",
+            [(0.0, 0.0), (2.0, 2.0), (2.0, 0.0), (0.0, 2.0)],
+        )
+        found = self_crossings([RoutedConnection(net="A", start="a", end="b", legs=[loop])])
+        assert [c.kind for c in found] == ["leg-not-simple"]
+        assert "crosses itself" in found[0].describe()
+        assert found[0].at == (1.0, 1.0)
+
+    def test_a_leg_that_returns_to_a_vertex_names_that_vertex(self) -> None:
+        from aipcb.route.invariant import self_crossings
+        from aipcb.route.stretch import RoutedConnection
+
+        # Round a square and back out through the corner it came in by.
+        loop = _leg(
+            "A", "F.Cu",
+            [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (1.0, 0.0), (2.0, 0.0)],
+        )
+        found = self_crossings([RoutedConnection(net="A", start="a", end="b", legs=[loop])])
+        assert [c.kind for c in found] == ["leg-not-simple"]
+        assert found[0].at == (1.0, 0.0)
+
+    def test_a_simple_leg_is_not(self) -> None:
+        from aipcb.route.invariant import self_crossings
+        from aipcb.route.stretch import RoutedConnection
+
+        straight = _leg("A", "F.Cu", [(0.0, 0.0), (2.0, 0.0), (2.0, 2.0)])
+        assert self_crossings(
+            [RoutedConnection(net="A", start="a", end="b", legs=[straight])]
+        ) == []
+
+    def test_two_legs_meeting_on_one_layer_is_found(self) -> None:
+        from aipcb.route.invariant import self_crossings
+        from aipcb.route.stretch import RoutedConnection
+
+        connection = RoutedConnection(
+            net="A", start="a", end="b",
+            legs=[
+                _leg("A", "F.Cu", [(0.0, 0.0), (4.0, 0.0)], name="a>via"),
+                _leg("A", "F.Cu", [(2.0, -1.0), (2.0, 1.0)], name="via>b"),
+            ],
+        )
+        found = self_crossings([connection])
+        assert [c.kind for c in found] == ["legs-meet"]
+        assert found[0].at == (2.0, 0.0)
+
+    def test_legs_that_only_share_the_via_they_join_at_are_not(self) -> None:
+        """The normal case: a route hops layer and comes back, meeting at the vias."""
+        from aipcb.route.invariant import self_crossings
+        from aipcb.route.stretch import RoutedConnection
+
+        connection = RoutedConnection(
+            net="A", start="a", end="b",
+            legs=[
+                _leg("A", "F.Cu", [(0.0, 0.0), (2.0, 0.0)], name="a>v1"),
+                _leg("A", "B.Cu", [(2.0, 0.0), (2.0, 4.0)], name="v1>v2"),
+                _leg("A", "F.Cu", [(2.0, 4.0), (5.0, 4.0)], name="v2>b"),
+            ],
+        )
+        assert self_crossings([connection]) == []
+
+    def test_legs_on_different_layers_may_cross_freely(self) -> None:
+        from aipcb.route.invariant import self_crossings
+        from aipcb.route.stretch import RoutedConnection
+
+        connection = RoutedConnection(
+            net="A", start="a", end="b",
+            legs=[
+                _leg("A", "F.Cu", [(0.0, 0.0), (4.0, 0.0)], name="a>v1"),
+                _leg("A", "B.Cu", [(2.0, -1.0), (2.0, 1.0)], name="v1>b"),
+            ],
+        )
+        assert self_crossings([connection]) == []
+
+    def test_the_two_findings_carry_different_severities(self) -> None:
+        """Copper twice over is waste; a leg crossing itself is a defect."""
+        from aipcb.route.invariant import check_no_self_crossings
+        from aipcb.route.stretch import RoutedConnection
+
+        report = Report()
+        check_no_self_crossings(
+            [
+                RoutedConnection(
+                    net="A", start="a", end="b",
+                    legs=[
+                        _leg("A", "F.Cu", [(0.0, 0.0), (4.0, 0.0)], name="a>v"),
+                        _leg("A", "F.Cu", [(2.0, -1.0), (2.0, 1.0)], name="v>b"),
+                    ],
+                ),
+                RoutedConnection(
+                    net="B", start="c", end="d",
+                    legs=[
+                        _leg(
+                            "B", "F.Cu",
+                            [(0.0, 0.0), (2.0, 2.0), (2.0, 0.0), (0.0, 2.0)],
+                            name="c>d",
+                        )
+                    ],
+                ),
+            ],
+            report,
+        )
+        codes = {d.code: d.severity.name for d in report}
+        assert codes["route-doubles-back"] == "WARNING"
+        assert codes["route-crosses-itself"] == "ERROR"
+
+    @needs_kicad_libraries
+    def test_the_corpus_carries_exactly_one_known_doubling(self, tmp_path: Path) -> None:
+        """A pin, not a pass.
+
+        `examples/pcie-sata`'s GND connection `U1.17>U1.49` travels four millimetres
+        east, hops to B.Cu for half a millimetre, hops straight back, and retraces
+        its own path home -- about eight millimetres of copper and two vias that buy
+        nothing. It is a search and cost-model defect, and the postmortem's
+        post-convergence detour pass is what would fix it, measured against the M16c
+        baseline. Until then this pins it: the day the count changes is a day
+        somebody looks.
+        """
+        from aipcb.route.pipeline import route_design
+
+        report = Report()
+        done = route_design(
+            REPO_ROOT / "examples" / "pcie-sata" / "design.yaml", tmp_path, report
+        )
+        found = done.routed.self_crossings
+        assert [c.kind for c in found] == ["legs-meet"], [
+            c.describe() for c in found
+        ]
+        assert found[0].net == "GND"
+        assert found[0].connection == "U1.17>U1.49"
+
+
+# ---------------------------------------------------------------------------
+# M16b: exposure E3, the premise about coordinate range
+# ---------------------------------------------------------------------------
+
+
+@needs_kicad_libraries
+class TestScaleRobustness:
+    """What killed the toporouter, asked of this router and dated.
+
+    gEDA PCB converted its base units to nanometres, its triangulation library's
+    in-circle predicate stopped being reliable in the new coordinate range, and
+    edge-flipping recursed ten thousand deep on a board with two resistors. ADR
+    0006 refused a hand-rolled CDT for exactly this reason and takes GEOS's through
+    Shapely, and coordinates snap to 1e-6 mm -- which is almost certainly fine at
+    board scale. "Almost certainly" is the state `CLAUDE.md`'s premise rule exists
+    to end.
+
+    Measured at M16 on Shapely 2.1.2 / GEOS 3.13.1: identical copper out to an origin
+    of 50 000 mm, and the topology moves at 100 000 mm.
+
+    2 147 mm appears below because it is KiCad's own limit, which was measured too
+    rather than assumed. Board coordinates are 32-bit nanometres, and KiCad 9.0.8
+    does not refuse one that overflows -- it clamps it. Given the boards this test
+    writes at 2 147 mm, 5 000 mm and 100 000 mm, `kicad-cli pcb drc` reports the
+    same position back for all three, `x: 2147.483637`, which is INT32_MAX
+    nanometres. So the router is exact across twenty-three times everything a KiCad
+    file can hold, and diverges only well outside the range the question can be
+    asked in.
+    """
+
+    #: Where the board's frame is put, in millimetres from the KiCad page origin.
+    #: 2 147 mm is the largest coordinate a KiCad file can hold at all.
+    ORIGINS: ClassVar[tuple[float, ...]] = (100.0, 2147.0, 50000.0)
+
+    def _design(self, tmp_path: Path, origin: float) -> Path:
+        import yaml
+
+        source = REPO_ROOT / "examples" / "led-blinker" / "design.yaml"
+        design = yaml.safe_load(source.read_text(encoding="utf-8"))
+        design["libraries"] = [
+            str((source.parent / name).resolve()) for name in design["libraries"]
+        ]
+        design["layout"]["origin_mm"] = [origin, origin]
+        out = tmp_path / f"at-{origin:.0f}"
+        out.mkdir()
+        path = out / "design.yaml"
+        path.write_text(yaml.safe_dump(design, sort_keys=False), encoding="utf-8")
+        return path
+
+    def test_the_same_board_comes_out_wherever_it_sits(self, tmp_path: Path) -> None:
+        from aipcb.route.pipeline import route_design
+
+        shapes: list[tuple[float, tuple[object, ...]]] = []
+        for origin in self.ORIGINS:
+            design = self._design(tmp_path, origin)
+            report = Report()
+            done = route_design(design, design.parent / "out", report)
+            assert not done.routed.failed, [f.key() for f in done.routed.failed]
+            # The topology, expressed so it survives translation: each connection's
+            # layers, its via count, and the length of its copper.
+            shape = tuple(
+                (
+                    connection.net,
+                    connection.start,
+                    connection.end,
+                    connection.layers,
+                    len(connection.vias),
+                    round(connection.copper_length, 6),
+                )
+                for connection in sorted(
+                    done.routed.connections, key=lambda c: (c.net, c.start, c.end)
+                )
+            )
+            shapes.append((origin, shape))
+
+        first_origin, first = shapes[0]
+        for origin, shape in shapes[1:]:
+            assert shape == first, (
+                f"the board routed differently at an origin of {origin:.0f} mm "
+                f"than at {first_origin:.0f} mm"
+            )
+
+    def test_the_measurement_that_says_where_it_stops(self, tmp_path: Path) -> None:
+        """The other half of a dated premise: the point where it *does* move.
+
+        A premise that says "it works" and never says where it stops is not
+        measured, it is asserted. At an origin of 100 000 mm this board routes 53
+        segments and 271.8 mm instead of 46 and 262.7 -- still legal copper, no
+        longer the same copper. That is 47 times outside anything KiCad can store,
+        so it is a boundary rather than a bug; recorded so the next person can tell
+        how much headroom the premise actually has.
+        """
+        from aipcb.route.pipeline import route_design
+
+        design = self._design(tmp_path, 100000.0)
+        report = Report()
+        done = route_design(design, design.parent / "out", report)
+        near = self._design(tmp_path, 100.0)
+        baseline = route_design(near, near.parent / "out", Report())
+        assert round(done.routed.total_length, 3) != round(
+            baseline.routed.total_length, 3
+        ), (
+            "if this starts passing, GEOS got more robust and the note in this "
+            "class needs re-measuring rather than deleting"
+        )

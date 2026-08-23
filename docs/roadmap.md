@@ -18,8 +18,11 @@ cannot supply no matter how many examples it grows. A **congestion stress exampl
 harder than `examples/congestion` — more nets than channels, on an outline with no
 slack — either routes or hands over cleanly, so that the failure mode at the limit
 is known rather than discovered by a user. And its **runtime is benchmarked against
-board size**, so "it will not finish" can be told apart from "it has not finished
-yet". Until all three, the label stays, and it costs little: routing is one
+board size** — ~~not measured~~ **done in M16c**: `aipcb bench` records wall clock
+per stage over the whole corpus, `bench/results/baseline.json` is the committed
+reference, and CI diffs a subset on every pull request. One condition of three is
+discharged; two remain, and both need a board this project did not design. Until
+all three, the label stays, and it costs little: routing is one
 declared step, it fails loudly, and `routing: manual` or the
 [Freerouting bridge](external-routers.md) take it out of the loop entirely.
 
@@ -207,13 +210,22 @@ below are the forward-looking half of that note; the exposures under
 [Verification](#verification) are the other half. Everything here is to be built from
 the note and the academic sources, **never** from the GPL-2.0 source it studied.
 
-**A routing benchmark harness.** Nothing measures how the router's runtime grows with
-board size. It is already one of the three
-[graduation conditions](#maturity-and-graduation) for autorouting to leave beta; the
-postmortem raises its priority, because runtime — not correctness — is what actually
-made the toporouter unusable (90 seconds and 35 failed nets on a 269-net board), and
-it had no benchmark to see it coming. It is also the precondition for judging the
-three candidates below, all of which trade runtime for quality. Do this first.
+**A routing benchmark harness — built in M16c.** `aipcb bench` routes every bundled
+example and records wall clock per stage, completion, copper length, via count
+against a computed lower bound, corridor utilization and headroom per layer, layer
+changes made without capacity pressure, and a hash of the board.
+`bench/results/baseline.json` is the committed reference, `--compare` diffs against
+it, and a smoke run over three examples guards every pull request. See
+[the M16 report](reports/m16.md) for the baseline table and what it already says.
+
+Two consequences worth naming. It discharges one of the three
+[graduation conditions](#maturity-and-graduation) — runtime is benchmarked now, and
+the exponent against board size is in the report rather than unknown. And it is the
+**precondition every candidate below is gated on**: three of them trade runtime for
+quality, and until this existed none of those trades could be judged. It also
+delivers, as a by-product, the measure-first stage a layer-assignment pass would
+need — `layer_changes_without_pressure` is that measurement, so nobody should build
+a separate `route --report-quality` for it.
 
 **A spreading pass.** Every route is tightened to the shortest path through its
 sleeve, so it hugs the inflated hull of every obstacle it passes even where there is
@@ -247,6 +259,55 @@ exists precisely to make the first order matter less — but cheap to settle by
 measuring iterations to convergence on `examples/congestion` both ways. Postmortem
 §A.4 and candidate C5.
 
+### Part 2: the quality candidates, and the rule they are held to
+
+M16 deliberately built none of them. Its whole thesis, taken from the autopsy, is
+that runtime — not correctness — is what makes a topological router unusable, and
+that a technique which trades runtime for quality must be *measured* before it is
+kept. So part 1 was the guards and the instrument; part 2 is the work, and it runs
+under a standing rule:
+
+1. **Nothing is implemented except against `aipcb bench`.** Before-and-after on the
+   whole bundled corpus, against `bench/results/baseline.json`, in the milestone's
+   own delivery report. A candidate with no numbers is not finished.
+2. **Every candidate carries a runtime budget, stated before it is built.** The
+   budgets below are ceilings on `router_seconds` summed over the corpus, because
+   that is the figure the harness compares and the figure a user waits.
+3. **A candidate that does not pay for itself is rejected, and its numbers are
+   written into the [postmortem note](notes/toporouter-postmortem.md).** Not deleted,
+   not left in a branch — recorded, in the note whose §C proposed it, as a measured
+   negative result. That is the closure Blake never got to write: the toporouter's
+   own author had no way to tell a technique that was worth its cost from one that
+   was not, and nobody after him could reconstruct the difference.
+4. **Determinism is not negotiable and is not part of the trade.** Every candidate
+   stays byte-stable and bounded by iterations rather than by wall clock, or
+   `test_routing_is_byte_stable` starts failing on a loaded machine.
+
+**Sequencing: part 2 comes after the `pcie-sata` fab round**, by decision rather than
+by dependency. That board is the first thing this project will have fabricated, and
+a fabrication result is evidence nothing in the corpus can supply. Moving the
+router's output underneath it while the boards are in flight would mean the copper
+that was measured and the copper the tool now produces are not the same copper.
+
+| Candidate | Runtime budget | What it has to show |
+|---|---|---|
+| **C1 spreading** — distribute the routes crossing a cut evenly along it instead of leaving each hugging the hull it was tightened against | **+15%** | Corridor utilization spread down at unchanged completion; `headroom_mm` up on the tight boards. Every golden file moves, so it must also show the copper it costs — a spread route is longer than a hugging one by construction. |
+| **C3 post-convergence detour pass** — rank routes by realised over unobstructed length, rip up the worst, keep only strictly-better re-routes | **+30%**, which is what the historical measurement cost | 7–16% less copper is the number to beat, from Blake's own before/after. It is the least risky of the three: a pure post-pass that can only accept an improvement, budget-capped and switchable. It is also the fix for the `route-doubles-back` warning M16b uncovered on `examples/pcie-sata`, which is a concrete customer rather than a hypothetical one. |
+| **C4 route to the net, not to the pad** — cluster-to-cluster search with group merging, replacing the up-front Euclidean MST | **+20%** | Shorter copper and better completion under congestion, and the `copper_sliver` on `examples/diff-pair` gone at its cause rather than trimmed. The largest and most invasive of the three — it changes what a connection *is*, reaches `RouteTopology` and the manual-routing path, and needs its own ADR because it partially reverses a decision rather than extending one. |
+| **C5 pairwise-conflict ordering** — score connections by how much their solo routes conflict, and order the first pass by that instead of by priority plus difficulty | **+10%**, and it should be negative | Fewer negotiation iterations to convergence. **The baseline is already evidence against it**: ten of the eleven examples converge in *one* iteration and `enclosure` in four, so there is almost nothing for a better first order to save. Read the M16 baseline before spending a milestone on this; it may be settled already. |
+| **Charging the second diagonals in the router** — [ADR 0014](decisions/0014-special-cuts.md) Decision 2 built the cuts and deliberately left the cost model alone | **+10%** | Better completion or fewer detours on the congestion-sensitive boards. The cuts are already derived and already charged in `check_capacity`; what is untested is whether making negotiation pay for them improves anything or merely makes the router timid. |
+
+**Via minimization** is not on this list as a candidate of its own, and that is a
+finding rather than an omission: the harness measures `via_lower_bound` and
+`layer_changes_without_pressure` precisely so that "the router spends vias it does
+not need to" is a number before it is a project. The baseline says there *is*
+something there — 90 layer changes corpus-wide against a bound of 14, of which 37
+were made on connections that never met a corridor above half capacity, a third of
+`pcie-sata`'s and 40% of `qfn-fanout`'s. But half capacity is a stated convention
+and "no pressure anywhere on the connection" is not the same as "no pressure at the
+via", so the first job of any such pass is to sharpen that proxy rather than to
+trust it. C3 and C4 both reduce vias as a side effect anyway.
+
 ## Verification
 
 **Copper outside the board outline is not checked by anything.** Measured on KiCad
@@ -267,13 +328,26 @@ missing. The list is version-specific by construction. ADR 0009's rule applies: 
 wants re-measuring at each KiCad major, and `tests/test_check_loop.py` carries the
 60-rule catalogue with the version attached so the diff is visible when it moves.
 
-### Exposures flagged by the toporouter study
+### Exposures flagged by the toporouter study — closed in M16
 
 Three places where the [postmortem](notes/toporouter-postmortem.md) found aipcb
-sharing a weakness with the router it studied and nothing watching. None is a defect
-found in output; each is a guard the failure history says is worth having.
+sharing a weakness with the router it studied and nothing watching. All three were
+acted on in M16a/M16b; what follows is what each one was and what closing it found,
+kept here because the *reasoning* is what a future reader needs and the code alone
+does not carry it. The numbers are in [the M16 report](reports/m16.md).
 
-**The capacity model under-counts cuts, and does not say so.** `field.py` states
+One of them did not come back empty. E2 was expected to find nothing on the current
+corpus -- "which is the point", the note said -- and it found a connection on
+`examples/pcie-sata` laying eight millimetres of copper and two vias twice over. The
+guard paid for itself on the day it landed.
+
+**The capacity model under-counts cuts, and does not say so.** *Resolved in M16a;
+[ADR 0014](decisions/0014-special-cuts.md) records the decision and the measurement.
+The second diagonals are charged in `check_capacity`, deliberately not in the
+router's cost model, and every consumer now says out loud that the cut set is a
+lower bound. The measure-first step C2 asked for was run and came back at 4–29% of
+diagonals per layer rather than the near-zero that would have scoped this down.*
+`field.py` states
 Maley's realizability criterion — a set of topologies is buildable exactly when no cut
 is over-subscribed — and then charges only the triangulation's own diagonals. The
 second diagonal of every adjacent triangle pair is also a cut, and it can be the
@@ -290,7 +364,12 @@ in its own right — worth measuring first, by counting on each example how ofte
 diagonal is shorter than the diagonal it pairs with. Postmortem §A.6, candidate C2 and
 exposure E1.
 
-**Nothing checks that a net does not cross itself.** `crossing_nets` skips same-net
+**Nothing checks that a net does not cross itself.** *Built in M16b as
+`invariant.py::check_no_self_crossings`, with two severities: a leg that is not a
+simple polyline is an error, two legs of one connection meeting on one layer is a
+warning, because the second is copper laid twice rather than copper in the wrong
+place. It found one occurrence on `examples/pcie-sata`, pinned by a test and handed
+to part 2's detour pass.* `crossing_nets` skips same-net
 pairs, and must — two connections of one net are supposed to meet. The consequence is
 that no check anywhere asks whether a *single leg* is a simple polyline, or whether
 two legs of one connection overlap on one layer. A single funnel output is simple by
@@ -300,7 +379,17 @@ exactly this class of geometry and its author spent over a hundred hours on it. 
 checks are one Shapely call, and the expected result on the current corpus is zero
 findings — which is the point. Postmortem exposure E2.
 
-**Scale robustness is untested.** The toporouter was killed, finally and
+**Scale robustness is untested.** *Measured in M16b and dated: on Shapely 2.1.2 /
+GEOS 3.13.1, `examples/led-blinker` produces identical copper at board origins of
+100 mm, 2 147 mm and 50 000 mm, and routes differently at 100 000 mm. KiCad's own
+limit was measured too rather than assumed: board coordinates are 32-bit
+nanometres, and KiCad 9.0.8 does not refuse one that overflows — it clamps it,
+reporting `x: 2147.483637` (INT32_MAX nanometres) for boards written at 2 147 mm,
+5 000 mm and 100 000 mm alike. So the router is exact across twenty-three times
+everything a KiCad file can hold, and moves only at forty-seven times it. The
+premise is now a measurement with a version attached, and
+`tests/test_routing.py::TestScaleRobustness` holds both halves of it.* The
+toporouter was killed, finally and
 unrecoverably, by the host project converting its base units to nanometres: the
 coordinate range moved, the triangulation library's in-circle predicate stopped being
 reliable, and edge-flipping recursed ten thousand deep on a two-resistor board. aipcb

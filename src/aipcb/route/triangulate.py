@@ -29,10 +29,12 @@ from aipcb.route.obstacles import Obstacle, RoutingEnvironment
 __all__ = [
     "Diagonal",
     "FreeSpaceError",
+    "SpecialCut",
     "Triangulation",
     "build_triangulation",
     "free_space",
     "reduce_crossings",
+    "special_cuts",
     "triangulate_free",
 ]
 
@@ -46,6 +48,12 @@ _ROOMY_MULTIPLE = 4.0
 #: that differ only by floating-point noise become the same vertex. Nanometres --
 #: KiCad's own internal resolution.
 _QUANT = 1e-6
+
+#: How far off the line joining two apexes a shared diagonal's endpoint has to fall
+#: before the quadrilateral counts as convex. A picometre: three orders below the
+#: coordinate quantum, so noise never decides, and small enough that a quad that is
+#: genuinely convex by a nanometre is still charged.
+_CONVEX_TOL = 1e-9
 
 
 class FreeSpaceError(ValueError):
@@ -69,6 +77,42 @@ class Diagonal:
         return self.triangles[1] if self.triangles[0] == triangle else self.triangles[0]
 
 
+@dataclass(frozen=True, slots=True)
+class SpecialCut:
+    """The other diagonal of two adjacent triangles -- a cut the CDT never drew.
+
+    Maley's realizability criterion quantifies over *every* cut across the free
+    space. A triangulation's own diagonals are only some of them, and the ones it
+    misses are not exotic: take two triangles sharing a diagonal ``e``, and the
+    segment joining their two far vertices is a second diagonal of the same
+    quadrilateral. A wire that enters one of the triangles through its other two
+    edges never touches ``e`` at all -- it rounds the apex instead -- but it does
+    cross this segment, and the room it has to round the apex is this segment's
+    length rather than ``e``'s.
+
+    The constrained Delaunay triangulation chose ``e`` over this one, which is
+    exactly the case where this one is the shorter and therefore the binding
+    constraint. Measured on the bundled corpus at this milestone: between 11% and
+    29% of diagonals per layer have a shorter partner, the shortest at 2.6% of the
+    diagonal it pairs with. This is not a rare geometry.
+
+    gEDA PCB's toporouter called these *special cuts* and rewrote its congestion
+    accounting around them in 2009; see the
+    :doc:`postmortem </notes/toporouter-postmortem>` §A.6 and ADR 0014. Derived
+    here from that note and from Maley, never from the GPL-2.0 source it studied.
+    """
+
+    index: int
+    diagonal: int
+    """The CDT diagonal this one pairs with -- the other diagonal of the same quad."""
+    a: Point
+    b: Point
+    """The two apexes: the far vertex of each of the diagonal's two triangles."""
+
+    def length(self) -> float:
+        return _distance(self.a, self.b)
+
+
 @dataclass(slots=True)
 class Triangulation:
     """A constrained Delaunay triangulation of the routable area."""
@@ -81,6 +125,8 @@ class Triangulation:
     """A lazily built R-tree over the triangles, so ``locate`` is not a linear scan."""
     _components: list[int] | None = None
     """Lazily computed connected components of the free space."""
+    _special: list[SpecialCut] | None = None
+    """Lazily derived second diagonals. See :func:`special_cuts`."""
 
     def locate(self, point: Point) -> int | None:
         """Which triangle contains a point. ``None`` if it is outside the free area.
@@ -134,6 +180,12 @@ class Triangulation:
             key=lambda i: _distance_sq(point, _centroid(self.triangles[i])),
         )
         return best
+
+    def special_cuts(self) -> list[SpecialCut]:
+        """The second diagonal of every convex adjacent triangle pair, derived once."""
+        if self._special is None:
+            self._special = special_cuts(self)
+        return self._special
 
     def gate_width(self, edge: int) -> float:
         """How wide the corridor is at a diagonal.
@@ -270,6 +322,67 @@ class Triangulation:
         for edge_index in crossings:
             triangles.append(self.diagonals[edge_index].other(triangles[-1]))
         return triangles
+
+
+def special_cuts(triangulation: Triangulation) -> list[SpecialCut]:
+    """Derive the second diagonal of every adjacent triangle pair.
+
+    One pass over the diagonals. For each, take the far vertex of each of its two
+    triangles -- ``opv`` and ``opv2`` in the postmortem's diagram -- and join them.
+
+    **Only convex quadrilaterals qualify**, and the test is what keeps this sound.
+    Two triangles sharing a diagonal form a quad that may be re-entrant; a CDT is
+    free to leave such a pair unflipped precisely because flipping it would put the
+    new diagonal *outside* the free space. A segment that leaves the free area is
+    not a cut across it -- charging wires to it would invent congestion where there
+    is none.
+
+    Convexity is four orientation tests and no geometry library: the two apexes
+    must fall on opposite sides of the shared diagonal, and the shared diagonal's
+    two ends must fall on opposite sides of the apex-to-apex line. The first is
+    already true of any pair of triangles that share an edge without overlapping,
+    so in a well-formed triangulation it never fires -- it is checked anyway,
+    because a function that is correct only when its caller behaves is a function
+    whose bugs land somewhere else.
+
+    The result is deterministic: diagonals are visited in index order and every cut
+    is a function of the triangulation alone.
+    """
+    cuts: list[SpecialCut] = []
+    for diagonal in triangulation.diagonals:
+        first, second = diagonal.triangles
+        a = _apex(triangulation.triangles[first], diagonal)
+        b = _apex(triangulation.triangles[second], diagonal)
+        if a is None or b is None or a == b:
+            continue
+        span = _distance(a, b)
+        if span <= 0:
+            continue
+        # Signed perpendicular distances, so the tolerance means millimetres rather
+        # than millimetres-squared and does not change meaning when the board sits
+        # far from the origin.
+        if not _straddles(a, b, diagonal.a, diagonal.b, span):
+            continue
+        edge = _distance(diagonal.a, diagonal.b)
+        if edge <= 0 or not _straddles(diagonal.a, diagonal.b, a, b, edge):
+            continue
+        cuts.append(SpecialCut(index=len(cuts), diagonal=diagonal.index, a=a, b=b))
+    return cuts
+
+
+def _straddles(a: Point, b: Point, first: Point, second: Point, span: float) -> bool:
+    """Whether ``first`` and ``second`` lie on opposite sides of the line ``a``-``b``."""
+    left = _sign(a, b, first) / span
+    right = _sign(a, b, second) / span
+    return min(left, right) < -_CONVEX_TOL and max(left, right) > _CONVEX_TOL
+
+
+def _apex(triangle: tuple[Point, Point, Point], diagonal: Diagonal) -> Point | None:
+    """The vertex of a triangle that is not an end of one of its diagonals."""
+    for vertex in triangle:
+        if vertex != diagonal.a and vertex != diagonal.b:
+            return vertex
+    return None
 
 
 def reduce_crossings(sequence: list[int]) -> list[int]:

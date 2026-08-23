@@ -113,3 +113,40 @@ jobs:
 
       - name: pytest -- nothing here should skip for want of KiCad
         run: /opt/venv/bin/python -m pytest -p no:cacheprovider -q -rs
+
+  bench:
+    # The gross-regression tripwire the toporouter never had. It routes three
+    # examples -- a tight one, an ordinary one, and the one with declared sketches
+    # -- and diffs them against the committed baseline.
+    #
+    # The thresholds are asymmetric on purpose, and the asymmetry is the whole
+    # design. Copper length, via count and completion are *deterministic* functions
+    # of the input, so they are compared tightly: any movement is a real change in
+    # what the router decided and it should be visible in a pull request. Wall clock
+    # is not, and this job compares against a file measured on a developer's machine
+    # rather than on a GitHub runner, so its threshold is 400% -- enough to catch an
+    # accidental quadratic and useless for anything finer. Real timing work happens
+    # on one machine, by hand, with `aipcb bench --compare`.
+    name: bench smoke run (KiCad 9.0.8)
+    runs-on: ubuntu-latest
+    container:
+      image: kicad/kicad:9.0.8
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+      - name: install uv, and a standalone Python 3.12 for aipcb
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends curl ca-certificates
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: create the environment
+        run: |
+          uv python install 3.12
+          uv venv --python 3.12 /opt/venv
+          VIRTUAL_ENV=/opt/venv uv pip install -e .
+      - name: route the smoke subset and diff it against the baseline
+        run: |
+          /opt/venv/bin/aipcb bench --smoke --no-write \
+            --compare bench/results/baseline.json \
+            --runtime-threshold 400

@@ -2,6 +2,55 @@
 
 Notable changes, newest first.
 
+## Unreleased — M16, 2026-08-23
+
+Part 1 of what the [gEDA toporouter postmortem](docs/notes/toporouter-postmortem.md)
+recommended: the guards and the instrument. None of the quality techniques, on
+purpose — the study's central finding is that runtime, not correctness, is what
+killed that router, and three of the five techniques trade runtime for quality.
+See [`docs/reports/m16.md`](docs/reports/m16.md).
+
+### Added
+
+- **`aipcb bench`** — routes every bundled example and records wall clock per stage,
+  completion, copper length, vias and layer changes against a computed lower bound,
+  corridor utilization and headroom per layer, layer changes made without capacity
+  pressure, and a hash of the board. `--compare` diffs two runs and exits 1 on a
+  regression; `--smoke` runs the three-example CI subset.
+  `bench/results/baseline.json` is the committed reference.
+- **Second-diagonal ("special") cuts in the capacity check.** `check_capacity` now
+  charges the other diagonal of every convex adjacent triangle pair — the cut a wire
+  crosses when it rounds a triangle's apex without ever touching the diagonal.
+  Measured at 4–29% of diagonals per layer having a shorter partner, so this is
+  ordinary geometry rather than a corner case. [ADR
+  0014](docs/decisions/0014-special-cuts.md). The router's own cost model is
+  deliberately *not* charged for them; that is a measured trade for part 2.
+- **A self-crossing invariant.** `route/invariant.py` now asks whether one
+  connection's copper meets its own: `route-crosses-itself` (error) for a leg whose
+  polyline is not simple, `route-doubles-back` (warning) for two legs of a
+  connection meeting on one layer away from a join. It found a real one on
+  `examples/pcie-sata` the day it landed — a GND connection laying eight millimetres
+  of copper and two vias twice over. Reported in `route all --json` as
+  `routing.self_crossings`.
+- **A dated scale-robustness measurement.** `examples/led-blinker` produces identical
+  copper at board origins of 100 mm, 2 147 mm and 50 000 mm, and routes differently
+  at 100 000 mm — on Shapely 2.1.2 / GEOS 3.13.1. KiCad's whole coordinate range is
+  ±2 147 mm, so the router is exact across twenty-three times it. The test holds both
+  halves.
+- **A CI `bench` job**, routing the smoke subset against the committed baseline on
+  every pull request.
+- **A part-2 plan in the roadmap**, with a runtime budget per candidate and the rule
+  that a candidate which does not pay for itself is rejected *with its numbers
+  recorded in the postmortem note*.
+
+### Changed
+
+- **The capacity check no longer claims more than it delivers.** `field.py`,
+  `check_capacity` and [`docs/topology.md`](docs/topology.md) now say that the cut
+  set is a **lower bound on congestion, not Maley's criterion in full**: a clean
+  result is evidence, not proof. This was worth doing independently of charging the
+  new cuts, and would have been done either way.
+
 ## Unreleased — M15.1, 2026-08-23
 
 ### Changed

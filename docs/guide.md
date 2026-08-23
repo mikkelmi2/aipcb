@@ -728,6 +728,7 @@ declared-manual nets with an external router such as Freerouting, headlessly, is
 | `aipcb route check DESIGN` | verify route topologies are realizable, and that they fit alongside each other |
 | `aipcb route all DESIGN` | route the board across every signal layer and write tracks and vias |
 | `aipcb simulate DESIGN` | solve each differential pair with openEMS and report impedance, return and insertion loss |
+| `aipcb bench` | route every bundled example and record what it cost and what it was worth; `--compare` diffs against a baseline |
 | `aipcb summary DESIGN` | one-line-per-block overview |
 | `aipcb query ...` | read one module, component, net, net class or role |
 | `aipcb parts DESIGN` | list the parts the design's libraries provide |

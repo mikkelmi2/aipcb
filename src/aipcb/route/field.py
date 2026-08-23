@@ -16,6 +16,19 @@ plus its clearance. That makes "is this board routable" a local, checkable quest
 -- and, crucially, an *undoable* one: ripping a route up subtracts its demand and
 nothing else.
 
+*And the cut set here is not every cut.* Maley quantifies over all of them; a
+triangulation offers the ones it happened to draw. M16a added the second diagonal
+of every convex adjacent triangle pair -- a ``SpecialCut``, which is what the
+toporouter called them -- because that one is frequently the shorter and is crossed
+by wires that round an apex without touching the CDT diagonal at all.
+
+Even with those, the set is a *subset*: a segment between two obstacle vertices
+that spans more than one triangle pair is still a cut and is still uncharged.
+**What this field measures is therefore a lower bound on congestion, not the
+criterion in full**, and every consumer says so. ADR 0014 records the choice;
+:func:`aipcb.route.check.check_capacity` states the limit in the words a user
+reads.
+
 **A via is a column.** It is not a point on two layers; it is a hole through the
 board. A via node exists as an obstacle on every copper layer its barrel passes
 through, whether or not it carries signal there, and it joins the triangulations of
@@ -44,6 +57,7 @@ from aipcb.route.obstacles import (
 from aipcb.route.stack import RoutingStack
 from aipcb.route.triangulate import (
     FreeSpaceError,
+    SpecialCut,
     Triangulation,
     free_space,
     triangulate_free,
@@ -77,6 +91,20 @@ MAX_SITES_PER_TRIANGLE = 32
 ESCAPE_RINGS = (1.0, 2.5, 5.0)
 
 
+def _segment_tree(segments: list[tuple[Point, Point]]) -> Any:
+    from shapely import STRtree
+    from shapely.geometry import LineString
+
+    return STRtree([LineString(s) for s in segments])
+
+
+def _hits(tree: Any, line: Any) -> list[int]:
+    """Which of a tree's segments a line meets, in index order."""
+    return sorted(
+        int(i) for i in tree.query(line) if line.intersects(tree.geometries[int(i)])
+    )
+
+
 @dataclass(slots=True)
 class LayerField:
     """One copper layer: its free space, its triangulation, and how full it is."""
@@ -90,8 +118,21 @@ class LayerField:
     history: list[float] = field(default_factory=list)
     """PathFinder's history term, in millimetres, per diagonal."""
     midpoints: list[Point] = field(default_factory=list)
+    special: list[SpecialCut] = field(default_factory=list)
+    """The second diagonal of each convex adjacent triangle pair. Empty unless asked.
+
+    Off by default because charging them changes what the *router* thinks a corridor
+    costs, and that is a quality change with a runtime price that has to be measured
+    against the M16c baseline before it is made (roadmap, part 2). What M16a did
+    build is the honest *check*: :func:`aipcb.route.check.check_capacity` asks for
+    them, so a declared set of sketches is tested against the tighter cut set even
+    though negotiation is not.
+    """
+    special_capacity: list[float] = field(default_factory=list)
+    special_used: list[float] = field(default_factory=list)
     _tree: Any = None
     """A lazily built R-tree over the diagonals, for charging finished geometry."""
+    _special_tree: Any = None
 
     def occupancy(self, edge: int, demand: float) -> float:
         """How full this cut would be with ``demand`` more millimetres on it."""
@@ -126,20 +167,42 @@ class LayerField:
         """
         if len(points) < 2:
             return []
-        from shapely import STRtree
         from shapely.geometry import LineString
 
         if self._tree is None:
-            self._tree = STRtree(
-                [LineString((d.a, d.b)) for d in self.triangulation.diagonals]
+            self._tree = _segment_tree(
+                [(d.a, d.b) for d in self.triangulation.diagonals]
             )
-        line = LineString(points)
-        tree = self._tree
-        return sorted(
-            int(i)
-            for i in tree.query(line)
-            if line.intersects(tree.geometries[int(i)])
-        )
+        return _hits(self._tree, LineString(points))
+
+    def special_cuts_crossed(self, points: list[Point]) -> list[int]:
+        """Which *second* diagonals a finished polyline crosses.
+
+        The same predicate as :meth:`cuts_crossed`, deliberately: a centre-line that
+        merely touches a cut's endpoint is charged to it. That is the conservative
+        direction for a realizability test, and it is not a theoretical nicety here
+        -- a tightened route hugs an inflated obstacle corner by passing *through*
+        the vertex, so the wire that rounds an apex meets the cut hinged on that
+        apex exactly at its end. Under a strict interior-crossing predicate that
+        wire would round the apex for free, which is the whole failure this cut set
+        exists to close. Measured on the bundled corpus at M16: the two predicates
+        flag the same cuts on every example, so the choice costs nothing and the
+        safe one wins.
+        """
+        if len(points) < 2 or not self.special:
+            return []
+        from shapely.geometry import LineString
+
+        if self._special_tree is None:
+            self._special_tree = _segment_tree([(c.a, c.b) for c in self.special])
+        return _hits(self._special_tree, LineString(points))
+
+    def over_subscribed_special(self) -> list[int]:
+        return [
+            cut
+            for cut, used in enumerate(self.special_used)
+            if used > self.special_capacity[cut] + 1e-9
+        ]
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,6 +367,7 @@ def build_field(
     blocking_for: Callable[[str], list[Obstacle]] | None = None,
     capacity_offset: float | None = None,
     inflation: float | None = None,
+    special_cuts: bool = False,
 ) -> LayeredField:
     """Build one field per copper layer, and the via sites that join them.
 
@@ -320,6 +384,11 @@ def build_field(
     builds is the free space that net will actually be tightened in, so a path found
     in it is realizable rather than merely plausible. That is what the repair pass
     uses when the shared field's approximation has let a connection down.
+
+    ``special_cuts`` derives the second diagonal of every convex adjacent triangle
+    pair as well (M16a). It is off by default: the router's cost model is not
+    charged for them, because doing so changes routing decisions and therefore needs
+    the M16c baseline to justify itself. The capacity *check* turns it on.
     """
     fields: dict[str, LayerField] = {}
     keepouts = keepout_obstacles(layout, origin)
@@ -363,6 +432,11 @@ def build_field(
             triangulation.gate_width(i) + offset
             for i in range(len(triangulation.diagonals))
         ]
+        # The same convention as a diagonal's, and for the same reason: the free
+        # space is already inflated by a clearance, so a gate of length L holds n
+        # tracks when n widths and n-1 inter-track clearances fit -- which is what
+        # `n * (width + clearance) <= L + clearance` says.
+        extra = triangulation.special_cuts() if special_cuts else []
         fields[layer] = LayerField(
             layer=layer,
             free=free,
@@ -371,6 +445,9 @@ def build_field(
             used=[0.0] * len(capacity),
             history=[0.0] * len(capacity),
             midpoints=midpoints,
+            special=extra,
+            special_capacity=[cut.length() + offset for cut in extra],
+            special_used=[0.0] * len(extra),
         )
 
     grown = reference_clearance if inflation is None else inflation

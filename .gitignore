@@ -40,3 +40,10 @@ fp-info-cache
 
 # Local agent/session state
 .claude/
+
+# Benchmark runs. `aipcb bench` writes bench/results/<commit>.json by default;
+# those are working measurements and are not committed. The reference the CI
+# smoke run compares against -- bench/results/baseline.json -- is, and is
+# updated deliberately. See bench/results/README.md.
+bench/results/*.json
+!bench/results/baseline.json
