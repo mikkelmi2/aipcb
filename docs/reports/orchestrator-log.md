@@ -530,3 +530,159 @@ first relaunch had *two* containers writing the same `ems/` directory. A pre-fli
 check for a live `aipcb-si-*` container on the same work directory would cost
 nothing.
 
+
+---
+
+# Orchestrator log — M17 → M18
+
+Run started 2026-08-24, unattended, from the chain prompt for
+[`m17-measured-improvements.md`](../milestones/m17-measured-improvements.md) and
+[`m18-literature-survey.md`](../milestones/m18-literature-survey.md). Same pattern as
+the M10–M12 chain: a fresh subagent per milestone with no conversational memory, the
+repository as the only thing carried between them, gates verified by the orchestrator
+itself rather than taken from the subagent's word.
+
+**The chain ends after M18 by design.** M18's second deliverable is a *draft*
+milestone for the owner to review; implementing unreviewed research candidates is
+exactly the improvisation this project does not do.
+
+## Baseline before M17
+
+Starting point: `6b6a963`, `master` up to date with `origin`, the two milestone
+prompts untracked. They were committed as `f2cf31d` before dispatch so the chain
+starts from a clean tree and each spec sits in the history it is judged against.
+
+Verified by the orchestrator before anything was delegated:
+
+| Check | Result |
+|---|---|
+| `pytest -q` | green, exit 0 (1 327 tests collected) |
+| `ruff check .` | All checks passed |
+| `mypy --strict src` | no issues, 95 source files |
+| `bench/results/baseline.json` | M16 baseline, commit `aa0db94`, clean |
+
+## M17 — the measured candidates
+
+Dispatched to a fresh subagent with the full text of
+`docs/milestones/m17-measured-improvements.md`.
+
+**Verdict: PASSED all five gates. Three candidates landed, nothing rejected.**
+
+### Gate 1 — suite, ruff, mypy: PASS
+
+Run by the orchestrator on the committed tree, not read from the report:
+`pytest -q` exit 0 (1 332 tests, 2 `AIPCB_FULL_CORPUS` skips), `ruff check .` clean,
+`mypy --strict src` clean over 96 source files.
+
+### Gate 2 — every landed candidate inside its budget: PASS
+
+`aipcb bench --compare` against the M16 baseline, extracted from `6b6a963` and run by
+the orchestrator on its own:
+
+```
+improvement: pcie-sata: routing 35.87 -> 16.20 s (-55%)
+improvement: mcu-4layer: routing 10.14 -> 5.05 s (-50%)
+improvement: pcie-sata: copper 1108.1 -> 1077.8 mm (-2.7%), vias 39 -> 35,
+             layer changes 42 -> 38, self-crossings 1 -> 0
+change:      pcie-sata: the board changed (0e8f21b16227 -> 8046bb72f60f)
+exit 0 — no regressions
+```
+
+Per-board `tighten` stage, M16 → M17, computed by the orchestrator from the two
+committed results files:
+
+| Board | tighten M16 | tighten M17 | Δ | hash unchanged |
+|---|---:|---:|---:|:--:|
+| pcie-sata | 33.883 s | 15.035 s | **−55.6%** | no (§1.2 explains) |
+| mcu-4layer | 8.553 s | 4.063 s | **−52.5%** | yes |
+| qfn-fanout | 5.013 s | 2.454 s | −51.0% | yes |
+| enclosure | 4.079 s | 1.862 s | −54.4% | yes |
+| corpus | 54.912 s | 25.659 s | **−53.3%** | 10 of 11 |
+
+- **M17c** (≥ 25% stretcher-time reduction, no quality regression): held with room
+  to spare on both slowest boards, and ten of eleven board hashes are byte-identical
+  to M16 — the speed came with no change in what the router decided.
+- **M17a** (≤ +10% runtime): the whole new `reclaim` stage costs **1.039 s** across
+  the corpus against a 61.863 s M16 baseline = **+1.7%**, measured on the
+  orchestrator's own run.
+- **M17b** (≤ +5% on the board under test): `reclaim` on `pcie-sata` is 0.450 s
+  against that board's 35.87 s M16 routing time = **+1.3%**.
+
+Re-baseline: `bench/results/baseline.json` now names commit `3b59a52` with no
+`-dirty` suffix, the M16 file stays identifiable at `6b6a963`, and report §5 carries
+the metric-by-metric "why the new numbers are better" table that
+`bench/results/README.md` demands. Gate met as written.
+
+### Gate 3 — the E2 case on pcie-sata: PASS
+
+Verified independently by routing the board through the CLI rather than by reading
+the report: `aipcb route all examples/pcie-sata/design.yaml --json` emits fourteen
+diagnostic codes and **`route-doubles-back` is not among them**. The named defect is
+in the reclaim record by name —
+`GND U1.17>U1.49 gave back a retrace, 2 vias and 17.116 mm of copper on F.Cu`.
+
+The guard is retained rather than deleted:
+`TestSelfCrossingInvariant::test_the_corpus_carries_no_doubling` still routes
+`pcie-sata` for real and now asserts the count is zero, and the seven unit tests that
+pin what the detector considers a finding are untouched. `tests/test_check_loop.py`
+lost the `KNOWN_ISSUES` entry with a comment in its place saying why.
+
+### Gate 4 — delivery report with measurements: PASS
+
+`docs/reports/m17.md`, 452 lines, opens with the per-candidate budget scoreboard and
+a seven-row deviations table, and carries the per-board via table, the profile
+findings, the re-fitted scaling models and the new extrapolation. Measurements, not
+assertions.
+
+**One orchestrator correction.** The scoreboard cell for M17b read `+1.6%` where
+§2.4 derives `+1.3%` from 0.450 s against 35.87 s. Both are inside the +5% budget so
+nothing about the verdict moves, but a report whose two statements of one measurement
+disagree is exactly the thing this project's culture is against. Corrected to the
+derived figure with the derivation inline. Precedent: the orchestrator added a
+missing acceptance row itself in M12 (`db1f5ba`) rather than leave it invisible.
+
+### Gate 5 — pushed, and this entry
+
+`3b59a52` and `12b1e47` were pushed to `origin/master` by the subagent; the
+orchestrator's correction rides with this entry.
+
+### Findings worth carrying, beyond the pass
+
+- **The 37-of-90 estimate overstated the opportunity by an order of magnitude.** Of
+  55 candidate spans corpus-wide, 2 collapse. 21 were rejected because the on-layer
+  route is *longer* and 32 because the free space is genuinely split — and **zero on
+  capacity**. M16's "layer changes made where no corridor was half full" was a proxy
+  for opportunity and the geometry disagreed with it. This router's vias are, with
+  four exceptions, load bearing.
+- **The capacity arbiter never fired.** It is built, wired in and unit-tested, and
+  the corpus gave it nothing to reject. The report states that rather than claiming a
+  win, which is the right call; it also means the arbiter has no real-board evidence
+  behind it and is the first thing to re-measure if a denser example is ever added.
+- **The stretcher's time was not where its name said.** Two thirds of "tightening"
+  was `build_field` → `_via_sites`, rebuilt per repaired connection — 1.9 M Shapely
+  `Point` constructions on one board. The cut is batching, and **no algorithm
+  changed**: the log-log exponents moved 1.72 → 1.70 and 1.12 → 1.10. The shape of
+  the curve is exactly where M16 left it, which is the evidence that M17 did not
+  answer M18's question.
+- **The old capability-ladder number does not reproduce.** The M17 brief cites
+  "≈ 31 min" for a 900-connection board and M16 says "roughly half an hour"; neither
+  is reproducible from the committed baseline by M16's own stated method, which gives
+  23.7 min. The report states the method and publishes **23.7 → 11.3 min**, both
+  computed from committed results files. Taking the honest pair over the remembered
+  number is the right resolution, and it is flagged here because a capability figure
+  that quietly changes meaning is worse than a wrong one.
+- **M17a and M17b turned out to be one mechanism**, because every retrace in the
+  corpus *is* a via pair returning to its own layer. No separate trimmer was written
+  and the report says why rather than shipping dead code for symmetry.
+
+### Open items handed to the owner, not decided by the orchestrator
+
+1. `ROUTER_STAGES` gained `reclaim` and `route all --json` gained
+   `routing.reclaimed` — deliberate interface additions that want confirming as
+   permanent.
+2. `docs/images/*` are stale by four vias on `pcie-sata`. Left alone: regenerating
+   them is large binary churn for an invisible difference, and the call on when to
+   spend it is the owner's.
+3. The capacity arbiter's lack of real-board evidence, above.
+
+None of these blocks M18, which touches no code, so the chain continues.
