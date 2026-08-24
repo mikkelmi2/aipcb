@@ -1,0 +1,6 @@
+Comment,Designator,Footprint,JLCPCB Part #
+100n,"C1,C5,C6",Capacitor_SMD:C_0603_1608Metric,
+100n,"C2,C3",Capacitor_SMD:C_0402_1005Metric,
+10u,C4,Capacitor_SMD:C_0805_2012Metric,
+SATA data,"J2,J3,J4,J5",Connector_JST:JST_GH_SM07B-GHS-TB_1x07-1MP_P1.25mm_Horizontal,
+SATA-CTRL-48,U1,Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.15x5.15mm,

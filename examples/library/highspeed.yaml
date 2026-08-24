@@ -56,6 +56,11 @@ parts:
     footprint: Connector_PCBEdge:BUS_PCIexpress_x1
     value: PCIe x1 edge
     keywords: [pcie, edge, connector, gold_fingers]
+    # Not a component: the "part" is the card's own gold fingers, drawn by the
+    # footprint and cut by the board outline. There is nothing to buy and nothing
+    # to place, and saying so is what keeps it off both assembly files -- it would
+    # otherwise appear on the bill as a line an assembler cannot source.
+    assembly: none
     pins:
       # B side -- the F.Cu row, contacts B1..B18.
       "B1": { type: power_out, name: "+12V", description: "Bus power" }
@@ -106,6 +111,15 @@ parts:
     footprint: Connector_JST:JST_GH_SM07B-GHS-TB_1x07-1MP_P1.25mm_Horizontal
     value: SATA data
     keywords: [sata, connector, high_speed]
+    # The one part on this board that is a real, orderable thing and can say so:
+    # KiCad's footprint is a binding to exactly this JST part number, which is
+    # where the manufacturer and the MPN below come from rather than from a
+    # catalogue lookup. No `supplier_refs` -- a distributor's own code for it has
+    # not been verified, and an unverified distributor code is a wrong component
+    # soldered rather than a missing one. See docs/reports/m21.md.
+    manufacturer: JST
+    mpn: SM07B-GHS-TB
+    assembly: smt
     pins:
       "1": { type: power_in, name: GND }
       "2": { type: passive, name: "A+", description: "Host transmit, positive" }
@@ -117,6 +131,14 @@ parts:
       "MP": { type: passive, name: MountPin, description: "Shell tabs, two of them" }
 
   SATA_CTRL_QFN48:
+    # **No `mpn:`, and that is deliberate -- do not add one.** This part is a
+    # stand-in: the symbol is a borrowed 49-pin generic connector, the pinout is
+    # this board's own invention, and the note at the top of this file says the
+    # power architecture is scenery. There is no manufacturer part whose pins are
+    # wired the way this design wires them, so any part number written here would
+    # be a number an assembler could order and a component that could not work.
+    # `aipcb export --bom --format jlcpcb` names it as blocking a real order,
+    # which is the correct outcome and is what M21's report records.
     description: A PCIe x1 to 4-port SATA bridge controller, ASM1064 class, in a
       48-pin QFN with an exposed pad. See the note at the top of this file about the
       symbol.

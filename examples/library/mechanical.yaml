@@ -13,6 +13,10 @@ parts:
     footprint: MountingHole:MountingHole_3.2mm_M3_Pad
     value: M3
     keywords: [mechanical, mounting]
+    # A hole is not a component. It is on the board, it is on a net, and there is
+    # nothing to buy and nothing for a machine to place -- so it belongs on neither
+    # assembly file. The screw that goes through it is somebody else's bill.
+    assembly: none
     pins:
       "1": { type: input, name: "1", description: "The plated barrel, normally ground" }
 

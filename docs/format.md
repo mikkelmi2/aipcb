@@ -1223,6 +1223,75 @@ When KiCad's libraries are installed, `aipcb validate` checks every part in use
 against them: that the symbol exists, that the footprint exists, and that the
 declared pin numbers match both. Without KiCad, those checks skip with a note.
 
+### Procurement, and what an assembler is told
+
+Four optional fields turn a part into something orderable. They are what
+`aipcb export --bom` and `--cpl` read; a part that declares none of them still
+validates and still exports, in the `generic` format, with the columns left blank.
+
+```yaml
+parts:
+  STM32G031K8:
+    # ... symbol, footprint, pins ...
+    manufacturer: STMicroelectronics
+    mpn: STM32G031K8T6           # what an assembler orders
+    supplier_refs:
+      lcsc: C432211              # per-supplier id; the map is open-ended
+    assembly: smt                # smt | tht | dnp | none
+```
+
+`supplier_refs` is a map rather than a pair of fields because a part is orderable
+from more than one place, and each fab's BOM wants *that fab's* id: the JLCPCB
+format fills its `JLCPCB Part #` column from `supplier_refs.lcsc`.
+
+`assembly` says what the assembler does with the part.
+
+| Value | Means | On the BOM | On the centroid |
+|---|---|---|---|
+| `smt` | reflowed by machine | yes | yes |
+| `tht` | through-hole | yes | JLCPCB yes, PCBWay no — it lists surface-mount parts only |
+| `dnp` | on the board, not fitted | yes, marked `(DNP - DO NOT POPULATE)` | no |
+| `none` | not a component at all — a card edge, a mounting hole, a fiducial | no | no |
+| *unset* | **read off the footprint**: its `attr` flags, then its pad types | | |
+
+**Unset is not the same as `smt`.** A default of `smt` would put every through-hole
+part in a file that is documented to hold surface-mount parts only, and it would do
+so silently. So an undeclared `assembly` is measured rather than assumed, and a
+declaration always wins over the measurement.
+
+`manufacturer:` and `mpn:` may also be spelled inside a `supplier:` block, which is
+the older form and still valid. Declaring one field in both places with different
+values is an error.
+
+**Nothing here is checked for truth.** `aipcb` checks that an `mpn` is *present*,
+and names by designator every placed part that has none when a fab-specific BOM is
+asked for. Whether the number is the right part is not a thing a tool can know —
+see [ADR 0015](decisions/0015-assembly-outputs.md) §4 and its consequences.
+
+### Assembly output
+
+```
+aipcb export design.yaml --assembly --format jlcpcb
+```
+
+writes, into `out/assembly/`, a bill of materials and a centroid file in that
+assembler's own column names, a placement overlay per populated side, and a zip of
+the lot. `--bom` and `--cpl` write one file each without the bundle; `--format` is
+repeatable and takes `jlcpcb`, `pcbway` or `generic` (the default, which is every
+field this project knows and never drops a part).
+
+**The overlay is the point of the feature, not a decoration.** It is drawn from the
+centroid file's own rows — every part where the file puts it, turned the way the
+file turns it, with a dot marking where pin one lands after that rotation. Rotation
+conventions are where assembly orders go wrong, the correction a given fab needs is
+not published by that fab and is not derivable from the footprint, and a file that
+says `180` looks exactly as ordinary as one that says `0`. Look at the picture
+before spending money.
+
+Two-sided assembly is refused rather than approximated: `side: back` is validated
+but not implemented, so a board that declares one gets an error rather than a file
+describing a board that was not built.
+
 ## Elaboration
 
 Turning the hierarchical source into a flat netlist:

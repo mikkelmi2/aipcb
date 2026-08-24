@@ -1,0 +1,6 @@
+Designators,Quantity,Value,Footprint,Package,Assembly,Manufacturer,MPN,Supplier Refs,Description
+"C1,C5,C6",3,100n,Capacitor_SMD:C_0603_1608Metric,C_0603_1608Metric,smt,,,,"100 nF X7R ceramic capacitor, 0603, 50 V"
+"C2,C3",2,100n,Capacitor_SMD:C_0402_1005Metric,C_0402_1005Metric,smt,,,,"100 nF X7R ceramic capacitor, 0402, 16 V -- the AC-coupling part for a PCIe transmit pair, small enough that the pair barely notices it."
+C4,1,10u,Capacitor_SMD:C_0805_2012Metric,C_0805_2012Metric,smt,,,,"10 uF X5R ceramic capacitor, 0805, 16 V"
+"J2,J3,J4,J5",4,SATA data,Connector_JST:JST_GH_SM07B-GHS-TB_1x07-1MP_P1.25mm_Horizontal,JST_GH_SM07B-GHS-TB_1x07-1MP_P1.25mm_Horizontal,smt,JST,SM07B-GHS-TB,,"7-way 1.25 mm side-entry connector standing in for a SATA data receptacle -- same contact count and very nearly the same pitch. Two shell pads, both numbered MP, which is the same shared-pad-number case as a USB receptacle's shield tabs."
+U1,1,SATA-CTRL-48,Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.15x5.15mm,QFN-48-1EP_7x7mm_P0.5mm_EP5.15x5.15mm,smt,,,,"A PCIe x1 to 4-port SATA bridge controller, ASM1064 class, in a 48-pin QFN with an exposed pad. See the note at the top of this file about the symbol."

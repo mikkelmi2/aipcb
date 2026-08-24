@@ -114,10 +114,14 @@ The honest version of that picture: **six of the eleven pairs come back more tha
 10% from the impedance they declared**. That is the step doing its job: the
 closed-form width says one thing, the field solver says how wrong it was.
 
-### 6. And exported for fabrication
+### 6. And exported for fabrication — or for assembly
 
 `aipcb export` writes Gerbers, drill files, a BOM and a placement file — the render
-at the top of this page is KiCad's, from that output.
+at the top of this page is KiCad's, from that output. `--assembly` adds what an
+*assembler* needs on top of what a fabricator does: a bill of materials and a
+centroid file in JLCPCB's or PCBWay's own columns, and a placement overlay drawn
+from the centroid file itself, so the rotations can be looked at before anything is
+ordered.
 
 ## You do the layout, if you want
 

@@ -196,6 +196,32 @@ def export(
             "design file.",
         ),
     ] = None,
+    bom: Annotated[
+        bool,
+        typer.Option("--bom", help="Also write an assembler's bill of materials."),
+    ] = False,
+    cpl: Annotated[
+        bool,
+        typer.Option(
+            "--cpl", help="Also write an assembler's pick-and-place (centroid) file."
+        ),
+    ] = False,
+    assembly: Annotated[
+        bool,
+        typer.Option(
+            "--assembly",
+            help="The complete assembly package: BOM, CPL, placement overlays and "
+            "a zip of them, alongside the fabrication files.",
+        ),
+    ] = False,
+    fmt: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--format",
+            help="Which assembler's spelling to write: jlcpcb, pcbway or generic. "
+            "Repeatable. Defaults to generic.",
+        ),
+    ] = None,
 ) -> None:
     """Build a design and export Gerbers, drill files, a BOM and a placement file.
 
@@ -211,11 +237,21 @@ def export(
         _export_dsn(design, out, board, as_json)
         return
 
+    from aipcb.compile.assembly import FORMATS
     from aipcb.compile.build import build_design
     from aipcb.compile.export import export_board
 
     report = Report()
     target = out or (design.parent / "out")
+    chosen = list(dict.fromkeys(fmt or ["generic"]))
+    unknown = [name for name in chosen if name not in FORMATS]
+    if unknown:
+        _err(
+            f"error: unknown --format {', '.join(unknown)}; "
+            f"known formats are {', '.join(sorted(FORMATS))}"
+        )
+        raise typer.Exit(EXIT_UNREADABLE)
+    wanted = tuple(chosen) if (bom or cpl or assembly) else ()
 
     def run(build_dir: Path) -> Any:
         result = build_design(design, out_dir=build_dir, report=report)
@@ -223,7 +259,10 @@ def export(
         sch = next((p for p in result.written if p.suffix == ".kicad_sch"), None)
         if board is None:
             raise AipcbError("no board was produced", report)
-        return export_board(board, target, result.netlist, report, schematic=sch)
+        return export_board(
+            board, target, result.netlist, report, schematic=sch,
+            assembly_formats=wanted, bundle=assembly,
+        )
 
     try:
         if keep_build is not None:
@@ -247,6 +286,8 @@ def export(
             "files": [str(p) for p in exported.files],
             "by_suffix": exported.by_suffix(),
         }
+        if exported.assembly is not None:
+            payload["assembly"] = exported.assembly.to_dict()
         typer.echo(json.dumps(payload, indent=2))
     else:
         typer.echo(report.render(color=sys.stdout.isatty(), summary=bool(report)))

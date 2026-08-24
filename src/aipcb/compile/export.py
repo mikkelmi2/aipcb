@@ -13,13 +13,18 @@ itself would plot. We choose the layer set and the options; KiCad does the plott
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from aipcb.diagnostics import Report
 from aipcb.kicad.cli import KicadCliMissing, run_kicad
 from aipcb.kicad.fill import FillError, fill_project
 from aipcb.netlist import Netlist
+
+if TYPE_CHECKING:
+    from aipcb.compile.assembly import AssemblyResult
 
 __all__ = ["ExportResult", "export_board", "gerber_layers", "position_file_name"]
 
@@ -64,6 +69,8 @@ class ExportResult:
     files: list[Path] = field(default_factory=list)
     steps: list[str] = field(default_factory=list)
     ok: bool = True
+    assembly: AssemblyResult | None = None
+    """The M21 assembly package, when one was asked for."""
 
     def by_suffix(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -80,8 +87,15 @@ def export_board(
     *,
     schematic: Path | None = None,
     position: bool = True,
+    assembly_formats: Sequence[str] = (),
+    bundle: bool = False,
 ) -> ExportResult:
     """Plot Gerbers and drill files, and optionally a BOM and placement file.
+
+    ``assembly_formats`` adds the M21 assembly package -- a BOM and a centroid file
+    in each named fab's own spelling, plus the placement overlays -- built from the
+    placement file this function already produces rather than from a second reading
+    of the board. ``bundle`` zips it.
 
     A board with pours is filled first, in a staged copy. ``kicad-cli pcb export
     gerbers`` plots whatever fill data is in the file and never regenerates it
@@ -96,9 +110,11 @@ def export_board(
             return _export_filled(
                 board, Path(staging), out_dir, netlist, report, result,
                 schematic=schematic, position=position,
+                assembly_formats=assembly_formats, bundle=bundle,
             )
     return _plot(board, out_dir, netlist, report, result,
-                 schematic=schematic, position=position)
+                 schematic=schematic, position=position,
+                 assembly_formats=assembly_formats, bundle=bundle)
 
 
 def _export_filled(
@@ -111,6 +127,8 @@ def _export_filled(
     *,
     schematic: Path | None,
     position: bool,
+    assembly_formats: Sequence[str] = (),
+    bundle: bool = False,
 ) -> ExportResult:
     """Fill into ``staging`` and plot from there, so build output stays unfilled."""
     try:
@@ -126,7 +144,8 @@ def _export_filled(
         return result
     result.steps.append(f"fill ({outcome.filled}/{outcome.zones} zones)")
     plotted = _plot(filled, out_dir, netlist, report, result,
-                    schematic=schematic, position=position)
+                    schematic=schematic, position=position,
+                    assembly_formats=assembly_formats, bundle=bundle)
     # The staged copy is about to vanish with the temporary directory; the files
     # that matter are already in `out_dir`.
     plotted.files = sorted(p for p in out_dir.rglob("*") if p.is_file())
@@ -142,6 +161,8 @@ def _plot(
     *,
     schematic: Path | None,
     position: bool,
+    assembly_formats: Sequence[str] = (),
+    bundle: bool = False,
 ) -> ExportResult:
     """Run every ``kicad-cli`` plot step against one board."""
     copper_layers = netlist.layout.stackup.copper_layers if netlist.layout else 2
@@ -206,8 +227,59 @@ def _plot(
     if schematic is not None:
         _export_bom(schematic, out_dir, report, result)
 
+    if assembly_formats:
+        _export_assembly(
+            board, out_dir, netlist, report, result,
+            formats=assembly_formats, bundle=bundle,
+        )
+
     result.files = sorted(p for p in out_dir.rglob("*") if p.is_file())
     return result
+
+
+def _export_assembly(
+    board: Path,
+    out_dir: Path,
+    netlist: Netlist,
+    report: Report,
+    result: ExportResult,
+    *,
+    formats: Sequence[str],
+    bundle: bool,
+) -> None:
+    """The M21 assembly package, from the placement file already on disk.
+
+    Deliberately *after* the placement step and deliberately reading its output:
+    the assembler's centroid and the fabricator's Gerbers then describe the same
+    board by construction rather than by two derivations agreeing.
+    """
+    from aipcb.compile.assembly import export_assembly
+    from aipcb.kicad.sexpr import parse
+
+    position_csv = out_dir / position_file_name(board)
+    if not position_csv.is_file():
+        report.error(
+            "export-assembly-failed",
+            "the placement file was not produced, so no assembly package was built",
+            hint="the Gerbers and drill files, if any, are unaffected",
+        )
+        result.ok = False
+        return
+    outcome = export_assembly(
+        board,
+        parse(board.read_text(encoding="utf-8")),
+        position_csv,
+        out_dir / "assembly",
+        netlist,
+        report,
+        formats=formats,
+        bundle=bundle,
+    )
+    result.assembly = outcome
+    if not outcome.ok:
+        result.ok = False
+        return
+    result.steps.append(f"assembly ({', '.join(sorted(outcome.formats))})")
 
 
 def _export_bom(schematic: Path, out_dir: Path, report: Report, result: ExportResult) -> None:

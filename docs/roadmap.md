@@ -335,8 +335,18 @@ that was measured and the copper the tool now produces are not the same copper.
    moved `pcie-sata`'s by 12.5 mm — so the premise on which it was scheduled ahead of
    the fab round did not hold, and it was rejected here rather than argued into step
    3. [`reports/m19.md`](reports/m19.md) §3.
-2. **A BOM/CPL export milestone, then the fab round.** Queued immediately after
-   M19a/M19b — nothing else goes in front of it. `pcie-sata` gets ordered.
+2. ~~**A BOM/CPL export milestone, then the fab round.**~~ **The milestone is done
+   ([M21](milestones/m21-assembly-outputs.md)); the fab round is not, and what
+   stands in its way is no longer tooling.** `aipcb export --assembly` writes a
+   bill of materials and a centroid file in JLCPCB's or PCBWay's own columns, with a
+   placement overlay to check the rotations against. But
+   **`pcie-sata` cannot be ordered *assembled***: its SATA controller is a stand-in
+   — a borrowed generic symbol, an invented pinout, a power tree the library calls
+   scenery — so no manufacturer part exists whose pins are wired the way this design
+   wires them, and six capacitors have no part number chosen. The board can be
+   ordered **bare** today; assembling it needs either a real controller or a
+   different board. [`reports/m21.md`](reports/m21.md) §6 has the three ways
+   forward.
 3. **[M19c](milestones/m19-incremental-geometry.md#m19c--an-incremental-free-space-mesh-survey-candidate-l1--conditional)
    and any [M20](milestones/m20-placement-quality.md) placement implementation come
    after the board is ordered.** Both can move copper on the flagship, and neither

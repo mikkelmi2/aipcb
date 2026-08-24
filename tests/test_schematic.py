@@ -179,7 +179,9 @@ class TestDeterminism:
         if not golden.is_dir():
             pytest.skip(f"no golden files for {example_design.parent.name}")
         build_design(example_design, out_dir=tmp_path)
-        for expected in sorted(golden.iterdir()):
+        # Files only. `tests/golden/pcie-sata/assembly/` is the M21 assembly
+        # package, which is not output of `build_design` and has its own test.
+        for expected in sorted(p for p in golden.iterdir() if p.is_file()):
             actual = tmp_path / expected.name
             assert actual.exists(), f"{expected.name} was not produced"
             assert actual.read_text(encoding="utf-8") == expected.read_text(

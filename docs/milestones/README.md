@@ -29,6 +29,7 @@ with the numbers.
 | [`m18-literature-survey.md`](m18-literature-survey.md) | M18 — the routing literature survey (documentation only) | executed — [`m18.md`](../reports/m18.md) |
 | [`m19-incremental-geometry.md`](m19-incremental-geometry.md) | M19 — router improvements, part 3: the congestion stress board, and the geometry that gets rebuilt | executed — [`m19.md`](../reports/m19.md). M19s and M19a landed, **M19b was rejected on its own numbers**, M19c's gate is open and sequenced after the fab round, M19d published. The review that turned M18's draft into this is [`m19-review.md`](../reports/m19-review.md) |
 | [`m20-placement-quality.md`](m20-placement-quality.md) | M20 — placement quality: rotation, routability-estimated packing, and the zero-router-change experiment | **approved** 2026-08-24 — nothing started; sequenced after the `pcie-sata` fab round |
+| [`m21-assembly-outputs.md`](m21-assembly-outputs.md) | M21 — assembly outputs: BOM and pick-and-place export, for an assembled order | executed — [`m21.md`](../reports/m21.md). The files are built and reviewed; **the acceptance criterion is not met and the reason is the design rather than the tooling** — `examples/pcie-sata`'s controller is a stand-in with an invented pinout and cannot be given a part number |
 
 **Drafting a chain of candidates?** Budgets re-anchor after every landed one — see
 [CLAUDE.md](../../CLAUDE.md#budgets-re-anchor-after-every-landed-candidate). A budget

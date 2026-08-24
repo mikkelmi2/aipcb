@@ -17,10 +17,11 @@ import re
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 __all__ = [
     "LIB_ID_RE",
+    "Assembly",
     "ElectricalType",
     "Limits",
     "Part",
@@ -83,8 +84,41 @@ class Limits(Strict):
     temp_max_c: float | None = None
 
 
+class Assembly(StrEnum):
+    """What an assembler is meant to do with a part (M21a).
+
+    ``smt`` and ``tht`` are placement instructions and differ where it matters: a
+    PCBWay centroid file lists *only* surface-mount parts, so a through-hole part
+    that claims to be surface-mount is a part the machine will try to place.
+
+    ``dnp`` is a part that is on the board and must not be fitted. ``none`` is a
+    footprint that is not a part at all -- a card-edge finger field, a fiducial, a
+    mounting slot -- and it is a distinct case from ``dnp`` because "do not fit
+    this component" and "this is not a component" are different sentences to say
+    to an assembler, and only the first belongs on a BOM at all.
+
+    Unset is not the same as ``smt``. When a part says nothing,
+    :func:`aipcb.compile.assembly.assembly_of` reads the answer off the footprint's
+    own pads, which is a measurement rather than a default -- see its docstring for
+    why a default of ``smt`` would have been wrong on four of this repository's own
+    bundled examples.
+    """
+
+    SMT = "smt"
+    THT = "tht"
+    DNP = "dnp"
+    NONE = "none"
+
+
 class Supplier(Strict):
-    """Optional sourcing information. Carried through to the BOM, never required."""
+    """Optional sourcing information. Carried through to the BOM, never required.
+
+    ``manufacturer`` and ``mpn`` are also spelled at the top level of :class:`Part`,
+    which is where M21a put them and where new designs should say them. Both
+    spellings validate and :meth:`Part.procurement` folds them together; declaring
+    the same field in both places with different values is an error rather than a
+    silent winner.
+    """
 
     manufacturer: str | None = None
     mpn: str | None = None
@@ -110,6 +144,25 @@ class Part(Strict):
     )
     limits: Limits = Field(default_factory=Limits)
     supplier: Supplier = Field(default_factory=Supplier)
+    mpn: str | None = Field(
+        default=None,
+        description="Manufacturer part number -- the thing an assembler orders.",
+    )
+    manufacturer: str | None = Field(
+        default=None, description='Who makes it, e.g. "STMicroelectronics".',
+    )
+    supplier_refs: dict[str, str] = Field(
+        default_factory=dict,
+        description="Per-supplier part id, e.g. `{lcsc: C432211}`. A map rather "
+                    "than a pair of fields, because a part is orderable from more "
+                    "than one place and the fab-specific BOM wants that fab's id.",
+    )
+    assembly: Assembly | None = Field(
+        default=None,
+        description="What the assembler does with it: smt, tht, dnp or none. "
+                    "Unset means 'read it off the footprint', which is what "
+                    "`aipcb export --bom` does.",
+    )
     dnp: bool = Field(default=False, description="Do not populate.")
     refdes_prefix: str | None = Field(
         default=None,
@@ -117,6 +170,34 @@ class Part(Strict):
         description="Designator letters for parts of this kind: R, C, U, J. Used when "
                     "a designator has to be assigned automatically.",
     )
+
+    @model_validator(mode="after")
+    def _one_spelling_per_field(self) -> Part:
+        """``mpn:`` and ``supplier.mpn:`` may both exist; they may not disagree."""
+        for name in ("mpn", "manufacturer"):
+            top, nested = getattr(self, name), getattr(self.supplier, name)
+            if top is not None and nested is not None and top != nested:
+                raise ValueError(
+                    f"{name} is declared twice and the two disagree: "
+                    f"{name}: {top!r} against supplier.{name}: {nested!r}. "
+                    f"Say it once -- at the top level is the current spelling."
+                )
+        return self
+
+    def procurement(self) -> tuple[str | None, str | None]:
+        """The effective ``(mpn, manufacturer)``, whichever spelling declared them."""
+        return (
+            self.mpn or self.supplier.mpn,
+            self.manufacturer or self.supplier.manufacturer,
+        )
+
+    @field_validator("supplier_refs")
+    @classmethod
+    def _check_supplier_refs(cls, v: dict[str, str]) -> dict[str, str]:
+        for key, value in v.items():
+            if not key.strip() or not value.strip():
+                raise ValueError("supplier_refs keys and values must not be blank")
+        return v
 
     @field_validator("symbol", "footprint")
     @classmethod

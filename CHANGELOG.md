@@ -2,6 +2,69 @@
 
 Notable changes, newest first.
 
+## Unreleased — M21, 2026-08-24
+
+Assembly outputs: the two files an assembler needs, in three formats, with the
+requirements researched from each fab rather than inferred from somebody's exporter.
+See [`docs/reports/m21.md`](docs/reports/m21.md) and
+[ADR 0015](docs/decisions/0015-assembly-outputs.md).
+
+### Added
+
+- **`aipcb export --bom`, `--cpl` and `--assembly`**, with `--format
+  jlcpcb|pcbway|generic` (repeatable). Writes a bill of materials and a centroid
+  file in the assembler's own column names, a **placement overlay per populated
+  side**, and a zip of the package. The existing Gerber, drill, BOM and placement
+  output is unchanged and byte-identical; the assembly files are additive and off
+  unless asked for.
+- **Procurement fields on a part**: `mpn`, `manufacturer`, `supplier_refs` (an
+  open-ended per-supplier map, so the JLCPCB BOM fills its own column from
+  `supplier_refs.lcsc`) and `assembly`. The older `supplier: {mpn, manufacturer}`
+  spelling still validates; declaring one field both ways with different values is
+  an error.
+- **The placement overlay**, drawn from the centroid file's own rows rather than
+  from the board — every part where the file puts it, turned the way the file turns
+  it, with a dot marking where pin one lands after that rotation, and the bottom
+  side mirrored. It exists because rotation conventions are where assembly orders go
+  wrong and a file that says `180` looks exactly as ordinary as one that says `0`.
+- **`tests/golden/pcie-sata/assembly/`** — the acceptance package, reviewed once by
+  hand and then guarded by a test, so a changed column or a moved rotation shows up
+  as the diff an assembler would have received.
+
+### Changed
+
+- **`assembly:` is measured when it is not declared**, off the footprint's own
+  attributes and pad types, rather than defaulting to `smt` as the milestone
+  proposed. Four bundled examples are built around through-hole parts and PCBWay's
+  centroid file is documented as surface-mount only, so the default would have put
+  all of them in a file that must not contain them — silently, in the file whose job
+  is to be checked. A fourth value, `none`, was added for footprints that are not
+  components at all: `examples/pcie-sata`'s card-edge fingers and `enclosure`'s
+  mounting holes used to appear on the bill as lines nobody can source.
+- **The bill of materials is driven by the netlist, not by the placement file.**
+  A footprint KiCad excludes from position files used to vanish from the order
+  entirely, which is right for a card edge and catastrophic for a battery holder.
+
+### Not done, and the reason is not the tooling
+
+- **`examples/pcie-sata` cannot export a complete order.** Seven of its eleven
+  placed parts have no manufacturer part number: six capacitors, which are a
+  procurement decision nobody has made and which this milestone would not invent,
+  and **the SATA controller, which cannot have one** — its symbol is a borrowed
+  generic connector, its pinout is this board's own invention and its power
+  architecture is scenery, as the library has said since M11. A part number written
+  there would be a number an assembler could order and a component that could not
+  work. The fab round's tooling blocker is gone; the design blocker is in
+  [`docs/reports/m21.md`](docs/reports/m21.md) §6 with three ways forward.
+- **No rotation-correction table ships.** The documented convention — degrees,
+  counter-clockwise positive — is implemented exactly and needs no transform. The
+  per-package *correction* is published by neither fab, is a hand-maintained lookup
+  in the community tooling that solves it, and is not even a function of the
+  footprint. The overlay is the verification instead. ADR 0015 §4.
+- **Two-sided assembly is refused rather than approximated**: `side: back` validates,
+  warns and places on the front, so an assembly export on such a board errors and
+  names the parts.
+
 ## Unreleased — M19, 2026-08-24
 
 Part 3 of the toporouter work. M18 found that the tightening *algorithm* is 0.039
