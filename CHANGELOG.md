@@ -2,6 +2,79 @@
 
 Notable changes, newest first.
 
+## Unreleased — M19, 2026-08-24
+
+Part 3 of the toporouter work. M18 found that the tightening *algorithm* is 0.039
+profiled seconds of a 30-second route and that what the `tighten` stage actually
+spends its time on is building — and discarding — the geometry tightening is done
+against. This milestone builds the board that work should be measured on, then takes
+the two cheap candidates the survey ranked. **Two of the four missed their budgets
+and the report says so rather than re-reading the rule.** See
+[`docs/reports/m19.md`](docs/reports/m19.md).
+
+### Added
+
+- **`examples/backplane` — the congestion stress board** (M19s), and the first
+  example in this repository that does not finish for a reason that is arithmetic
+  rather than topology. A six-slot instrument backplane whose card guides leave a
+  4.0 mm channel between adjacent card positions: sixteen bus lines at 0.45 mm plus
+  the rail and the return at 0.6 mm each put **8.4 mm of demand on a cut the two
+  signal layers score at 7.6 mm**, seven times over. 168 connections, 110 routed,
+  **58 handed over with the cut that stopped each one named**, five negotiation
+  iterations without converging. **The router's capacity arbiter fires for the first
+  time** — 132 refusals, the worst cut 3.77 mm of B.Cu against eleven nets wanting
+  4.95 mm — where M17a found not one span rejected on capacity across the whole
+  corpus. Byte-stable, DRC-clean on what it routes, and registered in
+  `UNROUTABLE_EXAMPLES` because it was built to be over capacity.
+- **`CONN_HDR_1X20`** in `examples/library/connectors.yaml` — a 20-pin single-row
+  2.54 mm header.
+- **`tests/test_routing.py::TestPointLocation`** — the vectorised candidate test
+  against the scalar loop it replaced, on shared edges, shared vertices, swapped
+  triangle indices and a real board's whole triangulation.
+
+### Changed
+
+- **`Triangulation.locate_many` computes its point-in-triangle test over numpy
+  arrays** (M19a), where M17c had batched the R-tree query and left a scalar loop
+  calling `_inside` 3 140 252 times and `_sign` 9 426 354 times on one board. Same
+  arithmetic in the same order, so the signs are bit-identical; the tie-break —
+  lowest triangle index wins — is written explicitly rather than hoped for.
+  `_via_sites` 12.37 → 5.22 s and `_repair` 16.34 → 9.76 s profiled on
+  `examples/pcie-sata`. **Every board hash is byte-identical.**
+- **The corpus grew from eleven boards to twelve** and the baseline moved twice, in
+  its own commit each time: 29.476 s of routing over eleven boards, then 167.036 s
+  over twelve with `backplane` at 82 % of it, then 161.798 s after M19a. Copper,
+  vias, layer changes and completion are unchanged on every original board
+  throughout.
+- **The capability-ladder extrapolation more than doubles, and that is the twelfth
+  board rather than a regression** (M19d). Over the eleven original boards the
+  exponents did not move again — 1.70 → 1.67 against connections, 1.10 → 1.09
+  against connections × cuts — but the eleven-board fit under-predicts `backplane`
+  by a factor of 3.9, and refitting over all twelve gives 1.87 and 1.03 and a
+  900-connection estimate of **22.5 minutes** against M17's 11.3. The old number was
+  fitted entirely below the range it was being used to predict.
+
+### Not done, deliberately
+
+- **M19a missed its 10 % budget** — it lands 2.9 % of the corpus and 8.3 % of the
+  eleven boards the budget was drafted against — because `backplane` landed first
+  and spends its time in `triangulate_free`, not in point location. The code is kept
+  and [`docs/reports/m19.md`](docs/reports/m19.md) §2.3 flags that as a decision
+  rather than a rule.
+- **M19b was built, measured and rejected.** Bounding the private repair field lands
+  1.0 % of the corpus against a 25 % budget, and it moves `pcie-sata`'s copper by
+  12.5 mm — so the premise on which it was scheduled ahead of the fab round did not
+  hold. Reverted; the design and the numbers are in
+  [`docs/notes/routing-literature.md` §6](docs/notes/routing-literature.md#6-measured-results-as-the-closure-rule-requires).
+  The finding worth carrying: **M19a and M19b were priced additively off one profile
+  and they overlapped**, and a bounded search does not fail when its box is too
+  small — it succeeds with something absurd.
+- **M19c is not started.** Its gate opens on the measurement, and the stress board's
+  profile says its prize is *larger* than the survey priced it: **64 % of
+  `backplane`'s routing time is `triangulate_free`** and 39 % is one GEOS call
+  inside it. The sequencing rule puts it after the fab round, and that has not
+  happened.
+
 ## Unreleased — M17, 2026-08-24
 
 Part 2 of the toporouter work: the three candidates the M16 baseline had already

@@ -1269,3 +1269,113 @@ algorithmic account of TopoR whatsoever — all three named, none guessed at.
 assumption**, with the field's own evaluation protocol as the evidence, a named
 exception that could survive the objection, and three conditions under which the
 question reopens.
+
+**What became of the candidates is in [§6](#6-measured-results-as-the-closure-rule-requires)**,
+added at M19: L0 built with identical output and short of its budget, L2 built,
+measured and rejected, L1's gate open with a bigger prize than this note priced, and
+L3 and L4 unblocked by the board M19s built.
+
+---
+
+## 6. Measured results, as the closure rule requires
+
+§4 proposed the candidates; this is where what happened to them is written down, so
+that a negative result nobody wrote down does not get proposed again. Measured at
+M19 on the development machine, against the twelve-board baseline at commit
+`be400c8` (corpus `router_seconds` 167.036, of which `examples/backplane` — the
+stress board M19s built — is 137.342). The full analysis is in
+[`docs/reports/m19.md`](../reports/m19.md).
+
+### L0 — vectorise the point-location tail: **built, output identical, budget missed**
+
+| | |
+|---|---|
+| Asked | ≥ 10 % of corpus `router_seconds`, every board hash byte-identical |
+| Delivered | **−2.9 %** corpus; **−8.3 %** over the eleven original boards; −20.8 % `usb-port`, −12.0 % `routing-demo`, −11.3 % `mcu-4layer`, −7.9 % `pcie-sata` |
+| Quality | **every board hash byte-identical**; copper, vias, layer changes and completion identical to the digit |
+| Profile | `locate_many` 7.98 s → out of the top sixteen; `_via_sites` 12.37 → 5.22 s; `_repair` 16.34 → 9.76 s; `pcie-sata` unprofiled wall 19.31 → 18.02 s |
+
+The prediction in §4 was right about the mechanism and about the ceiling — "treat
+6 s as a ceiling" — and wrong about the denominator, because the corpus acquired a
+board whose cost is elsewhere between the survey and the build. **The tie-break was
+the whole risk, as predicted, and it does have to be written explicitly:** a
+vectorised mask says which candidates contain the point, not which of them has the
+lowest index. It is a stable `lexsort` and a take-the-first, and it is tested on a
+point exactly on a shared edge with the two triangles' indices swapped both ways.
+
+### L2 — bound the private repair field: **built, measured, rejected**
+
+| | |
+|---|---|
+| Asked | ≥ 25 % further on top of L0, at unchanged completion and unchanged copper |
+| Delivered | **−1.0 %** corpus; −9.7 % over the eleven original boards; −12.0 % `pcie-sata` |
+| Quality | completion unchanged (385/446); **copper +12.468 mm, all on `pcie-sata`** (+1.16 %), in one connection; two of twelve board hashes moved |
+
+**Three findings, and the first is the one to carry forward.**
+
+1. **L0 and L2 were priced independently off the same profile and they overlap.**
+   L2's 25 % was priced off `_repair` at 16.30 s, of which `_via_sites` was 12.35 s.
+   L0 took `_via_sites` to 5.22 s before L2 ran. **Re-price the second candidate
+   against the profile the first one leaves behind.**
+2. **Bounding the free space is worse than bounding the via sites.** The free-space
+   version measured **+9.6 %** against L0 — on a board where most repairs fail, a
+   ladder that cannot lose a route pays for the whole-board field anyway and pays
+   for the bounded one on top — and it lost three connections on `backplane`,
+   because a repair that succeeds *differently* changes the board for everything
+   after it. The site-bounding version keeps the free space, the triangulation, the
+   components and the cut capacities whole-board, so it cannot decide a pad is
+   unreachable when it is not, and widening costs only what re-deriving the
+   candidates costs.
+3. **The expected failure mode is the wrong way round.** A box that excludes the via
+   a connection wanted does not make the search fail; it makes it *succeed with
+   something absurd*. `GND/J5.1>J5.MP` on `pcie-sata` went from 29.96 mm with two
+   vias to **158.03 mm with none**, and because it succeeded nothing widened the box.
+   Any revival needs the guard that fixed it: **a bounded answer is accepted only if
+   it stays inside the box it was found in.** That took the copper regression from
+   +124.1 mm to +12.5 mm — and +12.5 mm is still a regression, which is what the
+   verdict rests on.
+
+Rejected because it misses its budget by a factor of twenty-five on the corpus and
+by two and a half on the friendliest sub-corpus, *and* because it moves `pcie-sata`'s
+copper — and the sequencing rule puts copper-moving work after the fab round. If it
+is revived: the site-bounding version, with the guard, after the board is ordered,
+re-priced against the profile of the day.
+
+### L1 — an incremental free-space mesh: **gate open, not started**
+
+The §4 verdict was "do not start it before the two cheaper candidates have been
+measured — if they land, L1's remaining prize is much smaller than it looks today."
+They did not land, and the prize is **larger** than this note priced it, because the
+corpus now contains a board big enough to show it. On `examples/backplane`:
+
+| | instrumented wall seconds, of a 135.6 s run |
+|---|---:|
+| `triangulate_free` | **87.073** (64 %) |
+| └ of which `constrained_delaunay_triangles` | 53.474 (39 %) |
+| `free_space` — the GEOS set operations | 17.092 (13 %) |
+| └ of which `union_all` | 12.901 |
+
+This also answers the "**do first — measure**" item this section set for L1: the
+split between the GEOS set operations and `constrained_delaunay_triangles` is
+roughly **20 : 80** on both `pcie-sata` (1.77 s against 6.90 s) and `backplane`
+(17.1 s against 87.1 s). The set operations do not go away — `_via_clears` and
+`_covered` ask the free polygon distance-to-boundary questions a mesh answers badly
+— so the ceiling is the 80, not the 100. **On the board that now dominates the
+corpus that ceiling is 87 seconds of 136.** L1 is worth a *half* of routing on this
+corpus, not a seventh.
+
+Every risk this section names still stands: it is still a hand-owned predicate
+against [ADR 0006](../decisions/0006-routing-approach.md)'s explicit refusal and
+against the toporouter's cause of death, and it is still gated on the two hard
+conditions the owner added at M19 — property-based testing against shapely including
+the degenerate classes, and a kill-switch config with the rebuild path retained.
+`hypothesis` is still not a dependency of this project.
+
+### L3, L4 — unblocked
+
+Both were "candidate, scoped, **gated** on a board that does not converge in one
+iteration — which does not exist in this corpus yet". It does now.
+`examples/backplane` runs **five negotiation iterations without converging**, its
+capacity arbiter refuses **132 times**, and it hands over 58 of 168 connections. The
+gate on L3 and L4 is discharged; what they are measured against is 110/168 routed,
+and the board is the reason a number like that can move at all.
