@@ -52,7 +52,22 @@ and the report says so rather than re-reading the rule.** See
   against connections × cuts — but the eleven-board fit under-predicts `backplane`
   by a factor of 3.9, and refitting over all twelve gives 1.87 and 1.03 and a
   900-connection estimate of **22.5 minutes** against M17's 11.3. The old number was
-  fitted entirely below the range it was being used to predict.
+  fitted entirely below the range it was being used to predict; the new one is
+  fitted through exactly one point above it, so it travels with that caveat
+  attached and is provisional until the curve has more points between 90 and 900
+  connections.
+
+### Documented
+
+- **Budgets re-anchor after every landed candidate** — a new standing rule in
+  [`CLAUDE.md`](CLAUDE.md#budgets-re-anchor-after-every-landed-candidate), written
+  because M19's two misses were both budget-anchoring failures rather than technique
+  failures. Each candidate is measured against HEAD at its own start, and a budget
+  that targets a specific cost is quoted in absolute seconds on named functions
+  rather than as a percentage of a corpus the same milestone may change.
+- **The benchmark's two layers**, in [`bench/results/README.md`](bench/results/README.md):
+  the CI smoke run stays three boards and a handful of seconds, and `backplane` is
+  in the full run only, because a tripwire nobody runs is not a tripwire.
 
 ### Not done, deliberately
 

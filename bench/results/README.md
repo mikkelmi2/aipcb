@@ -20,6 +20,29 @@ via count or completion should update it in the same commit that makes the chang
 and the delivery report or ADR should say why the new numbers are better. A
 baseline quietly refreshed to make a red build go green is worse than no baseline.
 
+## Two layers, and which one runs when
+
+The corpus is minutes and the tripwire has to be seconds, so they are not the same
+run:
+
+| | what it routes | how long | when |
+|---|---|---|---|
+| `aipcb bench --smoke` | `congestion`, `led-blinker`, `routing-demo` | a handful of seconds | **every pull request**, in CI, against this baseline at a 400% runtime threshold |
+| `aipcb bench` | the whole corpus, twelve boards | **minutes** | by hand on one machine, or nightly; this is what quality and performance work reports against |
+
+**`examples/backplane` is in the full run only, and that is deliberate** (M19s). The
+stress board is 82% of the corpus's routing time by itself — about two and a quarter
+minutes — and putting it in front of every pull request would buy a slower signal of
+the same thing. The smoke set is chosen for *shapes*: a tight board, an ordinary
+board, and the one with declared sketches so the check stage does real work. It
+catches an accidental quadratic and a moved board hash, which is what a per-PR
+tripwire is for. It does not catch what only shows up under congestion, and it is
+not asked to — that is the full run's job, and the full run is where a routing
+change has to show its numbers anyway.
+
+If the smoke set ever stops being fast enough to run without thinking about it, take
+a board out rather than adding one.
+
 ## Everything else
 
 `aipcb bench` writes `bench/results/<commit>.json` by default. Those are working

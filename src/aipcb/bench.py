@@ -99,6 +99,14 @@ PRESSURE_FLOOR = 0.5
 #: the one with declared sketches so the check stage does real work, and
 #: `led-blinker` is an ordinary two-layer board. Together they run in a handful of
 #: seconds; the full corpus is minutes and stays manual.
+#:
+#: **`backplane` is deliberately not here and must not be added** (M19s). It is 82%
+#: of the full corpus's routing time on its own -- two and a quarter minutes against
+#: the smoke set's few seconds -- and a tripwire nobody runs is not a tripwire. What
+#: it guards against is the shape of a regression, not the size of one, and the
+#: three boards above catch that in the time a contributor will actually wait. The
+#: stress board belongs to the full `aipcb bench`, by hand or nightly, where its
+#: cost buys something: see `bench/results/README.md`.
 SMOKE_EXAMPLES = ("congestion", "led-blinker", "routing-demo")
 
 #: How much slower than the baseline a run may be before ``--compare`` calls it a

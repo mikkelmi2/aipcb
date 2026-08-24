@@ -243,8 +243,18 @@ including that routing cost is close to linear in connections × triangulation s
 and that 83–94% of it was in the tightener on the five largest boards while
 negotiation never exceeds half a second. [The M17 report](reports/m17.md) re-fits
 that curve after halving the constant factors: the exponents are unmoved (1.10
-against connections × cuts, R² 0.96), and a 900-connection board now extrapolates to
+against connections × cuts, R² 0.96), and a 900-connection board extrapolated to
 roughly 11 minutes rather than 24.
+
+**[M19d](reports/m19.md) re-fitted it again over twelve boards and the number more
+than doubled, to roughly 22 minutes** — not because the router got slower (the
+eleven original boards are unchanged, and their own exponents moved from 1.70 to
+1.67 and 1.10 to 1.09) but because the corpus finally contains a board above the
+example class, and the eleven-board fit under-predicted it by a factor of 3.9.
+**Cite the 22-minute figure with its caveat attached: it is fitted through exactly
+one point above 90 connections and is provisional until the curve has more points in
+the gap between there and 900.** The 11-minute number acquired a confidence it had
+not earned by being repeated without one.
 
 Two consequences worth naming. It discharges one of the three
 [graduation conditions](#maturity-and-graduation) — runtime is benchmarked now, and
@@ -330,7 +340,12 @@ that was measured and the copper the tool now produces are not the same copper.
 3. **[M19c](milestones/m19-incremental-geometry.md#m19c--an-incremental-free-space-mesh-survey-candidate-l1--conditional)
    and any [M20](milestones/m20-placement-quality.md) placement implementation come
    after the board is ordered.** Both can move copper on the flagship, and neither
-   is worth moving it underneath a board that is in flight.
+   is worth moving it underneath a board that is in flight. **M19's measurements
+   made M19c's gate open and its prize bigger** — 64 % of the stress board's routing
+   time is `triangulate_free`, against the survey's estimate of at most a third on
+   `pcie-sata` — **and that strengthens this ordering rather than pressing against
+   it.** A prize that grew is a prize that keeps; the board in flight is the thing
+   that cannot be re-run.
 
 | Candidate | Runtime budget | What it has to show |
 |---|---|---|
@@ -477,7 +492,9 @@ order~~ **delivered, and two of its four candidates missed their budgets**. See
   original boards the exponents did not move again (1.70 → 1.67 against connections,
   1.10 → 1.09 against connections × cuts). Over all twelve they do: 1.87 and 1.03,
   and the 900-connection extrapolation goes from 9.3 to **22.5 minutes** — the old
-  number was fitted entirely below the range it was being used to predict.
+  number was fitted entirely below the range it was being used to predict. The new
+  one is fitted through one point above it, and is provisional for the same kind of
+  reason; cite it with that attached.
 
 **The budgets were priced additively off one profile, and that is why two candidates
 missed.** M19b's 25 % was priced off a `_via_sites` that M19a had already made less
