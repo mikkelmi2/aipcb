@@ -298,9 +298,9 @@ that was measured and the copper the tool now produces are not the same copper.
 | Candidate | Runtime budget | What it has to show |
 |---|---|---|
 | **C1 spreading** — distribute the routes crossing a cut evenly along it instead of leaving each hugging the hull it was tightened against | **+15%** | Corridor utilization spread down at unchanged completion; `headroom_mm` up on the tight boards. Every golden file moves, so it must also show the copper it costs — a spread route is longer than a hugging one by construction. |
-| **C3 post-convergence detour pass** — rank routes by realised over unobstructed length, rip up the worst, keep only strictly-better re-routes | **+30%**, which is what the historical measurement cost | 7–16% less copper is the number to beat, from Blake's own before/after. It is the least risky of the three: a pure post-pass that can only accept an improvement, budget-capped and switchable. **Its named customer is gone**: the `route-doubles-back` warning M16b uncovered on `examples/pcie-sata` was fixed in M17b by the much narrower via pass, for 0.6 s on that board rather than 30% of the corpus. What is left for C3 is the general case, and [M17's numbers](reports/m17.md) are the first evidence about how much of it there is. |
+| **C3 post-convergence detour pass** — rank routes by realised over unobstructed length, rip up the worst, keep only strictly-better re-routes | **+30%**, which is what the historical measurement cost | **Re-priced by M18, downward, from a primary source.** The roadmap used to cite 7–16% less copper from Blake's before/after on two boards. Dayan's 1997 thesis — obtained in full at M18 — measures the same mechanism (his ROAR optimiser) on ten two-layer bins and 427 branches, and reports **detour falling from 8.84% to 5.18%, which is about 3.4% of wire length**. That is the number to beat now: a primary measurement, on ten cases rather than two, of the mechanism itself. **Its named customer is also gone**: the `route-doubles-back` warning M16b uncovered on `examples/pcie-sata` was fixed in M17b by the much narrower via pass, for 0.6 s on that board rather than 30% of the corpus — and M17 found 53 of 55 collapsible spans corpus-wide unimprovable. What C3 keeps is the one thing M18 *added* in its favour: Dayan §6.1's argument that a post-pass is structurally necessary, because "no order of the nets will result in an optimal solution" for some topologies (his triangle problem). **3.4% for +30% runtime is the trade the owner has to judge**, and it is one of the decisions listed in [`m19-DRAFT.md`](milestones/m19-DRAFT.md). |
 | **C4 route to the net, not to the pad** — cluster-to-cluster search with group merging, replacing the up-front Euclidean MST | **+20%** | Shorter copper and better completion under congestion, and the `copper_sliver` on `examples/diff-pair` gone at its cause rather than trimmed. The largest and most invasive of the three — it changes what a connection *is*, reaches `RouteTopology` and the manual-routing path, and needs its own ADR because it partially reverses a decision rather than extending one. |
-| **C5 pairwise-conflict ordering** — score connections by how much their solo routes conflict, and order the first pass by that instead of by priority plus difficulty | **+10%**, and it should be negative | Fewer negotiation iterations to convergence. **The baseline is already evidence against it**: ten of the eleven examples converge in *one* iteration and `enclosure` in four, so there is almost nothing for a better first order to save. Read the M16 baseline before spending a milestone on this; it may be settled already. |
+| **C5 pairwise-conflict ordering** — score connections by how much their solo routes conflict, and order the first pass by that instead of by priority plus difficulty | **+10%**, and it should be negative | Fewer negotiation iterations to convergence. **The baseline is already evidence against it**: ten of the eleven examples converge in *one* iteration and `enclosure` in four, so there is almost nothing for a better first order to save. **M18 lowered it further, twice.** Dayan formulates the identical mechanism (§4.5, ordered pairwise conflicts) and claims for it only that it beats *shortest-first* — which is not what aipcb does — while leaving its complexity an open question. And his §6.1 triangle problem shows that some topologies cannot be reached by *any* order of sequential shortest-path routing, so ordering cannot fix what ordering cannot fix. Read the M16 baseline before spending a milestone on this; it may be settled already. |
 | **Charging the second diagonals in the router** — [ADR 0014](decisions/0014-special-cuts.md) Decision 2 built the cuts and deliberately left the cost model alone | **+10%** | Better completion or fewer detours on the congestion-sensitive boards. The cuts are already derived and already charged in `check_capacity`; what is untested is whether making negotiation pay for them improves anything or merely makes the router timid. |
 
 **Via minimization was not on this list as a candidate of its own — and M17a built
@@ -325,46 +325,88 @@ answer is that this router's vias are, with four exceptions, load bearing.
 
 ### M18 — the literature survey
 
-M17 spent the evidence that already existed. M18 is a **study session** in the
-[toporouter postmortem](notes/toporouter-postmortem.md)'s discipline — read, cite,
-and come back with a table of technique → aipcb component → expected gain → runtime
-risk → candidate or rejected-with-reason — because the cheap wins are now taken and
-the next ones need somebody else's twenty years of work. **Documentation only: no
-code moves in M18.** Deliverable: `docs/notes/routing-literature.md`.
+M17 spent the evidence that already existed. M18 read the literature, in the
+[toporouter postmortem](notes/toporouter-postmortem.md)'s discipline, and came back
+with [`docs/notes/routing-literature.md`](notes/routing-literature.md): technique →
+aipcb component → expected gain → runtime risk → candidate or rejected-with-reason,
+with gaps in the record marked as gaps. **No code moved.** The
+[M18 report](reports/m18.md) is the summary and
+[`m19-DRAFT.md`](milestones/m19-DRAFT.md) is the drafted proposal that came out of
+it, awaiting the owner's review.
 
-Three areas, in the order their expected value says to read them.
+**The headline finding reframes three milestones of received wisdom.** M16 measured
+that 83–94% of routing time is in the `tighten` stage and everything since reasoned
+from it. The stage figure is right; the inference was not. **`funnel.py::tighten`
+costs 0.039 profiled seconds of a 30-second route — 0.13%.** Almost all of the
+`tighten` stage is constructing, and then discarding, the free space, the
+triangulation and the via sites that tightening happens against.
 
-**1. Tightening theory, and it is the priority.** M16 measured that 83–94% of routing
-time was in the tightener; M17c halved the corpus's routing time and found that the
-cut was constant factors — a scalar Shapely loop and a field rebuilt per repaired
-connection — not the algorithm. So the algorithmic question is still open and is now
-*sharpened*: with the obvious constant factors gone, is one funnel sweep per
-connection against a triangulation of the whole board the right shape at all, or is
-the cost structural? Read the funnel algorithm properly (Hershberger–Snoeyink,
-minimum-length paths of a given homotopy class), Chazelle's linear-time techniques
-for the same family, TopoR/Eremex's published papers on arc-based tightening, and
-make **another attempt at Dayan's 1997 thesis in full** — the postmortem's biggest
-single gap, cited there only at second hand. The survey has to answer the question
-M17c's profile left open, and the profile's own findings are an input to it:
-`geometry_for`'s union-difference-triangulate is now the single largest identified
-cost and nothing in this project knows whether it is avoidable.
+So the question M17c left open is answered, and answered three ways:
 
-**2. The negotiated-congestion lineage, for quality and not for speed.** BoxRouter,
-NTHU-Route 2.0, FastRoute 4.x, NCTU-GR and the ISPD-contest refinements, mined for
-**cost-function** technique. Low priority *and say why*: negotiation costs at most
-0.5 s on any board in this corpus, so nothing here is a speed candidate — what is
-worth taking is how those routers price a corridor, which is a quality question aipcb
-has never read the literature on.
+* **Algorithm replacement in the tightener: rejected on measurement.**
+  Hershberger–Snoeyink's Theorem 3.2 gives *O*(path complexity + edge crossings) for
+  the shortest path in a given homotopy class, Bespamyatnikh records that as
+  worst-case optimal, and it is what `funnel.py` already implements. There is
+  nothing to replace it with and nothing to win if there were.
+* **A compiled kernel: rejected as posed, and one narrow piece of it accepted.** The
+  largest single cost is a GEOS call, which is C already. But the profile found a
+  scalar Python point-in-triangle test running 3.1 million times that M17c's
+  vectorisation stopped one function short of — so constant-factor work is *not*
+  exhausted after all.
+* **Incremental construction: accepted as the structural direction.** Four
+  independent sources agree — Hershberger–Snoeyink's on-line funnel maintenance
+  (Theorem 3.4), Shewchuk & Brown's expected-linear segment insertion, Kallmann et
+  al.'s fully dynamic CDT with a measured ~540:1 rebuild-to-update ratio, and
+  **Dayan's own thesis, which says SURF maintained a per-layer incremental CDT for
+  exactly this reason, in 1997.** The survey's own measurement is the clincher: on
+  `examples/pcie-sata` a thousand-triangle triangulation is rebuilt 137 times
+  because a **median of two obstacles out of five hundred** changed.
 
-**3. Modern and ML routing, surveyed for completeness.** The standing hypothesis is
-that non-determinism disqualifies it from the core: this project's byte-stability
-guarantee is load-bearing and a learned policy that is not reproducible cannot hold
-it. Survey it anyway and **write the rejection down the way external autorouters are
-written down** in [Rejected, not deferred](#rejected-not-deferred) — with the reason
-and the property it breaks, so that the next person proposing it meets an argument
-rather than a silence. A learned *heuristic* inside a deterministic search is the one
-shape that could survive the objection, and the note should say whether the
-literature offers one.
+**Dayan's 1997 thesis was obtained in full** — from an Internet Archive snapshot,
+not from any live route, so the copy is fragile and the live routes are all still
+closed. It closes the postmortem's largest gap and re-prices two candidates: see
+C3 below.
+
+**Candidates the survey produced**, scoped in
+[`routing-literature.md` §4](notes/routing-literature.md#4-candidates) and sequenced
+in the M19 draft:
+
+| Candidate | Budget | What it has to show |
+|---|---|---|
+| **L0 vectorise the point-location tail** — `locate_many` batches the R-tree query and then runs a scalar Python loop; `_inside` runs 3 140 252 times and `_sign` 9 426 354 times on one board | **−10%** corpus `router_seconds` | Every one of the eleven board hashes byte-identical. It computes the same predicate, so it has no excuse to move a coordinate. The tie-break — lowest triangle index wins on a shared edge — is the whole risk and must be tested. |
+| **L2 bound the private repair field** — `_repair` builds a whole-board field for *one* connection, sixteen times on `pcie-sata`, at 16.3 s of 29.8 s profiled | **−25%** further | Completion unchanged at 275/278 and copper unchanged. Expansion-on-failure keeps completion safe by construction; any hash that moves is explained per board and per connection. |
+| **L1 an incremental free-space mesh** — maintain a persistent CDT per (layer, rule) and insert copper as a segment, instead of union → difference → triangulate 176 times per board | **−30%** further | Byte-identical hashes. **Needs its own ADR**, because it partially reverses [ADR 0006](decisions/0006-routing-approach.md) and puts a hand-owned geometric predicate into the router — the exact failure that killed the toporouter. Deliberately third: if L0 and L2 land, its remaining prize is much smaller than it looks. |
+| **L3 virtual capacity in place of the history term** (FastRoute 3.0/4.1) | gated | **Blocked on a board that does not converge in one iteration.** Ten of eleven examples converge in one; there is nothing here for a better cost function to improve. Its ablation elsewhere is the strongest in the survey — FastRoute 4.1 without it solves 5 of 16 ISPD08 benchmarks instead of 12, at 11.3× the runtime — and aipcb's capacity is already a real number in millimetres, which is what makes it fit. |
+| **L4 Gompertz base-cost anneal and rip-up ordering** (NTHU-Route 2.0) | gated | Same block, same reason. Both are small; the ordering reversals are the cheaper. |
+
+**Rejected by the survey, with reasons, so they are not proposed again**: replacing
+the funnel; Chazelle's linear-time triangulation (for *simple* polygons, and
+recorded as impractical by Shewchuk & Brown in 2015); BoxRouter 2.0's dynamic α (it
+fixes an instability that cannot occur against aipcb's hard over-capacity cliff);
+layer assignment as a separate stage (aipcb decides layer, via and corridor in one
+minimisation on purpose); monotonic routing, edge and node shifting, Hanan-grid
+warping, ACE, progressive ILP and pattern routing (each depends on rectilinear
+geometry, integer capacities or preferred layer directions); **RL and learned-policy
+routing**; **GPU acceleration**; and **a learned heuristic inside a deterministic
+search** — the one shape that survives the determinism objection in principle, and
+which is still rejected because it would optimise the 7% of the profile that is
+search and because no paper anywhere measures whether a frozen inference-only model
+reproduces bit-exactly. The reopening conditions are written out in
+[§3.5](notes/routing-literature.md#35-under-what-conditions-this-reopens).
+
+**One design rule recorded in advance.** If parallelism is ever proposed here, the
+bar is **serial equivalency** — the same answer as the single-threaded router,
+whatever the core count — and not merely determinism, because the golden files and
+`test_routing_is_byte_stable` pin the *serial* answer. SPRoute 2.0 (ASP-DAC 2022)
+achieves determinism by bulk-synchronous batching at a measured cost of "< 0.1%"
+quality; Shen et al. (TCAD 2020) achieve serial equivalency at 19.13× on 32 cores.
+[§3.6](notes/routing-literature.md#36-the-unexpected-finding-determinism-under-parallelism-is-a-solved-problem-by-non-ml-work).
+
+**Gaps left as gaps**: Yizhi Lu's 1991 UCSC master's thesis on dynamic CDT (the
+algorithm SURF actually ran on); NCTU-GR's "two-stage cost function", named in an
+abstract and paywalled everywhere; and **any algorithmic account of TopoR at all**,
+in any language — what exists is a trade article with an unbenchmarked vendor claim
+and a Russian textbook that was not obtained.
 
 ## Verification
 
