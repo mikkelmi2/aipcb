@@ -283,7 +283,7 @@ numbers are the best-evidenced result in the entire record:
 | Meggy Jr RGB | 158 | 190.87 in | 188.73 in | **160.08 in** (−16.1%) |
 | Test | 11 | 8.97 in | **8.32 in** (−7.3%) | — |
 
-For 15–30% more runtime. **This is [candidate C3](#c3-a-detour-pass).**
+For 15–30% more runtime. **This is [candidate C3](#c3-a-detour-pass--rejected-at-m19).**
 
 ### A.5 Clusters — routing to a net, not to a pad
 
@@ -581,7 +581,7 @@ and the cited academic work, never from the GPL source.**
   boards, this is a correctness tidy-up rather than a quality win, and should be
   scoped as such.
 
-### C3. A detour pass
+### C3. A detour pass — rejected at M19
 
 * **Technique** — after negotiation converges, score every routed connection by
   realised length minus unobstructed length. Sort descending. For each above a
@@ -620,6 +620,34 @@ and the cited academic work, never from the GPL source.**
   Dayan §6.1's argument that some topologies are unreachable by any order of
   sequential shortest-path routing, so a post-pass is structurally necessary rather
   than merely nice.
+
+* **Rejected at M19, 2026-08-24, with its numbers.** The owner declined the
+  candidate on the re-priced figure rather than deferring it again. The trade, laid
+  out:
+
+  | | Value |
+  |---|---|
+  | Expected gain | **~3.4 % of wire length** — Dayan's ROAR optimiser, ten two-layer bins, 427 branches, detour 8.84 % → 5.18 %. A primary measurement of this exact mechanism. |
+  | Runtime budget | **+30 % of corpus `router_seconds`**, which is what the historical measurement cost |
+  | Superseded figure | The 7–16 % this candidate was carried at is Blake's, on **two** boards, second-hand |
+  | Named customer | **Gone.** The `route-doubles-back` retrace on `examples/pcie-sata` was fixed at M17b by the via pass, for **+1.3 %** runtime on that board rather than +30 % of the corpus |
+  | Corroborating evidence against | **53 of 55** collapsible spans corpus-wide were unimprovable at M17a — 21 because the on-layer route is longer, 32 because the free space is split, **zero on capacity** |
+  | What survives in its favour | Dayan §6.1: some topologies are unreachable by *any* order of sequential shortest-path routing, so a post-pass is structurally necessary rather than merely nice |
+
+  **3.4 % for +30 % fails any budget this project has stated.** Every candidate
+  since M16 has been held to a runtime ceiling declared before it was built, and no
+  ceiling in the record is anywhere near an order of magnitude of runtime per
+  percent of copper. Dayan's §6.1 argument is accepted and does not rescue the
+  candidate: it establishes that *something* post-convergence is needed for
+  completeness on some topologies, not that **this** post-pass is worth 30 % of the
+  corpus's routing time. That argument is the one thing that could reopen C3 — a
+  cheaper mechanism addressing the same structural gap would be a new candidate,
+  budgeted afresh, and not this one.
+
+  **Where the number came from, so it is not re-derived wrongly:**
+  [`routing-literature.md` §1.3](routing-literature.md#13-dayans-thesis-obtained--what-the-second-hand-markers-got-right-and-wrong).
+  The rejection is recorded here rather than in a deleted branch precisely so the
+  next person to propose a detour pass meets 3.4 % before they meet 7–16 %.
 
 ### C4. Route to the net, not to the pad
 
@@ -760,6 +788,15 @@ time with **every board's output hash unchanged**. The algorithmic question — 
 the funnel-per-connection-against-a-whole-board-triangulation shape is asymptotically
 right — was not touched and is M18's to answer.
 
+**And one candidate is now rejected outright — C3, the first on the list to be.**
+Not on a failed implementation: on a re-priced expectation. M18 obtained Dayan's
+thesis and replaced the second-hand 7–16 % with a primary **3.4 %**, against a
+**+30 %** runtime budget, after M17 had already removed the candidate's named
+customer. The owner declined it on 2026-08-24 and the full numbers are in
+[C3](#c3-a-detour-pass--rejected-at-m19) above. It is restated here because this is
+the section the closure rule points at, and a rejection recorded only inside the
+candidate that carried it is one the next reader has to already be looking for.
+
 ---
 
 ## What this changes
@@ -769,6 +806,13 @@ techniques, three of which (C1, C3, C4) are the "better layout" track and one of
 (C6) is a precondition for judging them; a soundness gap in the capacity model that
 was not previously known (C2/E1); and two cheap guards (E2, E3) against failure
 classes with hard historical evidence behind them.
+
+*Written before M16. Since then C6 was built (M16c's bench harness), E1 and E2 were
+closed, C3 was **rejected** on its re-priced numbers, and the "better layout" track
+is down to C1 and C4 — with [M20](../milestones/m20-placement-quality.md)'s thesis
+being that the rest of that track may not be in the router at all. The candidate
+entries above carry their own current status; this paragraph is left as written so
+the position it records stays datable.*
 
 And the sustainability lesson, which is the part that does not fit in a candidate
 list. The toporouter's algorithm was not what failed. What failed was that one

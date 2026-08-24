@@ -27,7 +27,8 @@ with the numbers.
 | M16 | toporouter lessons, part 1 — the capacity check's honesty, the exposure guards, the benchmark harness | executed — [`m16.md`](../reports/m16.md) |
 | [`m17-measured-improvements.md`](m17-measured-improvements.md) | M17 — router improvements, part 2: via minimisation, retrace elimination, stretcher performance | executed — [`m17.md`](../reports/m17.md) |
 | [`m18-literature-survey.md`](m18-literature-survey.md) | M18 — the routing literature survey (documentation only) | executed — [`m18.md`](../reports/m18.md) |
-| [`m19-DRAFT.md`](m19-DRAFT.md) | M19 — router improvements, part 3: the field that gets rebuilt | **DRAFT, not approved** — written by M18 for the owner's review; nothing scheduled, nothing started |
+| [`m19-incremental-geometry.md`](m19-incremental-geometry.md) | M19 — router improvements, part 3: the congestion stress board, and the geometry that gets rebuilt | **approved** 2026-08-24 — nothing started; the review that turned M18's draft into this is [`m19-review.md`](../reports/m19-review.md) |
+| [`m20-placement-quality.md`](m20-placement-quality.md) | M20 — placement quality: rotation, routability-estimated packing, and the zero-router-change experiment | **approved** 2026-08-24 — nothing started; sequenced after the `pcie-sata` fab round |
 
 The delivery report requirement was introduced with M10, so the earlier
 milestones ran without one. [`m8.md`](../reports/m8.md) was reconstructed after the

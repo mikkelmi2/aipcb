@@ -351,7 +351,7 @@ the source table as a gap.** What can be obtained is the modern equivalent, and 
 is built on that instead.
 
 **Finding 3 — the detour pass has a primary measurement now, and it is smaller than
-the second-hand one.** [Candidate C3](toporouter-postmortem.md#c3-a-detour-pass)
+the second-hand one.** [Candidate C3](toporouter-postmortem.md#c3-a-detour-pass--rejected-at-m19)
 currently cites Blake's before/after numbers, 7–16 % less copper on two historical
 boards. Dayan's chapter 6 measures the same idea — his ROAR operator — on ten
 two-layer bins, 427 branches, and reports it as *detour*, the excess over the sum
@@ -1098,7 +1098,9 @@ it is the evidence a future ADR would have to weigh.**
 
 Numbered **L**, so they do not collide with the toporouter note's C1–C6. Each is
 scoped so a milestone prompt can be drafted from it directly. The drafted proposal
-that selects among them is [`m19-DRAFT.md`](../milestones/m19-DRAFT.md).
+that selects among them is
+[`m19-incremental-geometry.md`](../milestones/m19-incremental-geometry.md), approved
+2026-08-24 from the draft this note's session wrote.
 
 **Source discipline**, as in the postmortem: every one is to be implemented from
 this note and the cited papers, never from anybody's source tree.

@@ -17,7 +17,11 @@ brought by somebody who is not us, which is the exact evidence the example corpu
 cannot supply no matter how many examples it grows. A **congestion stress example**
 harder than `examples/congestion` — more nets than channels, on an outline with no
 slack — either routes or hands over cleanly, so that the failure mode at the limit
-is known rather than discovered by a user. And its **runtime is benchmarked against
+is known rather than discovered by a user; **this one now has a milestone**, as
+[M19s](milestones/m19-incremental-geometry.md#m19s--the-congestion-stress-board-first),
+moved to the front of M19 so that incremental geometry is proven on the largest
+thing that exists and so the capability ladder gets a real data point at the top of
+its range instead of an extrapolation. And its **runtime is benchmarked against
 board size** — ~~not measured~~ **done in M16c**: `aipcb bench` records wall clock
 per stage over the whole corpus, `bench/results/baseline.json` is the committed
 reference, and CI diffs a subset on every pull request. One condition of three is
@@ -96,6 +100,20 @@ What would not change is the input. The three-level intent model —
 intent above them, packing below — is what a scoring pass would optimise *inside*.
 A placer that ignores a `fixed:` position to shorten a ratline has misunderstood
 which of the two is a fact about the world.
+
+**Evaluated and scheduled at M19's review, 2026-08-24:
+[`m20-placement-quality.md`](milestones/m20-placement-quality.md).** The router-side
+evidence is what moved it from "next obvious gap" to a milestone. M17a found the via
+opportunity **ten times smaller** than M16's proxy had suggested — two collapsible
+spans out of 55, not 37 of 90 — and M17c halved corpus routing time. The quality
+levers *inside* the router keep measuring smaller than they looked, so the remaining
+gains most likely live upstream, in the problem the router is handed. M20a is the
+cheap lever (four orientations per movable component, scored against pin-to-net
+direction, near-zero runtime), M20b folds a congestion estimate into the packing
+cost, and **M20c is the experiment that settles the thesis**: re-run `aipcb bench`
+after placement changes and measure which router-level symptoms — wirelength, vias,
+crossings — improve with **zero router changes**. It runs after the fab round, for
+the [reason stated below](#part-2-the-quality-candidates-and-the-rule-they-are-held-to).
 
 ## Routing
 
@@ -295,10 +313,24 @@ a fabrication result is evidence nothing in the corpus can supply. Moving the
 router's output underneath it while the boards are in flight would mean the copper
 that was measured and the copper the tool now produces are not the same copper.
 
+**The owner settled the exact order on 2026-08-24, and it is this:**
+
+1. **[M19s, M19a, M19b](milestones/m19-incremental-geometry.md)** — the congestion
+   stress board, then the two cheap geometry candidates. M19a is hash-preserving by
+   its own acceptance criterion; M19b keeps completion and copper by construction
+   and explains any hash that moves. Neither is a quality change in disguise, which
+   is what makes them exempt from the rule above.
+2. **A BOM/CPL export milestone, then the fab round.** Queued immediately after
+   M19a/M19b — nothing else goes in front of it. `pcie-sata` gets ordered.
+3. **[M19c](milestones/m19-incremental-geometry.md#m19c--an-incremental-free-space-mesh-survey-candidate-l1--conditional)
+   and any [M20](milestones/m20-placement-quality.md) placement implementation come
+   after the board is ordered.** Both can move copper on the flagship, and neither
+   is worth moving it underneath a board that is in flight.
+
 | Candidate | Runtime budget | What it has to show |
 |---|---|---|
 | **C1 spreading** — distribute the routes crossing a cut evenly along it instead of leaving each hugging the hull it was tightened against | **+15%** | Corridor utilization spread down at unchanged completion; `headroom_mm` up on the tight boards. Every golden file moves, so it must also show the copper it costs — a spread route is longer than a hugging one by construction. |
-| **C3 post-convergence detour pass** — rank routes by realised over unobstructed length, rip up the worst, keep only strictly-better re-routes | **+30%**, which is what the historical measurement cost | **Re-priced by M18, downward, from a primary source.** The roadmap used to cite 7–16% less copper from Blake's before/after on two boards. Dayan's 1997 thesis — obtained in full at M18 — measures the same mechanism (his ROAR optimiser) on ten two-layer bins and 427 branches, and reports **detour falling from 8.84% to 5.18%, which is about 3.4% of wire length**. That is the number to beat now: a primary measurement, on ten cases rather than two, of the mechanism itself. **Its named customer is also gone**: the `route-doubles-back` warning M16b uncovered on `examples/pcie-sata` was fixed in M17b by the much narrower via pass, for 0.6 s on that board rather than 30% of the corpus — and M17 found 53 of 55 collapsible spans corpus-wide unimprovable. What C3 keeps is the one thing M18 *added* in its favour: Dayan §6.1's argument that a post-pass is structurally necessary, because "no order of the nets will result in an optimal solution" for some topologies (his triangle problem). **3.4% for +30% runtime is the trade the owner has to judge**, and it is one of the decisions listed in [`m19-DRAFT.md`](milestones/m19-DRAFT.md). |
+| ~~**C3 post-convergence detour pass**~~ — rank routes by realised over unobstructed length, rip up the worst, keep only strictly-better re-routes | ~~+30%~~ | **REJECTED 2026-08-24, with its numbers.** M18 re-priced it from a primary source and the owner declined it. Expected gain **~3.4% of wire length** — Dayan's ROAR optimiser, ten two-layer bins, 427 branches, detour 8.84% → 5.18% — against a **+30% runtime** budget. The 7–16% this roadmap used to cite is Blake's, on two boards, second-hand. Its named customer is gone: the `route-doubles-back` retrace on `examples/pcie-sata` was fixed at M17b by the via pass for +1.3% on that board, and 53 of 55 collapsible spans corpus-wide were unimprovable. **3.4% for +30% fails any budget stated here.** Dayan §6.1's argument that some topologies are unreachable by any net ordering is accepted and does not rescue it — it says *a* post-pass is structurally necessary, not that this one is worth 30% of the corpus. The full record is in the [postmortem note](notes/toporouter-postmortem.md#c3-a-detour-pass--rejected-at-m19) §C, under the closure rule. A cheaper mechanism for the same structural gap would be a new candidate, budgeted afresh. |
 | **C4 route to the net, not to the pad** — cluster-to-cluster search with group merging, replacing the up-front Euclidean MST | **+20%** | Shorter copper and better completion under congestion, and the `copper_sliver` on `examples/diff-pair` gone at its cause rather than trimmed. The largest and most invasive of the three — it changes what a connection *is*, reaches `RouteTopology` and the manual-routing path, and needs its own ADR because it partially reverses a decision rather than extending one. |
 | **C5 pairwise-conflict ordering** — score connections by how much their solo routes conflict, and order the first pass by that instead of by priority plus difficulty | **+10%**, and it should be negative | Fewer negotiation iterations to convergence. **The baseline is already evidence against it**: ten of the eleven examples converge in *one* iteration and `enclosure` in four, so there is almost nothing for a better first order to save. **M18 lowered it further, twice.** Dayan formulates the identical mechanism (§4.5, ordered pairwise conflicts) and claims for it only that it beats *shortest-first* — which is not what aipcb does — while leaving its complexity an open question. And his §6.1 triangle problem shows that some topologies cannot be reached by *any* order of sequential shortest-path routing, so ordering cannot fix what ordering cannot fix. Read the M16 baseline before spending a milestone on this; it may be settled already. |
 | **Charging the second diagonals in the router** — [ADR 0014](decisions/0014-special-cuts.md) Decision 2 built the cuts and deliberately left the cost model alone | **+10%** | Better completion or fewer detours on the congestion-sensitive boards. The cuts are already derived and already charged in `check_capacity`; what is untested is whether making negotiation pay for them improves anything or merely makes the router timid. |
@@ -330,9 +362,11 @@ M17 spent the evidence that already existed. M18 read the literature, in the
 with [`docs/notes/routing-literature.md`](notes/routing-literature.md): technique →
 aipcb component → expected gain → runtime risk → candidate or rejected-with-reason,
 with gaps in the record marked as gaps. **No code moved.** The
-[M18 report](reports/m18.md) is the summary and
-[`m19-DRAFT.md`](milestones/m19-DRAFT.md) is the drafted proposal that came out of
-it, awaiting the owner's review.
+[M18 report](reports/m18.md) is the summary, and the drafted proposal that came out
+of it has been **reviewed and approved** — it is now
+[`m19-incremental-geometry.md`](milestones/m19-incremental-geometry.md), with
+[`docs/reports/m19-review.md`](reports/m19-review.md) recording what the owner
+changed between draft and milestone.
 
 **The headline finding reframes three milestones of received wisdom.** M16 measured
 that 83–94% of routing time is in the `tighten` stage and everything since reasoned
@@ -369,7 +403,7 @@ C3 below.
 
 **Candidates the survey produced**, scoped in
 [`routing-literature.md` §4](notes/routing-literature.md#4-candidates) and sequenced
-in the M19 draft:
+in [M19](milestones/m19-incremental-geometry.md):
 
 | Candidate | Budget | What it has to show |
 |---|---|---|
@@ -406,7 +440,42 @@ quality; Shen et al. (TCAD 2020) achieve serial equivalency at 19.13× on 32 cor
 algorithm SURF actually ran on); NCTU-GR's "two-stage cost function", named in an
 abstract and paywalled everywhere; and **any algorithmic account of TopoR at all**,
 in any language — what exists is a trade article with an unbenchmarked vendor claim
-and a Russian textbook that was not obtained.
+and a Russian textbook that was not obtained. **One retry on the three closed
+sources is authorised as a background task in a future session** — not a dedicated
+effort, and nothing is blocked on it. Only Lu's thesis would change any design here,
+and only marginally: Shewchuk & Brown and Livesu et al. supersede it.
+
+### M19 and M20 — what the review approved
+
+The M18 draft was reviewed on 2026-08-24 and became two milestones. What changed and
+why is in [`reports/m19-review.md`](reports/m19-review.md); the sequencing is
+[above](#part-2-the-quality-candidates-and-the-rule-they-are-held-to).
+
+**[M19 — incremental geometry](milestones/m19-incremental-geometry.md)**, in order:
+**M19s** the congestion stress board, moved to the front so the geometry work is
+proven on the largest thing that exists and the capability ladder gets a real anchor
+at the top of its range; **M19a** vectorise the point-location tail (−10 % corpus
+routing, every board hash byte-identical, hash preservation as a *criterion* rather
+than a hope); **M19b** bound the private repair field (−25 % further, completion and
+copper unchanged); **M19c** an incremental free-space mesh, **still conditional** on
+what M19a and M19b actually measure; **M19d** re-fit the capability extrapolation.
+
+**M19c's gate gained two hard conditions** that must hold if it ever activates,
+because it is the one item in this project's history that would put a hand-owned
+geometric predicate into the router — the [exact root
+cause](notes/toporouter-postmortem.md#b2-root-cause) that killed the gEDA
+toporouter. First, the predicate ships with **`hypothesis` property tests against
+shapely as the oracle**, explicitly fuzzing collinear, coincident and near-epsilon
+cases — the degenerate class that a uniform random sampler almost never produces and
+that broke the toporouter. Second, a **kill-switch config falls back to the robust
+rebuild path**, and the predicate stays opt-in until it has survived the full corpus
+plus the stress board.
+
+**[M20 — placement quality](milestones/m20-placement-quality.md)** is the other half,
+and it is [described under Placement](#placement). Its thesis is that the remaining
+quality gains are upstream of the router, and **M20c is the experiment that settles
+it**: re-run the bench after placement improvements and see which router-level
+symptoms move with zero router changes.
 
 ## Verification
 
@@ -517,6 +586,17 @@ single net — which is what makes the netlist-identity guardrail survivable at 
 What is missing is the child `.kicad_sch` files, the `sheet` nodes on the root, the
 per-sheet instance paths, and a design big enough to prove them. Blocked on a
 design, not on machinery.
+
+**The design it is blocked on is now scheduled.**
+[M19s](milestones/m19-incremental-geometry.md#m19s--the-congestion-stress-board-first)
+builds a congestion stress board — more nets than channels, on an outline with no
+slack — and a board with enough nets to congest a routing channel is very likely the
+first design in this repository big enough to justify splitting a sheet. **M19 does
+not build multi-sheet output and must not**; the linkage is recorded here so that
+whoever picks this up knows the blocking design will exist, and so that M19s's author
+gives the board a module structure that would survive being split. Nothing else about
+the position changes: ADR 0003's global labels are still what makes the netlist
+identity guardrail survivable, and the machinery is still unwritten.
 
 **Buses.** M14b asked for buses where the source declares grouped nets. No bundled
 design declares a group wider than two nets — differential pairs and `max_skew_mm`

@@ -103,9 +103,17 @@ converge in one iteration, and **no such board exists in this corpus**.
 
 ## What the owner needs to review
 
+> **Reviewed 2026-08-24. Everything in this section is answered**, and the answers
+> — with what changed between draft and milestone and why — are in
+> [`m19-review.md`](m19-review.md). The draft became
+> [`m19-incremental-geometry.md`](../milestones/m19-incremental-geometry.md) and
+> [`m20-placement-quality.md`](../milestones/m20-placement-quality.md). This section
+> is left as the chain wrote it, because what the chain handed over is part of its
+> record.
+
 **The deliverable of this chain is a decision, not a merge.**
-[`docs/milestones/m19-DRAFT.md`](../milestones/m19-DRAFT.md) is a draft and is marked
-as one in its filename, its title and its first paragraph. It proposes, in order:
+`docs/milestones/m19-DRAFT.md` is a draft and is marked as one in its filename, its
+title and its first paragraph. It proposes, in order:
 **M19a** vectorise the point-location tail (−10 % corpus routing, all eleven hashes
 byte-identical), **M19b** bound the private repair field (−25 % further), **M19c** an
 incremental free-space mesh (−30 % further, **conditional**), **M19d** re-fit the

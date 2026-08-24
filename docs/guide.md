@@ -558,6 +558,49 @@ route those nets by hand in KiCad, and the incremental build then preserves that
 copper and treats it as law. What the toolchain will never do is ship a board with
 DRC violations and call it routed.
 
+### What the via pass took back — `routing.reclaimed` *(beta)*
+
+After negotiation converges, M17's via pass re-tightens every span where a route
+leaves a layer and comes back, and every connection whose two pads share a layer,
+keeping the single-layer result only when it costs fewer vias and no more copper.
+What it took back is reported:
+
+```console
+$ aipcb route all examples/pcie-sata/design.yaml --json | jq '.routing.reclaimed'
+{
+  "spans_considered": 18,
+  "spans_collapsed": 2,
+  "vias_removed": 4,
+  "retraces_removed": 1,
+  "copper_saved_mm": 30.285,
+  "rejected": { "longer": 10, "capacity": 0, "unrealizable": 6 },
+  "skipped_controlled_impedance": 0,
+  "collapsed": [
+    "GND U1.17>U1.49 gave back a retrace, 2 vias and 17.116 mm of copper on F.Cu",
+    "GND U1.49>U1.42 gave back 2 vias and 13.169 mm of copper on F.Cu"
+  ]
+}
+```
+
+`rejected.capacity` is zero there, and it is zero on every bundled example: across
+the whole corpus **not one span was rejected on capacity**, because length is the
+binding constraint everywhere in it. The arbiter is built and unit-tested and has
+never fired on real data — which is a fact about the corpus rather than about the
+arbiter, and the first thing to re-measure when a denser board exists.
+
+It is a **permanent part of the public interface**, alongside the `reclaim` stage
+that `aipcb bench` records in its per-stage timings — both are things a caller may
+depend on, not implementation detail that happened to leak. Both are **beta**: the
+key is stable, its *shape* may still gain fields, and a bench result from before
+M17 simply has no `reclaim` key, which `--compare` handles by deriving its columns
+from the data rather than from a fixed list.
+
+The measured effect on the bundled corpus is small and honest about it: **four vias
+and 30.3 mm of copper, on one board**, from 55 candidate spans. The other 53 are
+rejected because the single-layer route is longer or the free space on that layer is
+split. This router's vias are, with four exceptions, load bearing —
+[the M17 report](reports/m17.md) has the per-board table.
+
 ### Reading part of a design
 
 An agent working on one corner of a board should not have to hold the whole thing
