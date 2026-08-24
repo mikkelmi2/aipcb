@@ -601,6 +601,16 @@ and the cited academic work, never from the GPL source.**
 * **Guard it** — the pass must be deterministic and must never accept a route that
   fails `check_no_crossings`. Bound it by iterations, not by wall clock, or
   `test_routing_is_byte_stable` will start failing on a loaded machine.
+* **Measured at M17, in part.** This candidate's named first customer was the E2
+  finding on `examples/pcie-sata` — the GND connection laying eight millimetres of
+  copper and two vias twice over. It was fixed without a detour pass: M17's via
+  pass asks a much narrower question (does this span fit on one layer, in one leg)
+  and the answer was yes. So C3 has lost its concrete customer and keeps its
+  general one; the numbers M17 measured while looking are in the
+  [M17 report](../reports/m17.md) §1, and the useful one for anybody who does
+  build C3 is that **53 of the 55 collapsible spans in the corpus were rejected
+  because the on-layer route is longer or does not exist** — the vias this router
+  spends are, with four exceptions, load bearing.
 
 ### C4. Route to the net, not to the pad
 
@@ -702,6 +712,44 @@ CDT to GEOS and snaps to 1e-6 mm, which is almost certainly fine at board scale,
 **Now:** one test that routes an existing example translated a long way from the
 origin and scaled, and asserts the same topology comes out. If it passes, the premise
 is measured and dated. If it does not, this note has paid for itself.
+
+---
+
+## Measured results, as the closure rule requires
+
+The [part-2 rule](../roadmap.md#part-2-the-quality-candidates-and-the-rule-they-are-held-to)
+says a candidate that does not pay for itself is recorded here rather than deleted.
+Nothing in M17 was rejected outright — all three of its candidates came in under
+budget — but three of its measurements are negative results and belong here, because
+the next person to propose the same thing should meet them first.
+
+**Via minimisation is nearly exhausted, and the 37/90 proxy overstates it.** The M16
+baseline found 37 of 90 corpus layer changes made by connections that never met a
+corridor above half capacity, and the roadmap said out loud that half capacity is a
+convention and "no pressure anywhere on the connection" is not "no pressure at the
+via". M17a sharpened it by asking the geometry instead. Of 55 candidate spans across
+the eleven examples — every place a route leaves a layer and returns to it, plus
+every connection whose two pads share a layer — **two collapse**. Twenty-one are
+rejected because the single-layer route exists and is longer (so the via bought
+something), and thirty-two because the free space on the target layer is genuinely
+split in two. The 37 was a proxy; the geometry's answer is four vias, and they are
+on one board.
+
+**The capacity arbiter never fired.** M16a's special cuts were built so that a via
+collapse could be tested against a sound cut model, and the model is wired in and
+tested — but on this corpus **not one span was rejected on capacity**. Length is the
+binding constraint everywhere here. That does not make the arbiter unnecessary (a
+denser board is exactly where it would speak), it makes it currently unexercised by
+real data, and the report says so rather than claiming a win it did not earn.
+
+**The stretcher's cost was constant factors, not the algorithm.** M17c's profile
+found that two thirds of the router's profiled wall clock on the largest board was not tightening at
+all: it was the *field builder* being rebuilt from scratch for every connection the
+shared field could not place, and inside it a scalar Shapely loop over tens of
+thousands of candidate via sites. Batching those calls halved the corpus routing
+time with **every board's output hash unchanged**. The algorithmic question — whether
+the funnel-per-connection-against-a-whole-board-triangulation shape is asymptotically
+right — was not touched and is M18's to answer.
 
 ---
 

@@ -65,7 +65,7 @@ externally-contributed boards, passed a harder congestion stress example, and be
 benchmarked against board size. The third of those is **done** — `aipcb bench`
 records the whole corpus and CI diffs a subset on every change; routing cost grows
 close to linearly in connections × triangulation size, and the numbers are in
-[the M16 report](docs/reports/m16.md). The other two need a board this project did
+[the M17 report](docs/reports/m17.md). The other two need a board this project did
 not design. [The conditions in full](docs/roadmap.md#maturity-and-graduation).
 
 ## Source to fabrication, in six steps

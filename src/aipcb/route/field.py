@@ -46,8 +46,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from shapely.geometry import Point as ShapelyPoint
-
 from aipcb.model.layout import Keepout, Layout
 from aipcb.route.obstacles import (
     Obstacle,
@@ -515,38 +513,57 @@ def _via_sites(
 
     candidates: list[Point] = []
     for layer_field in fields.values():
-        for triangle in layer_field.triangulation.triangles:
-            centre = _incentre(triangle)
+        for shape in layer_field.triangulation.triangles:
+            centre = _incentre(shape)
             if centre is not None:
                 candidates.append(centre)
     candidates.extend(_grid_points(fields, via_radius))
 
     sites: list[ViaSite] = []
     by_triangle: dict[tuple[str, int], list[int]] = {}
-    seen: set[Point] = set()
     # Sorted and de-duplicated on a grid finer than a via, so the site list is a
     # function of the board and not of the order the layers happened to be built.
-    for point in sorted({_quantise(p) for p in candidates}):
-        if point in seen:
-            continue
-        seen.add(point)
+    points = sorted({_quantise(p) for p in candidates})
+
+    # One Shapely call per layer rather than four per point (M17c). The scalar loop
+    # this replaces built a `ShapelyPoint` per point *per layer*, asked GEOS for the
+    # free space's boundary afresh on every one of them, and paid a Python-level
+    # call for each `covers`, `locate` and `distance`. On `examples/pcie-sata` that
+    # was 1.9 million Point constructions and 854 000 boundary derivations, and it
+    # was 54.7 s of an 87 s profiled run -- because a private field is rebuilt for
+    # every connection the shared field could not place. The arithmetic is GEOS's
+    # either way, so the answers are identical; only the number of trips is not.
+    room_by_layer: dict[str, list[float | None]] = {}
+    home_by_layer: dict[str, list[int | None]] = {}
+    for name, layer_field in fields.items():
+        inside, distances = _covered(layer_field.free, points)
+        where = [i for i, ok in enumerate(inside) if ok]
+        located = layer_field.triangulation.locate_many([points[i] for i in where])
+        homes: list[int | None] = [None] * len(points)
+        for position, home in zip(where, located, strict=True):
+            homes[position] = home
+        room_by_layer[name] = [
+            distances[i] if inside[i] and homes[i] is not None else None
+            for i in range(len(points))
+        ]
+        home_by_layer[name] = homes
+
+    for position, point in enumerate(points):
         room: dict[str, float] = {}
-        homes: dict[str, int] = {}
-        for name, layer_field in fields.items():
-            shapely_point = ShapelyPoint(point)
-            if not layer_field.free.covers(shapely_point):
+        homes_here: dict[str, int] = {}
+        for name in fields:
+            reach = room_by_layer[name][position]
+            home_at = home_by_layer[name][position]
+            if reach is None or home_at is None:
                 continue
-            located = layer_field.triangulation.locate(point)
-            if located is None:
-                continue
-            room[name] = float(layer_field.free.boundary.distance(shapely_point))
-            homes[name] = located
+            room[name] = reach
+            homes_here[name] = home_at
         if not room or max(room.values()) < via_radius:
             continue
         index = len(sites)
-        sites.append(ViaSite(index=index, point=point, room=room, triangle=homes))
-        for name, located in homes.items():
-            by_triangle.setdefault((name, located), []).append(index)
+        sites.append(ViaSite(index=index, point=point, room=room, triangle=homes_here))
+        for name, located_at in homes_here.items():
+            by_triangle.setdefault((name, located_at), []).append(index)
 
     # One triangle can hold dozens of near-identical candidates, and the search
     # would consider every one of them from every gate -- for a choice the stretcher
@@ -562,6 +579,23 @@ def _via_sites(
                 ]
             )
     return sites, by_triangle
+
+
+def _covered(free: Any, points: list[Point]) -> tuple[list[bool], list[float]]:
+    """For each point: is it inside ``free``, and how far is it from the boundary.
+
+    Both questions in two vectorised GEOS calls, against a boundary derived once.
+    """
+    import numpy as np
+    from shapely import covers, distance
+    from shapely import points as shapely_points
+
+    if not points:
+        return [], []
+    geometries = shapely_points(np.array(points, dtype="float64"))
+    inside = covers(free, geometries)
+    reach = distance(free.boundary, geometries)
+    return [bool(v) for v in inside.tolist()], [float(v) for v in reach.tolist()]
 
 
 def _grid_points(fields: dict[str, LayerField], via_radius: float) -> list[Point]:

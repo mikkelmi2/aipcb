@@ -216,10 +216,13 @@ against a computed lower bound, corridor utilization and headroom per layer, lay
 changes made without capacity pressure, and a hash of the board.
 `bench/results/baseline.json` is the committed reference, `--compare` diffs against
 it, and a smoke run over three examples guards every pull request. See
-[the M16 report](reports/m16.md) for the baseline table and what it already says —
-including that routing cost is close to linear in connections × triangulation size
-(R² 0.97), and that 83–94% of it is in the tightener on the five largest boards
-while negotiation never exceeds half a second.
+[the M16 report](reports/m16.md) for the baseline table and what it already said —
+including that routing cost is close to linear in connections × triangulation size,
+and that 83–94% of it was in the tightener on the five largest boards while
+negotiation never exceeds half a second. [The M17 report](reports/m17.md) re-fits
+that curve after halving the constant factors: the exponents are unmoved (1.10
+against connections × cuts, R² 0.96), and a 900-connection board now extrapolates to
+roughly 11.5 minutes rather than 23.7.
 
 Two consequences worth naming. It discharges one of the three
 [graduation conditions](#maturity-and-graduation) — runtime is benchmarked now, and
@@ -295,21 +298,73 @@ that was measured and the copper the tool now produces are not the same copper.
 | Candidate | Runtime budget | What it has to show |
 |---|---|---|
 | **C1 spreading** — distribute the routes crossing a cut evenly along it instead of leaving each hugging the hull it was tightened against | **+15%** | Corridor utilization spread down at unchanged completion; `headroom_mm` up on the tight boards. Every golden file moves, so it must also show the copper it costs — a spread route is longer than a hugging one by construction. |
-| **C3 post-convergence detour pass** — rank routes by realised over unobstructed length, rip up the worst, keep only strictly-better re-routes | **+30%**, which is what the historical measurement cost | 7–16% less copper is the number to beat, from Blake's own before/after. It is the least risky of the three: a pure post-pass that can only accept an improvement, budget-capped and switchable. It is also the fix for the `route-doubles-back` warning M16b uncovered on `examples/pcie-sata`, which is a concrete customer rather than a hypothetical one. |
+| **C3 post-convergence detour pass** — rank routes by realised over unobstructed length, rip up the worst, keep only strictly-better re-routes | **+30%**, which is what the historical measurement cost | 7–16% less copper is the number to beat, from Blake's own before/after. It is the least risky of the three: a pure post-pass that can only accept an improvement, budget-capped and switchable. **Its named customer is gone**: the `route-doubles-back` warning M16b uncovered on `examples/pcie-sata` was fixed in M17b by the much narrower via pass, for 0.6 s on that board rather than 30% of the corpus. What is left for C3 is the general case, and [M17's numbers](reports/m17.md) are the first evidence about how much of it there is. |
 | **C4 route to the net, not to the pad** — cluster-to-cluster search with group merging, replacing the up-front Euclidean MST | **+20%** | Shorter copper and better completion under congestion, and the `copper_sliver` on `examples/diff-pair` gone at its cause rather than trimmed. The largest and most invasive of the three — it changes what a connection *is*, reaches `RouteTopology` and the manual-routing path, and needs its own ADR because it partially reverses a decision rather than extending one. |
 | **C5 pairwise-conflict ordering** — score connections by how much their solo routes conflict, and order the first pass by that instead of by priority plus difficulty | **+10%**, and it should be negative | Fewer negotiation iterations to convergence. **The baseline is already evidence against it**: ten of the eleven examples converge in *one* iteration and `enclosure` in four, so there is almost nothing for a better first order to save. Read the M16 baseline before spending a milestone on this; it may be settled already. |
 | **Charging the second diagonals in the router** — [ADR 0014](decisions/0014-special-cuts.md) Decision 2 built the cuts and deliberately left the cost model alone | **+10%** | Better completion or fewer detours on the congestion-sensitive boards. The cuts are already derived and already charged in `check_capacity`; what is untested is whether making negotiation pay for them improves anything or merely makes the router timid. |
 
-**Via minimization** is not on this list as a candidate of its own, and that is a
-finding rather than an omission: the harness measures `via_lower_bound` and
-`layer_changes_without_pressure` precisely so that "the router spends vias it does
-not need to" is a number before it is a project. The baseline says there *is*
-something there — 90 layer changes corpus-wide against a bound of 14, of which 37
-were made on connections that never met a corridor above half capacity, a third of
-`pcie-sata`'s and 40% of `qfn-fanout`'s. But half capacity is a stated convention
-and "no pressure anywhere on the connection" is not the same as "no pressure at the
-via", so the first job of any such pass is to sharpen that proxy rather than to
-trust it. C3 and C4 both reduce vias as a side effect anyway.
+**Via minimization was not on this list as a candidate of its own — and M17a built
+it anyway, because the baseline had already made it a number.** The harness measures
+`via_lower_bound` and `layer_changes_without_pressure` precisely so that "the router
+spends vias it does not need to" is a measurement before it is a project, and the M16
+baseline said there was something there: 90 layer changes corpus-wide against a bound
+of 14, of which 37 were made on connections that never met a corridor above half
+capacity.
+
+*Done in M17a/M17b, and the proxy was overstating it.* `route/tidy.py` asks the
+geometry rather than the proxy: every span where a route leaves a layer and comes
+back, and every connection whose two pads share a layer, is re-tightened as a single
+leg and kept only if it comes out with fewer vias and no more copper, with M16a's
+special-cuts-corrected cut model as the congestion arbiter. Fifty-five candidates
+across the corpus, **two collapse** — four vias and 30.3 mm of copper on
+`examples/pcie-sata`, including the E2 retrace — and the other fifty-three are
+rejected because the single-layer route is longer or the free space on that layer is
+split. Half capacity was the convention the roadmap warned about; the geometry's
+answer is that this router's vias are, with four exceptions, load bearing.
+[The M17 report](reports/m17.md) has the per-board table.
+
+### M18 — the literature survey
+
+M17 spent the evidence that already existed. M18 is a **study session** in the
+[toporouter postmortem](notes/toporouter-postmortem.md)'s discipline — read, cite,
+and come back with a table of technique → aipcb component → expected gain → runtime
+risk → candidate or rejected-with-reason — because the cheap wins are now taken and
+the next ones need somebody else's twenty years of work. **Documentation only: no
+code moves in M18.** Deliverable: `docs/notes/routing-literature.md`.
+
+Three areas, in the order their expected value says to read them.
+
+**1. Tightening theory, and it is the priority.** M16 measured that 83–94% of routing
+time was in the tightener; M17c halved the corpus's routing time and found that the
+cut was constant factors — a scalar Shapely loop and a field rebuilt per repaired
+connection — not the algorithm. So the algorithmic question is still open and is now
+*sharpened*: with the obvious constant factors gone, is one funnel sweep per
+connection against a triangulation of the whole board the right shape at all, or is
+the cost structural? Read the funnel algorithm properly (Hershberger–Snoeyink,
+minimum-length paths of a given homotopy class), Chazelle's linear-time techniques
+for the same family, TopoR/Eremex's published papers on arc-based tightening, and
+make **another attempt at Dayan's 1997 thesis in full** — the postmortem's biggest
+single gap, cited there only at second hand. The survey has to answer the question
+M17c's profile left open, and the profile's own findings are an input to it:
+`geometry_for`'s union-difference-triangulate is now the single largest identified
+cost and nothing in this project knows whether it is avoidable.
+
+**2. The negotiated-congestion lineage, for quality and not for speed.** BoxRouter,
+NTHU-Route 2.0, FastRoute 4.x, NCTU-GR and the ISPD-contest refinements, mined for
+**cost-function** technique. Low priority *and say why*: negotiation costs at most
+0.5 s on any board in this corpus, so nothing here is a speed candidate — what is
+worth taking is how those routers price a corridor, which is a quality question aipcb
+has never read the literature on.
+
+**3. Modern and ML routing, surveyed for completeness.** The standing hypothesis is
+that non-determinism disqualifies it from the core: this project's byte-stability
+guarantee is load-bearing and a learned policy that is not reproducible cannot hold
+it. Survey it anyway and **write the rejection down the way external autorouters are
+written down** in [Rejected, not deferred](#rejected-not-deferred) — with the reason
+and the property it breaks, so that the next person proposing it meets an argument
+rather than a silence. A learned *heuristic* inside a deterministic search is the one
+shape that could survive the objection, and the note should say whether the
+literature offers one.
 
 ## Verification
 

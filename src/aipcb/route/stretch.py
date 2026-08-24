@@ -186,6 +186,22 @@ class RoutedConnection:
     vias: list[Via] = field(default_factory=list)
     barrel_length: float = 0.0
     """How much conductor the vias add, which length matching has to count."""
+    open_pads: frozenset[str] = frozenset()
+    """Which pads this connection was allowed to land on when it was tightened.
+
+    A route treats even its own net's other pads as things to go round, because a
+    track that clips one tangentially leaves a copper crescent a fabricator would
+    rather not etch -- so the free space it was tightened in depends on which pads
+    were held open for it. Normally that is the two it joins; a connection the
+    repair pass rescued was given every pad of its own net, because running through
+    one of them beats not connecting at all.
+
+    Recorded rather than re-derived, because M17's via pass has to re-tighten a
+    span in *the same* free space the router used. Guessing the strict set for a
+    connection the repair pass routed permissively made eight spans on
+    `examples/pcie-sata` look like a free area split in two, when the route the
+    board is carrying went straight through it.
+    """
 
     @property
     def copper_length(self) -> float:

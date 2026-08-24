@@ -18,6 +18,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from functools import lru_cache
 
 from aipcb.compile.geometry import rotate_kicad
 from aipcb.kicad.sexpr import SNode
@@ -256,6 +257,23 @@ def _cross(o: Point, a: Point, b: Point) -> float:
     return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
 
 
+#: How many inflated hulls are remembered. A board's obstacle set is inflated once
+#: per net class per layer per route, and the same pad at the same margin comes out
+#: the same every time -- so the second and later times are a dictionary lookup
+#: rather than a Minkowski sum and a convex hull (M17c). Sized for a large board's
+#: obstacle count times a handful of distinct margins; the cache is a speed device
+#: and nothing depends on its contents surviving.
+_INFLATE_CACHE = 1 << 16
+
+
+@lru_cache(maxsize=_INFLATE_CACHE)
+def _inflated(polygon: Polygon, margin: float) -> Polygon:
+    disc = _circle(margin)
+    return convex_hull(
+        tuple((px + dx, py + dy) for px, py in polygon for dx, dy in disc)
+    )
+
+
 def inflate(polygon: Polygon, margin: float) -> Polygon:
     """Grow a convex polygon outward by ``margin`` in every direction.
 
@@ -264,13 +282,14 @@ def inflate(polygon: Polygon, margin: float) -> Polygon:
     within ``margin`` of it. Approximating the disc by a circumscribed polygon keeps
     the result conservative: never smaller than the true offset, so a path that
     clears the inflated hull always clears the real one.
+
+    Memoised, because it is a pure function of a hashable polygon and a margin and
+    the router asks for the same answer thousands of times: 45 000 calls on
+    `examples/pcie-sata`, of which fewer than a thousand are distinct.
     """
     if margin <= 0 or not polygon:
         return polygon
-    disc = _circle(margin)
-    return convex_hull(
-        tuple((px + dx, py + dy) for px, py in polygon for dx, dy in disc)
-    )
+    return _inflated(polygon, margin)
 
 
 def polygon_area(polygon: Polygon) -> float:

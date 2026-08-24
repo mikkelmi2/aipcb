@@ -501,6 +501,10 @@ class TestBetaNotice:
         # meeting itself. Both are lists of sentences and both are empty on a
         # board worth having.
         "self_crossings",
+        # M17a/M17b. What the via pass took back, and what it looked at and left
+        # alone: a candidate that is rejected is a number this reports rather than
+        # a decision it swallows.
+        "reclaimed",
     }
 
     def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -1346,16 +1350,19 @@ class TestSelfCrossingInvariant:
         assert codes["route-crosses-itself"] == "ERROR"
 
     @needs_kicad_libraries
-    def test_the_corpus_carries_exactly_one_known_doubling(self, tmp_path: Path) -> None:
-        """A pin, not a pass.
+    def test_the_corpus_carries_no_doubling(self, tmp_path: Path) -> None:
+        """The guard that found it is the guard that keeps it fixed.
 
-        `examples/pcie-sata`'s GND connection `U1.17>U1.49` travels four millimetres
-        east, hops to B.Cu for half a millimetre, hops straight back, and retraces
-        its own path home -- about eight millimetres of copper and two vias that buy
-        nothing. It is a search and cost-model defect, and the postmortem's
-        post-convergence detour pass is what would fix it, measured against the M16c
-        baseline. Until then this pins it: the day the count changes is a day
-        somebody looks.
+        From M16b to M17b this asserted the count was exactly *one*:
+        `examples/pcie-sata`'s GND connection `U1.17>U1.49` travelled four
+        millimetres east, hopped to B.Cu for half a millimetre, hopped straight
+        back, and retraced its own path home -- about eight millimetres of copper
+        and two vias that bought nothing.
+
+        M17's via pass asked whether that span fitted on F.Cu in one leg. It did,
+        and the connection gave back two vias and 17.116 mm of copper. The
+        assertion is inverted rather than deleted, because a fix with no guard on
+        it is a fix until somebody changes the cost model.
         """
         from aipcb.route.pipeline import route_design
 
@@ -1363,12 +1370,235 @@ class TestSelfCrossingInvariant:
         done = route_design(
             REPO_ROOT / "examples" / "pcie-sata" / "design.yaml", tmp_path, report
         )
-        found = done.routed.self_crossings
-        assert [c.kind for c in found] == ["legs-meet"], [
-            c.describe() for c in found
+        assert done.routed.self_crossings == [], [
+            c.describe() for c in done.routed.self_crossings
         ]
-        assert found[0].net == "GND"
-        assert found[0].connection == "U1.17>U1.49"
+        assert not [d for d in report if d.code == "route-doubles-back"]
+
+
+# ---------------------------------------------------------------------------
+# M17a and M17b: the vias the finished board did not need
+# ---------------------------------------------------------------------------
+
+
+class TestViaReclaim:
+    """`aipcb.route.tidy`, whose whole job is to be unable to make a board worse.
+
+    A span is collapsed only when it comes out with fewer vias and no more copper,
+    and only when the M16a cut model -- both families -- says the corridors it now
+    crosses still carry what they carry. Everything below asks one of those
+    guarantees a question with a known answer.
+    """
+
+    def _field(self, capacity: float = 10.0):
+        """A one-layer field whose single cut is a 4 mm gate across the middle."""
+        from shapely.geometry import Polygon as ShapelyPolygon
+
+        from aipcb.route.field import LayeredField, LayerField
+        from aipcb.route.stack import stack_for
+        from aipcb.route.triangulate import triangulate_free
+
+        free = ShapelyPolygon([(0.0, 0.0), (8.0, 0.0), (8.0, 4.0), (0.0, 4.0)])
+        triangulation = triangulate_free(free)
+        layer = LayerField(
+            layer="F.Cu",
+            free=free,
+            triangulation=triangulation,
+            capacity=[capacity] * len(triangulation.diagonals),
+            used=[0.0] * len(triangulation.diagonals),
+            history=[0.0] * len(triangulation.diagonals),
+        )
+        from aipcb.route.costs import DEFAULT_COSTS
+
+        return LayeredField(
+            stack=stack_for(None, DEFAULT_COSTS),
+            reference_clearance=0.2,
+            layers={"F.Cu": layer},
+        )
+
+    def test_a_swap_that_would_over_subscribe_a_cut_is_refused(self) -> None:
+        """The arbiter M16a's soundness work exists for, asked directly.
+
+        The board's cuts are given a capacity of a third of a millimetre -- less
+        than one track plus its clearance -- so any leg crossing one puts it over.
+        The legs being removed cross nothing, so the swap has nowhere to give the
+        demand back from, and it must be refused.
+        """
+        from aipcb.route.tidy import Occupancy
+
+        field_ = self._field(capacity=0.3)
+        occupancy = Occupancy(field_=field_)
+        occupancy.used["F.Cu"] = [0.0] * len(field_.layers["F.Cu"].capacity)
+        occupancy.special_used["F.Cu"] = []
+        across = _leg("A", "F.Cu", [(0.5, 0.5), (7.5, 3.5)], name="a>b")
+        aside = _leg("A", "B.Cu", [(0.5, 0.5), (0.6, 0.6)], name="a>v")
+        assert occupancy.admits([aside], across, 0.45) is False
+
+    def test_a_swap_a_wide_gate_can_carry_is_allowed(self) -> None:
+        from aipcb.route.tidy import Occupancy
+
+        field_ = self._field(capacity=10.0)
+        occupancy = Occupancy(field_=field_)
+        occupancy.used["F.Cu"] = [0.0] * len(field_.layers["F.Cu"].capacity)
+        occupancy.special_used["F.Cu"] = []
+        across = _leg("A", "F.Cu", [(0.5, 0.5), (7.5, 3.5)], name="a>b")
+        aside = _leg("A", "B.Cu", [(0.5, 0.5), (0.6, 0.6)], name="a>v")
+        assert occupancy.admits([aside], across, 0.45) is True
+
+    @needs_kicad_libraries
+    def test_the_pcie_board_gives_back_the_vias_it_was_measured_to_waste(
+        self, tmp_path: Path
+    ) -> None:
+        """The M17a number, pinned to the board it was measured on.
+
+        Two spans on `examples/pcie-sata` collapse: GND `U1.17>U1.49`, which is the
+        M16b E2 finding, and GND `U1.49>U1.42`. Four vias and 30.285 mm of copper.
+        The rest of that board's layer changes were tested and kept, which is the
+        finding rather than a shortfall -- see the M17 report.
+        """
+        from aipcb.route.pipeline import route_design
+
+        done = route_design(
+            REPO_ROOT / "examples" / "pcie-sata" / "design.yaml", tmp_path, Report()
+        )
+        reclaimed = done.routed.reclaimed
+        assert reclaimed is not None
+        assert reclaimed.vias_removed == 4
+        assert reclaimed.retraces_removed == 1
+        assert round(reclaimed.copper_saved, 3) == 30.285
+        assert [c.connection for c in reclaimed.collapses] == [
+            "U1.17>U1.49", "U1.49>U1.42"
+        ]
+        assert len(done.routed.vias) == 38
+
+    @needs_kicad_libraries
+    def test_the_via_pass_is_idempotent(self, tmp_path: Path) -> None:
+        """Run it twice, and the second run has nothing to say.
+
+        Asserted rather than argued. The pass mutates the connections it is given,
+        so "it converged" is a property of the code and not of the shape of the
+        problem, and the cheapest way to know is to ask it again.
+        """
+        from aipcb.route.costs import DEFAULT_COSTS
+        from aipcb.route.field import build_field
+        from aipcb.route.geometry import connection_obstacles, edge_clearance_for
+        from aipcb.route.obstacles import extract_obstacles
+        from aipcb.route.pipeline import route_design
+        from aipcb.route.stack import stack_for
+        from aipcb.route.tidy import reclaim_vias
+
+        done = route_design(
+            REPO_ROOT / "examples" / "pcie-sata" / "design.yaml", tmp_path, Report()
+        )
+        netlist = done.build.netlist
+        stack = stack_for(netlist.layout, DEFAULT_COSTS)
+        base = extract_obstacles(
+            done.board, edge_clearance=edge_clearance_for(netlist)
+        )
+        field_ = build_field(
+            base,
+            stack,
+            layout=netlist.layout,
+            origin=netlist.layout.origin_mm if netlist.layout else (0.0, 0.0),
+        )
+        placed = [
+            obstacle
+            for connection in done.routed.connections
+            for obstacle in connection_obstacles(connection, stack)
+        ]
+        again = reclaim_vias(
+            done.routed.connections, base, placed, netlist, stack, field_, 1.0,
+            Report(), allowed=tuple(stack.copper),
+        )
+        assert again.collapses == []
+        assert again.vias_removed == 0
+
+    @needs_kicad_libraries
+    def test_a_controlled_impedance_net_is_left_alone(self, tmp_path: Path) -> None:
+        """Verified, not assumed -- the milestone asked for that in those words.
+
+        Removing a via changes the geometry M11d's standoff rule and M11e's audit
+        measured, so a controlled-impedance class is skipped by class. Two halves,
+        because on this corpus the first one passes for the wrong reason: every
+        controlled-impedance connection on `pcie-sata` carries either three coupled
+        legs and no via of its own, or one via and no legs at all -- the holes belong
+        to the declared pair transition, which this pass never looks at. So the board
+        is checked *and* the guard is handed a candidate it has to refuse.
+        """
+        from aipcb.route.costs import DEFAULT_COSTS
+        from aipcb.route.field import build_field
+        from aipcb.route.geometry import (
+            class_for,
+            connection_obstacles,
+            edge_clearance_for,
+        )
+        from aipcb.route.obstacles import extract_obstacles
+        from aipcb.route.pipeline import route_design
+        from aipcb.route.stack import stack_for
+        from aipcb.route.stretch import RoutedConnection, Via
+        from aipcb.route.tidy import reclaim_vias
+
+        done = route_design(
+            REPO_ROOT / "examples" / "pcie-sata" / "design.yaml", tmp_path, Report()
+        )
+        netlist = done.build.netlist
+        controlled = sorted(
+            {
+                connection.net
+                for connection in done.routed.connections
+                if class_for(netlist, connection.net).controlled_impedance
+            }
+        )
+        assert controlled, "the board must carry a controlled-impedance class"
+        reclaimed = done.routed.reclaimed
+        touched = {c.net for c in (reclaimed.collapses if reclaimed else [])}
+        assert not (touched & set(controlled))
+
+        # And now the guard itself, with a candidate built to be irresistible: a
+        # 0.02 mm excursion to B.Cu and straight back, on open board, which any
+        # ordinary net would give up in an instant.
+        net = controlled[0]
+        stack = stack_for(netlist.layout, DEFAULT_COSTS)
+        base = extract_obstacles(
+            done.board, edge_clearance=edge_clearance_for(netlist)
+        )
+        field_ = build_field(
+            base,
+            stack,
+            layout=netlist.layout,
+            origin=netlist.layout.origin_mm if netlist.layout else (0.0, 0.0),
+        )
+        anchor = next(iter(sorted(base.pad_centres)))
+        here = base.pad_centres[anchor]
+        there = (here[0] + 0.02, here[1])
+        bait = RoutedConnection(
+            net=net,
+            start=anchor,
+            end=anchor,
+            legs=[
+                _leg(net, "F.Cu", [here, there], name=f"{anchor}>via:x"),
+                _leg(net, "B.Cu", [there, there], name="via:x>via:y"),
+                _leg(net, "F.Cu", [there, here], name=f"via:y>{anchor}"),
+            ],
+            vias=[
+                Via(net=net, point=there, from_layer="F.Cu", to_layer="B.Cu", name="x"),
+                Via(net=net, point=there, from_layer="B.Cu", to_layer="F.Cu", name="y"),
+            ],
+        )
+        result = reclaim_vias(
+            [bait],
+            base,
+            list(connection_obstacles(bait, stack)),
+            netlist,
+            stack,
+            field_,
+            1.0,
+            Report(),
+            allowed=tuple(stack.copper),
+        )
+        assert result.skipped_controlled == 1
+        assert result.collapses == []
+        assert len(bait.vias) == 2
 
 
 # ---------------------------------------------------------------------------

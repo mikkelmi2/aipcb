@@ -29,6 +29,7 @@ from aipcb.route.obstacles import (
 from aipcb.route.stack import RoutingStack
 from aipcb.route.stretch import (
     LayerGeometry,
+    RoutedConnection,
     RouteRules,
     StretchError,
     StretchResult,
@@ -41,6 +42,7 @@ __all__ = [
     "DEFAULT_CONGESTION",
     "class_for",
     "class_name_for",
+    "connection_obstacles",
     "edge_clearance_for",
     "geometry_for",
     "path_length",
@@ -143,6 +145,30 @@ def track_obstacles(result: StretchResult, name: str, margin: float) -> list[Obs
                 kind="track",
             )
         )
+    return obstacles
+
+
+def connection_obstacles(
+    connection: RoutedConnection, stack: RoutingStack
+) -> list[Obstacle]:
+    """One finished connection, as everything that follows it must avoid.
+
+    The naming is load-bearing rather than decorative, which is why it lives in one
+    place and not in each caller. The layer is part of a leg's obstacle name because
+    it is part of its identity -- a pair split by a via transition names its coupled
+    leg after the same two terminals on both layers -- and M17's via pass finds a
+    connection's own copper in the obstacle set by rebuilding these names, so the
+    router and the pass that takes copper back have to agree on them exactly.
+    """
+    obstacles: list[Obstacle] = []
+    for leg in connection.legs:
+        obstacles.extend(
+            track_obstacles(
+                leg, f"track:{leg.net}@{leg.layer}/{leg.start}>{leg.end}", leg.width / 2
+            )
+        )
+    for index, via in enumerate(connection.vias):
+        obstacles.extend(via_obstacles(via, stack, f"via:{via.net}/{via.name}#{index}"))
     return obstacles
 
 

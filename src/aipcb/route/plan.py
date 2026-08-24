@@ -39,6 +39,7 @@ from aipcb.route.geometry import (
     DEFAULT_CONGESTION,
     class_for,
     class_name_for,
+    connection_obstacles,
     edge_clearance_for,
     geometry_for,
     path_length,
@@ -46,8 +47,6 @@ from aipcb.route.geometry import (
     rules_for,
     simplify,
     tighten_leg,
-    track_obstacles,
-    via_obstacles,
     with_copper,
 )
 from aipcb.route.graph import RoutePath, Terminal, search_path
@@ -79,6 +78,7 @@ from aipcb.route.stretch import (
     Via,
     stretch_route,
 )
+from aipcb.route.tidy import TidyResult, reclaim_vias
 from aipcb.route.timing import Stages, stage
 from aipcb.route.transition import TransitionResult, generate_transitions
 from aipcb.route.triangulate import FreeSpaceError
@@ -160,6 +160,8 @@ class RoutedBoard:
     """Places one connection's copper meets its own (M16b, postmortem exposure E2)."""
     manual: list[str] = field(default_factory=list)
     """Nets the source declared `routing: manual`, which this router did not touch."""
+    reclaimed: TidyResult | None = None
+    """What M17's via pass took back: vias the finished board did not need."""
 
     @property
     def ok(self) -> bool:
@@ -197,6 +199,9 @@ class RoutedBoard:
             "crossings": [c.describe() for c in self.crossings],
             "self_crossings": [c.describe() for c in self.self_crossings],
             "manual": list(self.manual),
+            "reclaimed": (
+                self.reclaimed.summary() if self.reclaimed is not None else None
+            ),
         }
 
 
@@ -478,6 +483,18 @@ def route_board(
                 kind="no_path",
             )
 
+    # M17a and M17b. Every connection that left a layer and came straight back to
+    # it is asked whether it needed to, now that the whole board is copper rather
+    # than a negotiated plan. It runs before the escape settling and the hole
+    # merging below on purpose: both of those reason about which vias are load
+    # bearing, and they should reason about the vias this leaves behind.
+    with stage(stages, "reclaim"):
+        outcome.reclaimed = reclaim_vias(
+            outcome.connections, base, placed, netlist, stack, field_, congestion,
+            report, allowed=allowed,
+        )
+        outcome.total_length -= outcome.reclaimed.copper_saved
+
     # The fanout proposed an escape for every pad before any of this happened. Now
     # that the copper is real, the ones the router did not take up come back out.
     if fanout.terminals:
@@ -547,22 +564,11 @@ def _accept(
             _join_existing_copper(connection, placed)
         outcome.connections.append(connection)
         outcome.total_length += connection.copper_length
-        for leg in connection.legs:
-            # The layer is part of the name because it is part of the identity: a
-            # pair split by a via transition names its coupled leg after the same
-            # two pair terminals on both layers, and an obstacle set keyed by name
-            # alone kept only the second of them.
-            placed.extend(
-                track_obstacles(
-                    leg,
-                    f"track:{leg.net}@{leg.layer}/{leg.start}>{leg.end}",
-                    leg.width / 2,
-                )
-            )
-        for index, via in enumerate(connection.vias):
-            placed.extend(
-                via_obstacles(via, stack, f"via:{via.net}/{via.name}#{index}")
-            )
+        # The obstacle names are built in one place -- `connection_obstacles` --
+        # because M17's via pass has to find this copper in the set again by name
+        # when it swaps a collapsed span in, and two spellings of the same name
+        # would leave the board carrying copper nothing avoids.
+        placed.extend(connection_obstacles(connection, stack))
 
 
 #: How finely a finished route is sampled when looking for where it first leaves
@@ -1006,26 +1012,38 @@ def _realize(
 ) -> RoutedConnection:
     """Turn a negotiated path into copper, one leg at a time."""
     rules = rules_for(netlist, connection.net, congestion)
+    landing = (
+        open_pads
+        if open_pads is not None
+        else frozenset({connection.source.name, connection.target.name})
+    )
     realized = RoutedConnection(
         net=connection.net,
         start=connection.source.name,
         end=connection.target.name,
+        open_pads=landing,
     )
     names = _leg_names(connection, path)
     geometries: list[LayerGeometry] = []
+    # Every leg of one connection sees the same board; only the layer differs. A
+    # route that hops away and back -- F.Cu, B.Cu, F.Cu -- would otherwise union,
+    # difference and triangulate F.Cu's free space twice for the same answer, and
+    # that is the single most expensive thing the router does (M17c).
+    built: dict[str, LayerGeometry] = {}
     for index, leg in enumerate(path.legs):
-        geometry = geometry_for(
-            base,
-            placed,
-            netlist,
-            connection.net,
-            leg.layer,
-            rules,
-            congestion,
-            open_pads=open_pads
-            if open_pads is not None
-            else frozenset({connection.source.name, connection.target.name}),
-        )
+        geometry = built.get(leg.layer)
+        if geometry is None:
+            geometry = geometry_for(
+                base,
+                placed,
+                netlist,
+                connection.net,
+                leg.layer,
+                rules,
+                congestion,
+                open_pads=landing,
+            )
+            built[leg.layer] = geometry
         start = base.pad_centres[connection.source.name] if index == 0 else leg.start
         end = (
             base.pad_centres[connection.target.name]

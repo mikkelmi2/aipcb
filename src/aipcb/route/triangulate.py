@@ -18,6 +18,7 @@ from __future__ import annotations
 import heapq
 from dataclasses import dataclass, field
 from itertools import pairwise
+from typing import Any
 
 from shapely import Polygon as ShapelyPolygon
 from shapely import constrained_delaunay_triangles
@@ -140,13 +141,61 @@ class Triangulation:
                 return index
         return None
 
-    def _candidates(self, point: Point) -> list[int]:
-        from shapely import STRtree
-        from shapely.geometry import Polygon as _ShapelyPolygon
+    def locate_many(self, points: list[Point]) -> list[int | None]:
+        """:meth:`locate`, for a whole list of points, in one tree query.
 
+        Same answer, one call. The scalar version pays a Python-level Shapely call
+        and a NumPy round trip *per point*, and the field builder locates points by
+        the tens of thousands -- every candidate via site on every layer, once per
+        field, and a field is rebuilt for every connection the shared one could not
+        place. Deriving those sites was 54.7 s of an 87 s profiled run of
+        `examples/pcie-sata`, and this query was most of it (M17c).
+
+        The result is identical to calling :meth:`locate` on each point, including
+        the tie-break: candidates are still tried in ascending triangle index, so
+        a point on a shared edge still lands in the lower-numbered triangle.
+        """
+        if not points:
+            return []
+        import numpy as np
+        from shapely import points as shapely_points
+
+        tree = self._strtree()
+        found = tree.query(shapely_points(np.array(points, dtype="float64")))
+        buckets: dict[int, list[int]] = {}
+        for position, triangle in zip(found[0].tolist(), found[1].tolist(), strict=True):
+            buckets.setdefault(int(position), []).append(int(triangle))
+        located: list[int | None] = []
+        for position, point in enumerate(points):
+            hit: int | None = None
+            for index in sorted(buckets.get(position, ())):
+                if _inside(point, self.triangles[index]):
+                    hit = index
+                    break
+            located.append(hit)
+        return located
+
+    def _strtree(self) -> Any:
+        """The R-tree over the triangles, built once and in one Shapely call.
+
+        ``shapely.polygons`` on a single array rather than a list comprehension of
+        ``Polygon(t)``: a large board's triangulation runs to three thousand
+        triangles and a field is rebuilt per repaired connection, so the difference
+        is a quarter of a million Python-level constructor calls (M17c).
+        """
         if self._tree is None:
-            self._tree = STRtree([_ShapelyPolygon(t) for t in self.triangles])
-        return [int(i) for i in self._tree.query(ShapelyPoint(point))]  # type: ignore[attr-defined]
+            import numpy as np
+            from shapely import STRtree, polygons
+
+            self._tree = STRtree(
+                polygons(np.array(self.triangles, dtype="float64"))
+                if self.triangles
+                else []
+            )
+        return self._tree
+
+    def _candidates(self, point: Point) -> list[int]:
+        return [int(i) for i in self._strtree().query(ShapelyPoint(point))]
 
     def component(self, triangle: int) -> int:
         """Which connected piece of the free space a triangle belongs to.

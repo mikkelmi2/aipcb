@@ -2,6 +2,57 @@
 
 Notable changes, newest first.
 
+## Unreleased — M17, 2026-08-24
+
+Part 2 of the toporouter work: the three candidates the M16 baseline had already
+ranked, each with a runtime budget stated before it was built and each landed
+against `aipcb bench --compare`. No literature-derived techniques — those are M18.
+See [`docs/reports/m17.md`](docs/reports/m17.md).
+
+### Added
+
+- **A via-reclaiming post-pass** (`route/tidy.py`). Every span where a connection
+  leaves a layer and comes back to it, and every connection whose two pads share a
+  layer, is re-tightened as a single leg and kept only if it comes out with **fewer
+  vias and no more copper** — with M16a's special-cuts-corrected cut model as the
+  congestion arbiter. Deterministic, order-stable and idempotent. Controlled-impedance
+  classes and coupled pair legs are excluded by class, because a via removal changes
+  the geometry M11d and M11e measured. Reported in `route all --json` as
+  `routing.reclaimed`, and timed as a `reclaim` stage in `aipcb bench`.
+- **`Triangulation.locate_many`** — the same answer as `locate` for a list of points,
+  in one R-tree query.
+- **`RoutedConnection.open_pads`** — which pads a connection was tightened against,
+  recorded rather than re-derived, so a later pass re-tightens it in the same free
+  space the router used.
+
+### Changed
+
+- **The router is roughly twice as fast, with every board's output unchanged.**
+  Corpus `router_seconds` 61.9 → 29.9; tightening time −55.5% on `examples/pcie-sata`
+  and −52.3% on `examples/mcu-4layer`. The profile found that two thirds of the
+  "tightening" time was the *field builder*, rebuilt per repaired connection, and
+  inside it a scalar Shapely loop over candidate via sites: 1.9 million `Point`
+  constructions and 854 000 boundary derivations on one board. Those calls are now
+  batched, `inflate` is memoised, and each layer's geometry is built once per
+  connection rather than once per leg. No algorithm changed; all eleven board hashes
+  were identical at this point.
+- **`examples/pcie-sata` carries four fewer vias and 30.285 mm less copper**, and the
+  `route-doubles-back` warning M16b found on it is gone. GND's `U1.17>U1.49` used to
+  travel four millimetres, hop to B.Cu for half a millimetre, hop back and retrace
+  its own path home; it is now a single 3.519 mm leg. The M16b guard is retained with
+  its assertion inverted, and `route-doubles-back` is removed from the check loop's
+  known issues rather than silenced.
+- **`bench/results/baseline.json` moves to this milestone's commit.** Less copper,
+  fewer vias, one fewer self-crossing, half the runtime; the M16 file stays in git
+  history and every figure it is compared against is in the M17 report.
+
+### Fixed
+
+- **The 900-connection extrapolation.** Re-fitted after the above: roughly 11.5
+  minutes where the same method on the M16 baseline gives 23.7. The exponents did not
+  move (1.72 → 1.70 against connections, R² 0.94), which is the point — M17 harvested
+  constant factors and left the shape of the curve for M18 to ask about.
+
 ## Unreleased — M16, 2026-08-23
 
 Part 1 of what the [gEDA toporouter postmortem](docs/notes/toporouter-postmortem.md)

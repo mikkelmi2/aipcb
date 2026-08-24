@@ -124,6 +124,7 @@ ROUTER_STAGES = (
     "field",
     "negotiate",
     "tighten",
+    "reclaim",
     "skew",
     "invariant",
 )
