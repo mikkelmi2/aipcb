@@ -686,3 +686,132 @@ orchestrator's correction rides with this entry.
 3. The capacity arbiter's lack of real-board evidence, above.
 
 None of these blocks M18, which touches no code, so the chain continues.
+
+## M18 — the literature survey
+
+Dispatched to a fresh subagent with the full text of
+`docs/milestones/m18-literature-survey.md`.
+
+**Verdict: PASSED all four gates. Research only, as specified.**
+
+### Gate 1 — the note holds the toporouter-note discipline: PASS
+
+`docs/notes/routing-literature.md`, 1 269 lines, opens with a licence-wall
+restatement and a **"Sources, and what could not be got"** table that gives every
+source a reachability status before a single claim is made. The clause this
+orchestrator looked hardest at — *gaps marked as gaps, never filled with
+speculation* — is held, and held in the harder direction:
+
+- Six sources are recorded as **unreached**, each with what it would have told us
+  and why the gap is or is not material. **Lu's 1991 dynamic-CDT thesis** (the
+  incremental triangulation SURF actually ran on) is known through exactly one
+  sentence of Dayan's thesis, and the note says so rather than reconstructing it.
+- **TopoR/Eremex is recorded as a gap with the search described** so the next person
+  can do better: no algorithmic account was located in any language, and what does
+  exist — a vendor trade article claiming "25–40 % less wire length, 2–3× fewer
+  vias" — is filed as **a vendor claim carrying no benchmark, baseline or method**,
+  not as a measurement. That is the note refusing the exact move the milestone
+  forbade.
+- Chazelle is marked **second-hand** where it matters rather than cited as if read.
+
+Per technique the template holds: what it is (own words, cited) → aipcb component →
+expected gain → runtime risk → verdict. §4 closes with six candidates and a
+"Rejected, with reasons, so they are not proposed again" section.
+
+### Gate 2 — the DRAFT exists and is marked DRAFT: PASS
+
+`docs/milestones/m19-DRAFT.md`. DRAFT is in the filename, in the H1, and in a
+block-quoted first paragraph stating that nothing is scheduled and no implementation
+has begun. It carries M19a–M19d in implementation order, each with a budget against
+the **current** (M17) baseline, acceptance criteria, a rejection rule, and a closing
+"Decisions required before this becomes a milestone" section. M19c is explicitly
+marked **conditional**.
+
+### Gate 3 — no code changed: PASS
+
+`git diff 4a41546..HEAD -- src tests examples` is **0 lines**. The three commits
+touch seven files, all under `docs/`: 1 885 insertions. The profiling the note rests
+on was driven from scratch scripts outside the repository, M17's precedent, so
+nothing under `src/` gained an instrument.
+
+### Gate 4 — report and roadmap: PASS
+
+`docs/reports/m18.md` (285 lines) summarises what was learned, what changed in the
+plan and what the owner must decide. The roadmap's M18 entry is closed with its
+anchor preserved (three inbound links from `m17.md`), the candidates are in, and two
+standing candidates were **re-priced from a primary source** — see below.
+
+### The claim this orchestrator reproduced rather than accepted
+
+The survey's headline is load-bearing for everything downstream, so it was
+re-measured independently — a fresh `cProfile` over `route_design` on
+`examples/pcie-sata`, written from scratch by the orchestrator, not the subagent's
+script:
+
+```
+total profiled: 37.4 s
+field.py::build_field         cum=  14.435   calls=17
+field.py::_via_sites          cum=  12.430   calls=17
+geometry.py::geometry_for     cum=  10.702   calls=176
+triangulate.py::locate_many   cum=   8.058   calls=68
+triangulate.py::_inside       cum=   3.651   calls=3 140 252
+triangulate.py::_sign         cum=   1.073   calls=9 426 354
+negotiate.py::negotiate       cum=   1.258   calls=1
+funnel.py::tighten            cum=   0.039   calls=823
+```
+
+**Reproduced to the millisecond.** The funnel algorithm — the thing M16, M17 and the
+part-2 plan all called the hot spot — is **thirty-nine profiled milliseconds of a
+37.4-second run, 0.13 %**. The `tighten` *stage* really is 93 % of routing and M16
+was not wrong about it; almost none of that stage is tightening. It is building the
+free space, triangulation and via sites that tightening happens against, and then
+throwing them away for the next connection.
+
+The note's own caveat is the reason this is trustworthy rather than merely
+impressive: `cProfile` roughly doubles the run (19.3 s unprofiled vs 37.4 s) and
+does so unevenly, so every Python row is an upper bound and every single call into
+GEOS a lower one — and the note states which side of that line each conclusion
+depends on. The 0.13 % figure survives the caveat in the safe direction.
+
+### Findings worth carrying
+
+- **Dayan's 1997 thesis was obtained in full, 161 pages** — the toporouter note's
+  largest single gap, closed. Not by access: **every live route is still shut**
+  (ProQuest wants an institution, Semantic Scholar returns empty, Google Books has
+  metadata only). It came from a 2017 Internet Archive snapshot of a PDF the live
+  site no longer serves. The note says plainly that the second attempt succeeded by
+  archaeology and that the copy could disappear again.
+- **Two standing candidates were re-priced downward from that primary source.** C3's
+  detour pass had been carrying 7–16 % from a two-board second-hand figure; Dayan's
+  own ROAR measurement over ten bins and 427 branches puts the same mechanism at
+  **~3.4 % of wire length**, and M17b already took its named customer away for 0.6 s
+  rather than +30 % of the corpus. C5 lost ground twice. A survey that makes the
+  project's own backlog *smaller* is the format working.
+- **M17c's open question is answered (b), with the noun corrected.** Not "incremental
+  re-tightening" — there is nothing worth making incremental about tightening. What
+  must stop being rebuilt is the free space, the triangulation and the via sites.
+  (a) algorithm replacement is rejected on measurement: Hershberger–Snoeyink is
+  worst-case optimal, it is what `funnel.py` already implements, and it costs 0.13 %.
+  (c) a compiled kernel is rejected as posed — the top cost is already C — but one
+  narrow piece survives, because `_inside` runs 3.1 M times and `_sign` 9.4 M times
+  in a scalar Python loop that M17c stopped one function short of. **Constant-factor
+  work is not exhausted**, which is the opposite of what everyone expected to hear.
+- **The M3 measurement is the one that makes M19c arguable at all**, and it was taken
+  rather than assumed: on `pcie-sata`'s F.Cu, a thousand-triangle triangulation is
+  built from scratch **137 times because a median of two obstacles out of five
+  hundred changed**. Its two caveats are stated as things a candidate must survive —
+  the sequence is not monotone (84 obstacles *disappear*, so insertion-only
+  incrementality is not enough) and the obstacle geometry differs per rule pair (six
+  maintained structures on that layer, not one).
+- **§2 is honestly blocked and says so.** Every negotiated-congestion candidate is
+  gated on a board that does not converge in one iteration, and no such board exists
+  in the corpus. NCTU-GR — whose two-stage cost function is precisely what §2 set out
+  to mine — stayed closed, so the section names what it could not get rather than
+  padding with what it could.
+
+## Chain end
+
+Both milestones passed. **The chain ends here by design**, not by failure: M18's
+second deliverable is a draft for the owner, and starting M19 on unreviewed research
+candidates is the improvisation this project does not do. Final report:
+[`chain-m17-m18.md`](chain-m17-m18.md).
