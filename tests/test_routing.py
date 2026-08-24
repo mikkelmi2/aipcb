@@ -31,7 +31,13 @@ from aipcb.route.model import Pass, RouteTopology, ViaHop, parse_node
 from aipcb.route.obstacles import convex_hull, extract_obstacles, inflate
 from aipcb.route.plan import route_board, spanning_routes
 from aipcb.route.stretch import RouteRules, StretchError, prepare, side_point, stretch_route
-from aipcb.route.triangulate import build_triangulation, reduce_crossings
+from aipcb.route.triangulate import (
+    Triangulation,
+    _inside,
+    _link,
+    build_triangulation,
+    reduce_crossings,
+)
 
 from .conftest import REPO_ROOT, needs_kicad_cli, needs_kicad_libraries
 
@@ -155,6 +161,95 @@ class TestGeometry:
         east = side_point(obstacle, (1.0, 0.0), "left")
         west = side_point(obstacle, (-1.0, 0.0), "left")
         assert east[1] * west[1] < 0, "reversing travel should swap which side is left"
+
+
+class TestPointLocation:
+    """M19a: the vectorised candidate test, and the tie-break it has to reproduce.
+
+    `locate_many` used to batch the R-tree query and then run a scalar Python loop
+    over the candidates, trying them in ascending triangle index so that a point on
+    a shared edge landed in the lower-numbered one. The vectorised version computes
+    the same three orientations over whole arrays, where "lowest index wins" does
+    not fall out for free -- so it is asserted here rather than assumed.
+    """
+
+    @staticmethod
+    def _two_triangles() -> Triangulation:
+        """A unit square split into triangles 0 and 1 across the diagonal (0,0)-(1,1)."""
+        return _link(
+            [
+                ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0)),
+                ((0.0, 0.0), (1.0, 1.0), (0.0, 1.0)),
+            ]
+        )
+
+    def test_a_point_on_a_shared_edge_lands_in_the_lower_triangle(self) -> None:
+        mesh = self._two_triangles()
+        on_the_diagonal = (0.5, 0.5)
+        assert _inside(on_the_diagonal, mesh.triangles[0])
+        assert _inside(on_the_diagonal, mesh.triangles[1]), (
+            "the case is only a tie-break if both triangles contain the point"
+        )
+        assert mesh.locate_many([on_the_diagonal]) == [0]
+
+    def test_the_tie_break_is_index_order_and_not_query_order(self) -> None:
+        """The same two triangles with their indices swapped answer the other way."""
+        swapped = _link(
+            [
+                ((0.0, 0.0), (1.0, 1.0), (0.0, 1.0)),
+                ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0)),
+            ]
+        )
+        assert swapped.locate_many([(0.5, 0.5)]) == [0]
+
+    def test_locate_and_locate_many_agree_including_on_edges(self) -> None:
+        """The docstring promise, on the points most likely to break it."""
+        mesh = self._two_triangles()
+        probes = [
+            (0.5, 0.5),            # the shared diagonal
+            (0.0, 0.0),            # a shared vertex
+            (1.0, 1.0),            # the other shared vertex
+            (0.5, 0.5 + 1e-15),    # a hair off the diagonal, either side
+            (0.5, 0.5 - 1e-15),
+            (0.75, 0.25),          # squarely inside triangle 0
+            (0.25, 0.75),          # squarely inside triangle 1
+            (0.5, 0.0),            # on the outer boundary
+            (5.0, 5.0),            # nowhere near
+        ]
+        assert mesh.locate_many(probes) == [mesh.locate(p) for p in probes]
+
+    def test_a_point_outside_every_triangle_is_none(self) -> None:
+        mesh = self._two_triangles()
+        assert mesh.locate_many([(5.0, 5.0), (0.75, 0.25)]) == [None, 0]
+
+    def test_no_points_is_no_answers(self) -> None:
+        assert self._two_triangles().locate_many([]) == []
+
+    def test_it_agrees_with_the_scalar_loop_on_a_real_board(self) -> None:
+        """The corpus's own geometry, against the implementation M19a replaced."""
+        environment = extract_obstacles(
+            parse(
+                (REPO_ROOT / "tests" / "golden" / "mcu-4layer" / "mcu-4layer.kicad_pcb")
+                .read_text(encoding="utf-8")
+            )
+        )
+        mesh = build_triangulation(
+            environment, environment.blocking(frozenset(), "F.Cu", clearance=0.2)
+        )
+        probes = []
+        for a, b, c in mesh.triangles:
+            probes.append(((a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3))
+            probes.append(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2))
+            probes.append(a)
+        assert probes, "the board has to triangulate for this to test anything"
+        expected = [
+            next(
+                (i for i in sorted(mesh._candidates(p)) if _inside(p, mesh.triangles[i])),
+                None,
+            )
+            for p in probes
+        ]
+        assert mesh.locate_many(probes) == expected
 
 
 class TestReduction:

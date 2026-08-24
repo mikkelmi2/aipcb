@@ -124,6 +124,8 @@ class Triangulation:
     """Triangle index to the indices of its interior edges."""
     _tree: object | None = None
     """A lazily built R-tree over the triangles, so ``locate`` is not a linear scan."""
+    _vertices: Any = None
+    """The triangles as one ``(n, 3, 2)`` float64 array, for :meth:`locate_many`."""
     _components: list[int] | None = None
     """Lazily computed connected components of the free space."""
     _special: list[SpecialCut] | None = None
@@ -154,26 +156,80 @@ class Triangulation:
         The result is identical to calling :meth:`locate` on each point, including
         the tie-break: candidates are still tried in ascending triangle index, so
         a point on a shared edge still lands in the lower-numbered triangle.
+
+        **The candidate test is vectorised too** (M19a). M17c batched the tree
+        query and left the exact point-in-triangle test as a scalar Python loop,
+        which the M18 profile then found running :func:`_inside` 3 140 252 times
+        and :func:`_sign` 9 426 354 times on one board -- six profiled seconds of
+        thirty in one predicate that numpy can do on whole arrays.
+
+        The arithmetic is unchanged, term for term and in the same order, so the
+        signs are bit-identical to the scalar version's; what goes is the
+        per-candidate interpreter overhead. The tie-break does *not* fall out of
+        that for free -- a mask says which candidates contain the point, not which
+        of them has the lowest index -- so it is written explicitly, as a stable
+        sort by (point, triangle) and a take-the-first, and
+        :meth:`aipcb.route.triangulate.Triangulation.locate` is tested against
+        this method on a point that sits exactly on a shared edge.
         """
         if not points:
             return []
         import numpy as np
         from shapely import points as shapely_points
 
+        coordinates = np.array(points, dtype="float64")
         tree = self._strtree()
-        found = tree.query(shapely_points(np.array(points, dtype="float64")))
-        buckets: dict[int, list[int]] = {}
-        for position, triangle in zip(found[0].tolist(), found[1].tolist(), strict=True):
-            buckets.setdefault(int(position), []).append(int(triangle))
-        located: list[int | None] = []
-        for position, point in enumerate(points):
-            hit: int | None = None
-            for index in sorted(buckets.get(position, ())):
-                if _inside(point, self.triangles[index]):
-                    hit = index
-                    break
-            located.append(hit)
+        found = tree.query(shapely_points(coordinates))
+        located: list[int | None] = [None] * len(points)
+        if found.shape[1] == 0:
+            return located
+
+        where, candidate = found[0], found[1]
+        corners = self._corners()
+        first = corners[candidate, 0]
+        second = corners[candidate, 1]
+        third = corners[candidate, 2]
+        at = coordinates[where]
+        # `_sign(o, a, b)` with o, a from the triangle and b the point, three times
+        # round it -- the same three products, subtracted the same way.
+        d1 = (second[:, 0] - first[:, 0]) * (at[:, 1] - first[:, 1]) - (
+            second[:, 1] - first[:, 1]
+        ) * (at[:, 0] - first[:, 0])
+        d2 = (third[:, 0] - second[:, 0]) * (at[:, 1] - second[:, 1]) - (
+            third[:, 1] - second[:, 1]
+        ) * (at[:, 0] - second[:, 0])
+        d3 = (first[:, 0] - third[:, 0]) * (at[:, 1] - third[:, 1]) - (
+            first[:, 1] - third[:, 1]
+        ) * (at[:, 0] - third[:, 0])
+        low = np.minimum(np.minimum(d1, d2), d3)
+        high = np.maximum(np.maximum(d1, d2), d3)
+        inside = ~((low < -1e-12) & (high > 1e-12))
+
+        hits, homes = where[inside], candidate[inside]
+        if hits.size == 0:
+            return located
+        # Lowest triangle index wins, which is the scalar loop's `sorted(...)` and
+        # the promise `locate` is held to. `lexsort` orders by the last key first,
+        # so this is "by point, then by triangle", and the first row of each run of
+        # equal points is the winner.
+        order = np.lexsort((homes, hits))
+        hits, homes = hits[order], homes[order]
+        leading = np.empty(hits.shape, dtype=bool)
+        leading[0] = True
+        np.not_equal(hits[1:], hits[:-1], out=leading[1:])
+        for position, home in zip(
+            hits[leading].tolist(), homes[leading].tolist(), strict=True
+        ):
+            located[position] = home
         return located
+
+    def _corners(self) -> Any:
+        """The triangles as one ``(n, 3, 2)`` array, built once per triangulation."""
+        if self._vertices is None:
+            import numpy as np
+
+            self._vertices = np.array(self.triangles, dtype="float64")
+        return self._vertices
 
     def _strtree(self) -> Any:
         """The R-tree over the triangles, built once and in one Shapely call.
