@@ -14,12 +14,20 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 EXAMPLES = REPO_ROOT / "examples"
 EXAMPLE_DESIGNS = sorted(EXAMPLES.glob("*/design.yaml"))
 
-#: Examples whose whole point is that they cannot be finished. `overconstrained`
-#: is four wires that have to cross in one channel on one layer, which no router
-#: can do; it exists to exercise the hand-over path, so "some nets are unrouted" is
-#: the expected result rather than a failure. Everything it *does* route still has
-#: to be DRC-clean.
-UNROUTABLE_EXAMPLES = frozenset({"overconstrained"})
+#: Examples whose whole point is that they cannot be finished. Both exist to
+#: exercise the hand-over path, so "some nets are unrouted" is the expected result
+#: rather than a failure. Everything either one *does* route still has to be
+#: DRC-clean.
+#:
+#: `overconstrained` is four wires that have to cross in one channel on one layer,
+#: which no router can do. `backplane` (M19s) is over capacity by arithmetic rather
+#: than by topology: sixteen bus lines each wanting 0.45 mm of a cut whose two
+#: signal layers hold about 6.6 mm between them, seven times over. Roughly eight of
+#: the sixteen get through each card guide and the rest are handed over with the
+#: cut, its width and its demand named. It is the corpus's stress board and the
+#: only one where the router's capacity arbiter has anything to refuse; a version
+#: of it that routed cleanly would not be doing its job.
+UNROUTABLE_EXAMPLES = frozenset({"backplane", "overconstrained"})
 
 
 def kicad_libraries_present() -> bool:

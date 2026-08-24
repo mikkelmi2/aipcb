@@ -1,0 +1,687 @@
+# A six-slot instrument backplane, and the corridor that will not hold the bus.
+#
+# This is the corpus's congestion board, and the first example here that does not
+# finish. `examples/congestion` is four wires that cannot cross on one layer;
+# `examples/overconstrained` is the same thing said plainly. This is sixteen bus
+# lines that have to get through a 4.0 mm gap seven times over, and the difference
+# is the difference between planarity and *capacity*. Planarity is a fact about the
+# plane. Capacity is a matter of arithmetic, and it is what the negotiation in
+# `aipcb.route.negotiate` exists to settle -- which before this board it had never
+# had to do for a living: ten of the eleven other examples settle in a single
+# iteration and `enclosure` takes four. This one takes five and does not converge.
+#
+# The board is a passive backplane for a card cage. A 20-way ribbon from the host
+# controller enters at the west end, six card positions take the same twenty lines,
+# and sixteen pull-ups terminate the bus at the east end. Nothing in the circuit is
+# clever. What makes it hard is mechanical: the cage's card guides sit *between*
+# adjacent card positions, they are bolted through the backplane, and nothing --
+# copper included -- may pass under one. Each guide leaves a single 4.0 mm channel
+# across the middle of the board, and every line on the bus has to use it.
+#
+# The arithmetic is the design, and it does not balance. Sixteen signals at 0.25 mm
+# wide with 0.2 mm of clearance want 0.45 mm of any cut they cross; the rail and the
+# return want 0.6 mm each. That is 8.4 mm of demand arriving at every channel. The
+# channel is 4.0 mm; take the guide's own clearance off both sides and the router's
+# shared field scores the cut across it at about 3.8 mm per signal layer, so 7.6 mm
+# across the two of them. **That is the point of the board**: it is the first design
+# in this repository where more nets want a cut than the cut can hold -- said by the
+# same capacity model `check_capacity` uses rather than asserted here -- and it is
+# the first time the router's capacity arbiter has had anything to refuse. It
+# refuses 132 times. The worst cut it names is 3.77 mm of B.Cu with eleven nets
+# wanting 4.95 mm of it.
+#
+# So the board does not finish, and what it does not finish is the interesting part.
+# 110 of 168 connections are routed and 58 are handed over, each one naming the cut
+# that stopped it, that cut's width, and the demand on it -- see the
+# `route-handed-over` diagnostics, and §1 of `docs/reports/m19.md` for the analysis.
+# The negotiation runs five iterations and does not converge, which is the other
+# reason this board exists: every technique in the literature survey that acts on
+# *repeated* iterations -- virtual capacity, an annealed base cost, rip-up ordering
+# -- had nothing in this corpus to be measured against, because ten of the eleven
+# other examples settle in one pass. This is not a board waiting for a better
+# placement. It was built to be over capacity, and a version of it that quietly
+# routed would have failed at its job.
+#
+# The stackup is four layers -- In1 a ground plane, In2 a power plane -- which is
+# what a backplane is, and what keeps the rail and the return from having to be
+# threaded the length of the board between the signals. It does not keep them out of
+# the channels: the pads that reach a plane are on the outside, so VCC and GND cross
+# each guide like everything else, and their 1.2 mm is part of the 8.4 mm above.
+# What the planes buy is that the crossing is all they have to do.
+#
+# `CLK` is the one net that is not up for negotiation. It is `rip_up: protected` and
+# priority 90, so it takes its channel first and keeps it while the other fifteen
+# argue over what is left. On a board with room for everybody that would cost
+# nothing. Here it is the difference between getting through and not, and the result
+# says so: CLK is routed end to end, and four of the fifteen ordinary bus lines do
+# not complete a single hop.
+#
+# The blocks are the card positions. `slot1` .. `slot6` are 6 instances of one
+# module and `term` is a seventh, which is what a design of this size looks like when
+# it is written to be split: this is the first board in the repository big enough to
+# be worth putting on more than one schematic sheet, and when multi-sheet output
+# exists the sheets are already here, in the blocks. Nothing about the source has to
+# change for that.
+
+name: backplane
+revision: A
+description: A six-slot passive backplane whose card guides leave one 4.0 mm channel
+  between adjacent slots, which every line on the bus has to cross.
+
+libraries:
+  - ../library/connectors.yaml
+  - ../library/passives.yaml
+
+net_classes:
+  bus:
+    trace_width_mm: 0.25
+    clearance_mm: 0.2
+    via_diameter_mm: 0.6
+    via_drill_mm: 0.3
+    priority: 50
+    description: Fifteen signals with nothing to choose between them, which is the
+      point -- the router has to decide which of them take F.Cu through each
+      channel and which take B.Cu, and there is no arrangement with room to spare.
+  clock:
+    trace_width_mm: 0.25
+    clearance_mm: 0.2
+    via_diameter_mm: 0.6
+    via_drill_mm: 0.3
+    priority: 90
+    rip_up: protected
+    description: The bus clock. The same geometry as the rest of the bus and a
+      different standing -- it chooses its corridor before the negotiation has
+      anything to argue about, and it is not moved afterwards, so the fifteen
+      signals that can take a detour are the ones that do.
+  power:
+    trace_width_mm: 0.4
+    clearance_mm: 0.2
+    via_diameter_mm: 0.6
+    via_drill_mm: 0.3
+    description: Wider than a signal and charged for it. The In2 plane carries the
+      rail the length of the board, but the pads that reach it are on the outside,
+      so the rail is in the channels with everything else -- 0.6 mm of the 8.5 mm
+      of demand that arrives at each one.
+  ground:
+    trace_width_mm: 0.4
+    clearance_mm: 0.2
+    via_diameter_mm: 0.6
+    via_drill_mm: 0.3
+    description: The return. In1 carries it under the whole board, which is what a
+      backplane's ground has to be, and the connections that reach the plane are on
+      the outer layers like everything else.
+
+nets:
+  D0:
+    class: bus
+    description: Bus data line 0.
+  D1:
+    class: bus
+    description: Bus data line 1.
+  D2:
+    class: bus
+    description: Bus data line 2.
+  D3:
+    class: bus
+    description: Bus data line 3.
+  D4:
+    class: bus
+    description: Bus data line 4.
+  D5:
+    class: bus
+    description: Bus data line 5.
+  D6:
+    class: bus
+    description: Bus data line 6.
+  D7:
+    class: bus
+    description: Bus data line 7.
+  D8:
+    class: bus
+    description: Bus data line 8.
+  D9:
+    class: bus
+    description: Bus data line 9.
+  D10:
+    class: bus
+    description: Bus data line 10.
+  D11:
+    class: bus
+    description: Bus data line 11.
+  CLK:
+    class: clock
+    description: The bus clock, common to every card position. Protected from
+      rip-up so that it chooses its corridor before the negotiation starts moving
+      things about, and keeps it.
+  STROBE:
+    class: bus
+    description: Data strobe, host to cards.
+  RESET:
+    class: bus
+    description: Active-low reset, host to cards. Held up by its pull-up at the far
+      end of the bus, which is what makes the terminator field a working part of
+      this board rather than ballast.
+  IRQ:
+    class: bus
+    description: Wired-or interrupt back from the cards. Its pull-up is the part
+      that makes the wired-or work.
+  VCC:
+    class: power
+    voltage: 3.3
+    max_current_a: 1.2
+    reason: Six cards at 200 mA each, in from the cage supply at the west end and
+      distributed by the In2 plane.
+  GND:
+    class: ground
+    reason: The return for all of it, on the In1 plane.
+
+components:
+  J1:
+    part: CONN_HDR_1X20
+    role: connector
+    reason: The ribbon from the host controller. It is at the west end because the
+      cage's own backplane connector is, and everything on this board is
+      downstream of it.
+    pins:
+      P1: D0
+      P2: D1
+      P3: D2
+      P4: D3
+      P5: D4
+      P6: D5
+      P7: D6
+      P8: D7
+      P9: D8
+      P10: D9
+      P11: D10
+      P12: D11
+      P13: CLK
+      P14: STROBE
+      P15: RESET
+      P16: IRQ
+      P17: VCC
+      P18: VCC
+      P19: GND
+      P20: GND
+
+  J2:
+    part: CONN_PWR_1X02
+    role: connector
+    reason: The cage supply. It is a separate loom from the ribbon on a real
+      backplane and it is separate here for the same reason -- the current six
+      cards draw has no business going through a signal connector.
+    pins:
+      VIN: VCC
+      GND: GND
+
+modules:
+  bus_slot:
+    description: One card position -- the connector the card plugs into, and the
+      decoupling that keeps that card's inrush off everybody else's rail.
+    params:
+      bypass:
+        type: part
+        default: C_100N_0603
+        description: The local reservoir. A card drawing its supply through half a
+          metre of backplane copper needs one at its own connector.
+    ports: [D0, D1, D2, D3, D4, D5, D6, D7, D8, D9, D10, D11, CLK, STROBE, RESET, IRQ, VCC, GND]
+    components:
+      J:
+        part: CONN_HDR_1X20
+        role: connector
+        reason: The card position itself. Every slot carries the whole bus, which
+          is what makes the bus have to survive passing six of these.
+        pins:
+          P1: D0
+          P2: D1
+          P3: D2
+          P4: D3
+          P5: D4
+          P6: D5
+          P7: D6
+          P8: D7
+          P9: D8
+          P10: D9
+          P11: D10
+          P12: D11
+          P13: CLK
+          P14: STROBE
+          P15: RESET
+          P16: IRQ
+          P17: VCC
+          P18: VCC
+          P19: GND
+          P20: GND
+      C:
+        part: "{{ bypass }}"
+        role: decoupling
+        for: J
+        reason: Local charge for the card in this position, close enough to its
+          supply pins to be worth having.
+        pins:
+          "1": VCC
+          "2": GND
+    constraints:
+      - kind: max_distance
+        between: [C, J]
+        mm: 8.0
+        reason: A decoupling capacitor works through its loop inductance, and a
+          backplane is exactly where that loop gets long by accident.
+
+  bus_termination:
+    description: The far end of the bus. Sixteen pull-ups, one per line, which is
+      what stops an undriven line floating and what makes IRQ's wired-or work.
+    ports: [D0, D1, D2, D3, D4, D5, D6, D7, D8, D9, D10, D11, CLK, STROBE, RESET, IRQ, VCC]
+    components:
+      R1:
+        part: R_10K_0603
+        role: termination
+        reason: Holds D0 at a defined level when nothing on the bus is driving it.
+        pins: { "1": D0, "2": VCC }
+      R2:
+        part: R_10K_0603
+        role: termination
+        reason: Holds D1 at a defined level when nothing on the bus is driving it.
+        pins: { "1": D1, "2": VCC }
+      R3:
+        part: R_10K_0603
+        role: termination
+        reason: Holds D2 at a defined level when nothing on the bus is driving it.
+        pins: { "1": D2, "2": VCC }
+      R4:
+        part: R_10K_0603
+        role: termination
+        reason: Holds D3 at a defined level when nothing on the bus is driving it.
+        pins: { "1": D3, "2": VCC }
+      R5:
+        part: R_10K_0603
+        role: termination
+        reason: Holds D4 at a defined level when nothing on the bus is driving it.
+        pins: { "1": D4, "2": VCC }
+      R6:
+        part: R_10K_0603
+        role: termination
+        reason: Holds D5 at a defined level when nothing on the bus is driving it.
+        pins: { "1": D5, "2": VCC }
+      R7:
+        part: R_10K_0603
+        role: termination
+        reason: Holds D6 at a defined level when nothing on the bus is driving it.
+        pins: { "1": D6, "2": VCC }
+      R8:
+        part: R_10K_0603
+        role: termination
+        reason: Holds D7 at a defined level when nothing on the bus is driving it.
+        pins: { "1": D7, "2": VCC }
+      R9:
+        part: R_10K_0603
+        role: termination
+        reason: Holds D8 at a defined level when nothing on the bus is driving it.
+        pins: { "1": D8, "2": VCC }
+      R10:
+        part: R_10K_0603
+        role: termination
+        reason: Holds D9 at a defined level when nothing on the bus is driving it.
+        pins: { "1": D9, "2": VCC }
+      R11:
+        part: R_10K_0603
+        role: termination
+        reason: Holds D10 at a defined level when nothing on the bus is driving it.
+        pins: { "1": D10, "2": VCC }
+      R12:
+        part: R_10K_0603
+        role: termination
+        reason: Holds D11 at a defined level when nothing on the bus is driving it.
+        pins: { "1": D11, "2": VCC }
+      R13:
+        part: R_10K_0603
+        role: termination
+        reason: Holds CLK at a defined level when nothing on the bus is driving it.
+        pins: { "1": CLK, "2": VCC }
+      R14:
+        part: R_10K_0603
+        role: termination
+        reason: Holds STROBE at a defined level when nothing on the bus is driving it.
+        pins: { "1": STROBE, "2": VCC }
+      R15:
+        part: R_10K_0603
+        role: termination
+        reason: Holds RESET at a defined level when nothing on the bus is driving it.
+        pins: { "1": RESET, "2": VCC }
+      R16:
+        part: R_10K_0603
+        role: termination
+        reason: Holds IRQ at a defined level when nothing on the bus is driving it.
+        pins: { "1": IRQ, "2": VCC }
+
+instances:
+  slot1:
+    module: bus_slot
+    reason: Card position 1 of 6, counted from the host end.
+    connect:
+      D0: D0
+      D1: D1
+      D2: D2
+      D3: D3
+      D4: D4
+      D5: D5
+      D6: D6
+      D7: D7
+      D8: D8
+      D9: D9
+      D10: D10
+      D11: D11
+      CLK: CLK
+      STROBE: STROBE
+      RESET: RESET
+      IRQ: IRQ
+      VCC: VCC
+      GND: GND
+  slot2:
+    module: bus_slot
+    reason: Card position 2 of 6, counted from the host end.
+    connect:
+      D0: D0
+      D1: D1
+      D2: D2
+      D3: D3
+      D4: D4
+      D5: D5
+      D6: D6
+      D7: D7
+      D8: D8
+      D9: D9
+      D10: D10
+      D11: D11
+      CLK: CLK
+      STROBE: STROBE
+      RESET: RESET
+      IRQ: IRQ
+      VCC: VCC
+      GND: GND
+  slot3:
+    module: bus_slot
+    reason: Card position 3 of 6, counted from the host end.
+    connect:
+      D0: D0
+      D1: D1
+      D2: D2
+      D3: D3
+      D4: D4
+      D5: D5
+      D6: D6
+      D7: D7
+      D8: D8
+      D9: D9
+      D10: D10
+      D11: D11
+      CLK: CLK
+      STROBE: STROBE
+      RESET: RESET
+      IRQ: IRQ
+      VCC: VCC
+      GND: GND
+  slot4:
+    module: bus_slot
+    reason: Card position 4 of 6, counted from the host end.
+    connect:
+      D0: D0
+      D1: D1
+      D2: D2
+      D3: D3
+      D4: D4
+      D5: D5
+      D6: D6
+      D7: D7
+      D8: D8
+      D9: D9
+      D10: D10
+      D11: D11
+      CLK: CLK
+      STROBE: STROBE
+      RESET: RESET
+      IRQ: IRQ
+      VCC: VCC
+      GND: GND
+  slot5:
+    module: bus_slot
+    reason: Card position 5 of 6, counted from the host end.
+    connect:
+      D0: D0
+      D1: D1
+      D2: D2
+      D3: D3
+      D4: D4
+      D5: D5
+      D6: D6
+      D7: D7
+      D8: D8
+      D9: D9
+      D10: D10
+      D11: D11
+      CLK: CLK
+      STROBE: STROBE
+      RESET: RESET
+      IRQ: IRQ
+      VCC: VCC
+      GND: GND
+  slot6:
+    module: bus_slot
+    reason: Card position 6 of 6, counted from the host end.
+    connect:
+      D0: D0
+      D1: D1
+      D2: D2
+      D3: D3
+      D4: D4
+      D5: D5
+      D6: D6
+      D7: D7
+      D8: D8
+      D9: D9
+      D10: D10
+      D11: D11
+      CLK: CLK
+      STROBE: STROBE
+      RESET: RESET
+      IRQ: IRQ
+      VCC: VCC
+      GND: GND
+  term:
+    module: bus_termination
+    reason: The bus ends here, and it ends in something rather than in nothing.
+    connect:
+      D0: D0
+      D1: D1
+      D2: D2
+      D3: D3
+      D4: D4
+      D5: D5
+      D6: D6
+      D7: D7
+      D8: D8
+      D9: D9
+      D10: D10
+      D11: D11
+      CLK: CLK
+      STROBE: STROBE
+      RESET: RESET
+      IRQ: IRQ
+      VCC: VCC
+
+board:
+  # The mechanical boundary, in the board's own frame: millimetres, Y up,
+  # origin at the bottom-left corner. See docs/format.md.
+  #
+  # A card cage's backplane is long and shallow -- the cards stand off it, so its
+  # own height is set by the connector and by nothing else. A 1x20 vertical header
+  # is 51.8 mm from courtyard to courtyard, which is where 56.0 mm comes from, and it is
+  # also why the channels are as narrow as they are. There is no spare height on
+  # this board to give them.
+  origin: bottom_left
+  outline:
+    rect: [190.0, 56.0]
+
+placement:
+  # Every connector is pinned. On a board whose whole subject is what fits through
+  # the gaps between them, where they sit *is* the example, and leaving it to the
+  # packer would make the demonstration depend on a heuristic.
+  J1:
+    fixed: { x: 14.0, y: 52.22, rot: 0 }
+    reason: The host ribbon lands at the west end, clear of the first card guide.
+  J2:
+    fixed: { x: 5.0, y: 30.0, rot: 0 }
+    reason: The supply loom enters west of the ribbon, in the strip of board left
+      over between the outline and the host connector's courtyard.
+  slot1.J:
+    fixed: { x: 36.0, y: 52.22, rot: 0 }
+    reason: Card position 1, on the cage's 22.0 mm slot pitch. The pitch is the
+      cage's and not the board's -- it is what leaves 18.46 mm between one
+      connector's courtyard and the next, and the card guide takes 4.0 mm of that.
+  slot2.J:
+    fixed: { x: 58.0, y: 52.22, rot: 0 }
+    reason: Card position 2, on the cage's 22.0 mm slot pitch. The pitch is the
+      cage's and not the board's -- it is what leaves 18.46 mm between one
+      connector's courtyard and the next, and the card guide takes 4.0 mm of that.
+  slot3.J:
+    fixed: { x: 80.0, y: 52.22, rot: 0 }
+    reason: Card position 3, on the cage's 22.0 mm slot pitch. The pitch is the
+      cage's and not the board's -- it is what leaves 18.46 mm between one
+      connector's courtyard and the next, and the card guide takes 4.0 mm of that.
+  slot4.J:
+    fixed: { x: 102.0, y: 52.22, rot: 0 }
+    reason: Card position 4, on the cage's 22.0 mm slot pitch. The pitch is the
+      cage's and not the board's -- it is what leaves 18.46 mm between one
+      connector's courtyard and the next, and the card guide takes 4.0 mm of that.
+  slot5.J:
+    fixed: { x: 124.0, y: 52.22, rot: 0 }
+    reason: Card position 5, on the cage's 22.0 mm slot pitch. The pitch is the
+      cage's and not the board's -- it is what leaves 18.46 mm between one
+      connector's courtyard and the next, and the card guide takes 4.0 mm of that.
+  slot6.J:
+    fixed: { x: 146.0, y: 52.22, rot: 0 }
+    reason: Card position 6, on the cage's 22.0 mm slot pitch. The pitch is the
+      cage's and not the board's -- it is what leaves 18.46 mm between one
+      connector's courtyard and the next, and the card guide takes 4.0 mm of that.
+
+layout:
+  stackup:
+    copper_layers: 4
+    thickness_mm: 1.6
+    finish: HASL
+    planes:
+      - layer: In1.Cu
+        net: GND
+        reason: The return for a bus that spans 180 mm and six connectors. On the
+          outer layers it would have to cross every card guide with the signals;
+          here it crosses nothing.
+      - layer: In2.Cu
+        net: VCC
+        reason: The rail, for the same reason. Six cards' supply current through a
+          channel already holding sixteen signals is not a trade worth making.
+    via_types: [through]
+  placement:
+    margin_mm: 2.0
+    keepouts:
+      - region_mm: [23.0, 0, 27.0, 26.0]
+        reason: Card guide 1, south rail. The guide is bolted through the board
+          and the card slides in it, so neither a part nor copper may be under it.
+          This rail and the north one leave the 4.0 mm channel across the middle of
+          the board that every line on the bus has to cross.
+      - region_mm: [23.0, 30.0, 27.0, 56.0]
+        reason: Card guide 1, north rail -- the other half of the same guide.
+      - region_mm: [45.0, 0, 49.0, 26.0]
+        reason: Card guide 2, south rail. The guide is bolted through the board
+          and the card slides in it, so neither a part nor copper may be under it.
+          This rail and the north one leave the 4.0 mm channel across the middle of
+          the board that every line on the bus has to cross.
+      - region_mm: [45.0, 30.0, 49.0, 56.0]
+        reason: Card guide 2, north rail -- the other half of the same guide.
+      - region_mm: [67.0, 0, 71.0, 26.0]
+        reason: Card guide 3, south rail. The guide is bolted through the board
+          and the card slides in it, so neither a part nor copper may be under it.
+          This rail and the north one leave the 4.0 mm channel across the middle of
+          the board that every line on the bus has to cross.
+      - region_mm: [67.0, 30.0, 71.0, 56.0]
+        reason: Card guide 3, north rail -- the other half of the same guide.
+      - region_mm: [89.0, 0, 93.0, 26.0]
+        reason: Card guide 4, south rail. The guide is bolted through the board
+          and the card slides in it, so neither a part nor copper may be under it.
+          This rail and the north one leave the 4.0 mm channel across the middle of
+          the board that every line on the bus has to cross.
+      - region_mm: [89.0, 30.0, 93.0, 56.0]
+        reason: Card guide 4, north rail -- the other half of the same guide.
+      - region_mm: [111.0, 0, 115.0, 26.0]
+        reason: Card guide 5, south rail. The guide is bolted through the board
+          and the card slides in it, so neither a part nor copper may be under it.
+          This rail and the north one leave the 4.0 mm channel across the middle of
+          the board that every line on the bus has to cross.
+      - region_mm: [111.0, 30.0, 115.0, 56.0]
+        reason: Card guide 5, north rail -- the other half of the same guide.
+      - region_mm: [133.0, 0, 137.0, 26.0]
+        reason: Card guide 6, south rail. The guide is bolted through the board
+          and the card slides in it, so neither a part nor copper may be under it.
+          This rail and the north one leave the 4.0 mm channel across the middle of
+          the board that every line on the bus has to cross.
+      - region_mm: [133.0, 30.0, 137.0, 56.0]
+        reason: Card guide 6, north rail -- the other half of the same guide.
+      - region_mm: [153.38, 0, 157.38, 26.0]
+        reason: Card guide 7, south rail. The guide is bolted through the board
+          and the card slides in it, so neither a part nor copper may be under it.
+          This rail and the north one leave the 4.0 mm channel across the middle of
+          the board that every line on the bus has to cross.
+      - region_mm: [153.38, 30.0, 157.38, 56.0]
+        reason: Card guide 7, north rail -- the other half of the same guide.
+    rules:
+      - members: [slot1.C]
+        region_mm: [38.5, 44.0, 44.5, 53.0]
+        reason: Card position 1's decoupling, in the strip between its connector
+          and the guide east of it. The packer would otherwise put it wherever
+          there was room, which on this board is inside a card guide.
+      - members: [slot2.C]
+        region_mm: [60.5, 44.0, 66.5, 53.0]
+        reason: Card position 2's decoupling, in the strip between its connector
+          and the guide east of it. The packer would otherwise put it wherever
+          there was room, which on this board is inside a card guide.
+      - members: [slot3.C]
+        region_mm: [82.5, 44.0, 88.5, 53.0]
+        reason: Card position 3's decoupling, in the strip between its connector
+          and the guide east of it. The packer would otherwise put it wherever
+          there was room, which on this board is inside a card guide.
+      - members: [slot4.C]
+        region_mm: [104.5, 44.0, 110.5, 53.0]
+        reason: Card position 4's decoupling, in the strip between its connector
+          and the guide east of it. The packer would otherwise put it wherever
+          there was room, which on this board is inside a card guide.
+      - members: [slot5.C]
+        region_mm: [126.5, 44.0, 132.5, 53.0]
+        reason: Card position 5's decoupling, in the strip between its connector
+          and the guide east of it. The packer would otherwise put it wherever
+          there was room, which on this board is inside a card guide.
+      - members: [slot6.C]
+        region_mm: [148.5, 44.0, 154.5, 53.0]
+        reason: Card position 6's decoupling, in the strip between its connector
+          and the guide east of it. The packer would otherwise put it wherever
+          there was room, which on this board is inside a card guide.
+      - members: [term.R1, term.R2, term.R3, term.R4, term.R5, term.R6, term.R7, term.R8, term.R9, term.R10, term.R11, term.R12, term.R13, term.R14, term.R15, term.R16]
+        region_mm: [164.0, 3.0, 188.0, 53.0]
+        reason: The terminator field takes the east end, past the last card guide,
+          where there is board left over and nothing else wants it. Where inside
+          that rectangle each resistor sits does not matter and is not stated --
+          this is the one part of the board the packer is allowed to arrange.
+
+pours:
+  - net: GND
+    layer: In1.Cu
+    scope: board
+    priority: 0
+    connect: thermal
+    reason: The plane the stackup reserved. Declaring it under `stackup.planes`
+      keeps signals off the layer; this is what actually puts copper there.
+  - net: VCC
+    layer: In2.Cu
+    scope: board
+    priority: 0
+    connect: thermal
+    reason: The rail, on its own layer, reaching all six card positions and the
+      terminator field without crossing a card guide.

@@ -60,3 +60,32 @@ parts:
       "2": { type: passive, name: P2 }
       "3": { type: passive, name: P3 }
       "4": { type: passive, name: P4 }
+
+  CONN_HDR_1X20:
+    description: 20-pin 2.54 mm single-row header, vertical
+    symbol: Connector_Generic:Conn_01x20
+    refdes_prefix: J
+    footprint: Connector_PinHeader_2.54mm:PinHeader_1x20_P2.54mm_Vertical
+    value: HDR_1x20
+    keywords: [header, bus, backplane]
+    pins:
+      "1": { type: passive, name: P1 }
+      "2": { type: passive, name: P2 }
+      "3": { type: passive, name: P3 }
+      "4": { type: passive, name: P4 }
+      "5": { type: passive, name: P5 }
+      "6": { type: passive, name: P6 }
+      "7": { type: passive, name: P7 }
+      "8": { type: passive, name: P8 }
+      "9": { type: passive, name: P9 }
+      "10": { type: passive, name: P10 }
+      "11": { type: passive, name: P11 }
+      "12": { type: passive, name: P12 }
+      "13": { type: passive, name: P13 }
+      "14": { type: passive, name: P14 }
+      "15": { type: passive, name: P15 }
+      "16": { type: passive, name: P16 }
+      "17": { type: passive, name: P17 }
+      "18": { type: passive, name: P18 }
+      "19": { type: passive, name: P19 }
+      "20": { type: passive, name: P20 }
