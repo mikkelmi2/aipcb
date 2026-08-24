@@ -35,7 +35,7 @@ is ever built, that provenance goes in its milestone prompt.
 
 | Source | Status |
 |---|---|
-| Dayan, *Rubber-band based topological router*, PhD thesis, UCSC, 1997 | **Not obtained in full text.** No open PDF exists; ProQuest and Google Books carry metadata and an abstract only. Its content is cited here at second hand — through the SURF papers' abstracts, through Blake's own account of what he implemented, and through the bibliography the toporouter source itself carries. **Claims below about "what the thesis prescribes" are therefore weaker than claims about what the code does, and are marked where they appear.** |
+| Dayan, *Rubber-band based topological router*, PhD thesis, UCSC, 1997 | **Obtained in full at M18 — see [`routing-literature.md` §1.3](routing-literature.md#13-dayans-thesis-obtained--what-the-second-hand-markers-got-right-and-wrong).** The status below was true when this note was written and is left standing so the second attempt's result is legible; every claim in this note marked as second-hand should now be read against that section, which resolves them. In particular the thesis's shortest-path algorithm is *O*((T+S)² log(T+S)) with the shipping approximation at *O*((T+S) log(T+S)) and **not guaranteed shortest**; and §2.2.1 says SURF maintained each layer's mesh with an incremental constrained Delaunay triangulation. Original status: **Not obtained in full text.** No open PDF exists; ProQuest and Google Books carry metadata and an abstract only. Its content is cited here at second hand — through the SURF papers' abstracts, through Blake's own account of what he implemented, and through the bibliography the toporouter source itself carries. **Claims below about "what the thesis prescribes" are therefore weaker than claims about what the code does, and are marked where they appear.** |
 | Dai, Dayan & Staepelaere, *Topological Routing in SURF: Generating a Rubber-Band Sketch*, DAC 1991; Staepelaere et al., *SURF*, IEEE D&T 1993; Dayan & Dai, *Layer Assignment for a Rubber Band Router*, UCSC-CRL-92-50 | Abstracts only; full texts paywalled. |
 | `src/toporouter.c` (7,761 lines) and `src/toporouter.h` (484 lines), [russdill/pcb](https://github.com/russdill/pcb) | **Read in full for architecture and technique.** The primary source for §A. |
 | Blake's own project page, `anthonix.resnet.scms.waikato.ac.nz/toporouter/`, last updated 2009-07-07 | **Recovered from the Internet Archive** (mirrored into the [bert/pcb wiki](https://github.com/bert/pcb/wiki/Autorouters:-gEDA-pcb-Toporouter)). This is the richest single source: benchmark tables, honest self-assessment, and the "why I restarted" statement. |
@@ -611,6 +611,15 @@ and the cited academic work, never from the GPL source.**
   build C3 is that **53 of the 55 collapsible spans in the corpus were rejected
   because the on-layer route is longer or does not exist** — the vias this router
   spends are, with four exceptions, load bearing.
+* **Re-priced at M18, downward.** The 7–16% above is Blake's, on two boards. Dayan's
+  own measurement of the same mechanism — his ROAR optimiser, ten two-layer bins,
+  427 branches — is **detour from 8.84% to 5.18%, about 3.4% of wire length**
+  ([`routing-literature.md` §1.3](routing-literature.md#13-dayans-thesis-obtained--what-the-second-hand-markers-got-right-and-wrong)).
+  That is a primary source measuring the mechanism directly, and it should be the
+  number this candidate is budgeted against. What M18 *added* in C3's favour is
+  Dayan §6.1's argument that some topologies are unreachable by any order of
+  sequential shortest-path routing, so a post-pass is structurally necessary rather
+  than merely nice.
 
 ### C4. Route to the net, not to the pad
 
