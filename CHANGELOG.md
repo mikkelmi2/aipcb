@@ -48,7 +48,7 @@ See [`docs/reports/m17.md`](docs/reports/m17.md).
 
 ### Fixed
 
-- **The 900-connection extrapolation.** Re-fitted after the above: roughly 11.5
+- **The 900-connection extrapolation.** Re-fitted after the above: roughly 11.3
   minutes where the same method on the M16 baseline gives 23.7. The exponents did not
   move (1.72 → 1.70 against connections, R² 0.94), which is the point — M17 harvested
   constant factors and left the shape of the curve for M18 to ask about.

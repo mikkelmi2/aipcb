@@ -222,7 +222,7 @@ and that 83–94% of it was in the tightener on the five largest boards while
 negotiation never exceeds half a second. [The M17 report](reports/m17.md) re-fits
 that curve after halving the constant factors: the exponents are unmoved (1.10
 against connections × cuts, R² 0.96), and a 900-connection board now extrapolates to
-roughly 11.5 minutes rather than 23.7.
+roughly 11 minutes rather than 24.
 
 Two consequences worth naming. It discharges one of the three
 [graduation conditions](#maturity-and-graduation) — runtime is benchmarked now, and
